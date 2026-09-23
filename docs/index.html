@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Twitch Auto Clipper</title>
+  <meta name="description" content="Documentation for Twitch Auto Clipper, a local tool for creating vertical clips from Twitch videos.">
+  <meta property="og:title" content="Twitch Auto Clipper">
+  <meta property="og:description" content="A local Twitch video clipping workflow with optional YouTube upload.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site-header"><nav class="nav" aria-label="Main navigation">
+  <a class="brand" href="index.html">Twitch Auto Clipper</a>
+  <div class="nav-links"><a href="index.html">Home</a><a href="privacy.html">Privacy Policy</a><a href="terms.html">Terms</a></div>
+</nav></header>
+<main class="container">
+  <section class="hero">
+    <div>
+      <div class="eyebrow">Personal open-source project</div>
+      <h1>Twitch Auto Clipper</h1>
+      <p class="lede">A local Python application that turns Twitch VOD material into short vertical videos. It is designed for personal automation and runs its processing pipeline on the user's computer.</p>
+    </div>
+    <aside class="notice"><strong>Project status</strong><p>This project is not a hosted service. It is not affiliated with YouTube or Twitch. Some planned destinations, including Instagram Reels and TikTok, are not implemented in the current application.</p></aside>
+  </section>
+
+  <section class="section">
+    <h2>How it works</h2>
+    <ol class="pipeline">
+      <li><div><h3>Acquire</h3><p>Accept a local video or download a Twitch VOD. Twitch chat replay can be downloaded separately.</p></div></li>
+      <li><div><h3>Understand</h3><p>Transcribe audio with faster-whisper and retain segment and word timestamps.</p></div></li>
+      <li><div><h3>Select</h3><p>Generate explainable heuristic candidates, optionally enrich them with chat activity, and optionally ask Gemini to evaluate them.</p></div></li>
+      <li><div><h3>Render</h3><p>Create a 1080x1920 vertical clip with CPU-friendly framing and optional ASS subtitles.</p></div></li>
+      <li><div><h3>Publish</h3><p>Explicitly upload an already generated video to the user's YouTube channel through OAuth 2.0. This is the only social publishing integration currently implemented.</p></div></li>
+    </ol>
+  </section>
+
+  <section class="section" id="youtube-api">
+    <h2>YouTube API Services usage</h2>
+    <p>The current application uses the official YouTube Data API v3 only to upload a user-selected local video. The code calls <code>youtube.videos.insert</code> with the <code>snippet</code> and <code>status</code> parts. The user supplies the title, description, and <code>privacyStatus</code> value: <code>private</code>, <code>unlisted</code>, or <code>public</code>. The response ID is returned as the uploaded video's YouTube ID and URL.</p>
+    <p>Authorization uses OAuth 2.0 with <code>https://www.googleapis.com/auth/youtube.upload</code> for uploads. If <code>YOUTUBE_EXPECTED_CHANNEL_ID</code> is configured, the application also requests <code>https://www.googleapis.com/auth/youtube.readonly</code> and uses <code>youtube.channels.list</code> to verify the authorized channel before upload. The first local authorization opens a browser. The application stores the resulting token in a local ignored file and refreshes it when possible. It does not read analytics, comments, likes, subscriptions, or other YouTube resources.</p>
+    <p>The upload is an explicit user action. The application does not automate views, likes, comments, subscriptions, or other artificial engagement. It uses YouTube API Services subject to the applicable Google and YouTube policies; it is not audited or approved by YouTube.</p>
+    <p class="small">Official references: <a href="https://developers.google.com/youtube/v3">YouTube Data API</a>, <a href="https://developers.google.com/youtube/terms/developer-policies">Developer Policies</a>, <a href="https://developers.google.com/youtube/terms/api-services-terms-of-service">API Services Terms</a>, <a href="https://developers.google.com/youtube/v3/docs/videos/insert">videos.insert</a>, and <a href="https://developers.google.com/youtube/v3/guides/quota_and_compliance_audits">Quota and compliance audits</a>.</p>
+  </section>
+
+  <section class="grid">
+    <article class="card"><h3>Privacy</h3><p>Read what the local application processes, stores, and sends to third-party APIs.</p><p><a href="privacy.html">Privacy Policy</a></p></article>
+    <article class="card"><h3>Terms</h3><p>Review the conditions for using the software and content rights responsibilities.</p><p><a href="terms.html">Terms of Use</a></p></article>
+    <article class="card"><h3>Source</h3><p>The source repository is the authoritative implementation.</p><p><a href="https://github.com/Aymeric05/automatiseur">GitHub repository</a></p></article>
+  </section>
+  <section class="section"><h2>Channel</h2><p>The intended YouTube destination is <a href="https://www.youtube.com/@LiveActionss">LiveActions!</a>. The link should be checked manually if YouTube changes the handle or resolves it differently.</p></section>
+  <section class="section"><h2>Contact</h2><p>For questions about this project or its privacy practices, contact <strong>aymeric.leclerre@gmail.com</strong>.</p></section>
+</main>
+<footer class="site-footer"><div class="footer-inner"><span>Twitch Auto Clipper · Personal project</span><div class="footer-links"><a href="privacy.html">Privacy Policy</a><a href="terms.html">Terms</a><a href="https://github.com/Aymeric05/automatiseur">GitHub</a><a href="mailto:aymeric.leclerre@gmail.com">Contact</a></div></div></footer>
+</body>
+</html>

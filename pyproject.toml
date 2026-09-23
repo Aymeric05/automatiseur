@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "twitch-auto-clipper"
+version = "0.1.0"
+description = "Create vertical clips from local video files."
+requires-python = ">=3.11"
+dependencies = [
+	"google-api-python-client>=2.0.0",
+	"google-auth>=2.0.0",
+	"google-auth-oauthlib>=1.0.0",
+	"google-auth-httplib2>=0.2.0",
+	"opencv-python-headless>=4.9.0",
+]
+
+[project.scripts]
+tac = "twitch_auto_clipper.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
