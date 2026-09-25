@@ -1,0 +1,46 @@
+{
+  "schema_version": "1",
+  "last_updated": "2026-09-25T20:47:00+02:00",
+
+  "current_stage": "idle",
+  "current_task": null,
+  "active_role": null,
+  "last_completed_stage": null,
+  "last_safe_checkpoint": null,
+
+  "pipeline": [
+    "twitch_live_discovery",
+    "viewer_based_clip_budget",
+    "detect_stream_end",
+    "vod_acquisition",
+    "transcription_and_chat",
+    "heuristic_highlight_candidates",
+    "gemini_selection",
+    "generate_shorts",
+    "framing_9_16",
+    "dynamic_subtitles",
+    "metadata_generation",
+    "youtube_upload",
+    "cleanup",
+    "instagram_reels_tiktok"
+  ],
+
+  "stage_status": {
+    "twitch_live_discovery":          "unknown",
+    "viewer_based_clip_budget":       "unknown",
+    "detect_stream_end":              "unknown",
+    "vod_acquisition":                "unknown",
+    "transcription_and_chat":         "unknown",
+    "heuristic_highlight_candidates": "unknown",
+    "gemini_selection":               "unknown",
+    "generate_shorts":                "unknown",
+    "framing_9_16":                   "unknown",
+    "dynamic_subtitles":              "unknown",
+    "metadata_generation":            "unknown",
+    "youtube_upload":                 "unknown",
+    "cleanup":                        "unknown",
+    "instagram_reels_tiktok":         "unknown"
+  },
+
+  "notes": "Initial state. Orchestrator must inspect the repository before updating stage_status."
+}

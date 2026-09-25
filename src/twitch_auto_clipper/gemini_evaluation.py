@@ -86,8 +86,11 @@ def _candidate_context(
     return context
 
 
-def _build_prompt(context: list[dict[str, Any]]) -> str:
-    return (
+def _build_prompt(
+    context: list[dict[str, Any]],
+    selection_count: int | None = None,
+) -> str:
+    prompt = (
         "Evalue les candidats suivants pour un Short Twitch. "
         "Classe-les selon leur potentiel d'interet pour un public court. "
         "Utilise la transcription, le score heuristique, le nombre de messages "
@@ -100,6 +103,15 @@ def _build_prompt(context: list[dict[str, Any]]) -> str:
         "Conserve exactement les candidate_id fournis.\n\n"
         + json.dumps(context, ensure_ascii=False)
     )
+    if selection_count is not None:
+        prompt += (
+            f"\nSelectionne exactement {selection_count} candidats distincts, "
+            "en priorisant les moments genuinement interessants selon le contenu, "
+            "les reactions du streamer, l'activite du chat et le score heuristique. "
+            "Si le nombre de candidats fournis est inferieur, retourne-les tous. "
+            "N'invente aucun moment ni aucun candidate_id."
+        )
+    return prompt
 
 
 def _parse_response(response_text: str, candidate_ids: set[str]) -> list[dict[str, Any]]:
@@ -144,14 +156,24 @@ def evaluate_candidates(
     candidates: list[dict[str, Any]],
     transcription: list[dict[str, Any]],
     model: str = "gemini-3.6-flash",
+    selection_count: int | None = None,
 ) -> list[dict[str, Any]]:
     """Ask Gemini to evaluate candidates using transcript and optional chat counts."""
     context = _candidate_context(candidates, transcription)
+    if selection_count is not None:
+        if selection_count < 0:
+            raise GeminiEvaluationError("Le nombre de selections ne peut pas etre negatif.")
+        if selection_count == 0 or not context:
+            return []
+        expected_count = min(selection_count, len(context))
+    else:
+        expected_count = None
+
     client = _get_gemini_client()
     try:
         interaction = client.interactions.create(
             model=model,
-            input=_build_prompt(context),
+            input=_build_prompt(context, selection_count=expected_count),
             response_format=EVALUATION_RESPONSE_FORMAT,
         )
     except Exception as error:
@@ -160,9 +182,36 @@ def evaluate_candidates(
     response_text = getattr(interaction, "output_text", None)
     if not isinstance(response_text, str) or not response_text.strip():
         raise GeminiEvaluationError("Gemini a retourne une reponse vide.")
-    return _parse_response(
+    evaluations = _parse_response(
         response_text,
         {item["candidate_id"] for item in context},
+    )
+    if expected_count is not None:
+        candidate_ids = [evaluation["candidate_id"] for evaluation in evaluations]
+        if len(evaluations) != expected_count or len(set(candidate_ids)) != expected_count:
+            raise GeminiEvaluationError(
+                f"Gemini doit retourner exactement {expected_count} candidats distincts."
+            )
+        evaluations.sort(key=lambda evaluation: evaluation["score"], reverse=True)
+    return evaluations
+
+
+def select_candidates(
+    candidates: list[dict[str, Any]],
+    transcription: list[dict[str, Any]],
+    requested_count: int,
+    model: str = "gemini-3.6-flash",
+) -> list[dict[str, Any]]:
+    """Return an exact, distinct Gemini selection, or every candidate if fewer exist."""
+    if requested_count < 0:
+        raise GeminiEvaluationError("Le nombre de selections ne peut pas etre negatif.")
+    if requested_count == 0 or not candidates:
+        return []
+    return evaluate_candidates(
+        candidates,
+        transcription,
+        model=model,
+        selection_count=requested_count,
     )
 
 

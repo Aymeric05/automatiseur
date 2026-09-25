@@ -12,6 +12,7 @@ from twitch_auto_clipper.gemini_evaluation import (
     evaluate_candidates,
     save_evaluations,
     select_candidate,
+    select_candidates,
 )
 
 
@@ -111,6 +112,63 @@ class GeminiEvaluationTests(unittest.TestCase):
     def test_select_candidate_rejects_empty_candidates(self) -> None:
         with self.assertRaisesRegex(GeminiEvaluationError, "Aucun candidat"):
             select_candidate([], [])
+
+    @patch("twitch_auto_clipper.gemini_evaluation.evaluate_candidates")
+    def test_select_candidates_requests_budget_count_and_keeps_fewer_candidates(self, evaluate) -> None:
+        evaluate.return_value = [
+            {
+                "candidate_id": "candidate_2",
+                "interesting": True,
+                "score": 90,
+                "justification": "Moment marquant.",
+            },
+            {
+                "candidate_id": "candidate_1",
+                "interesting": True,
+                "score": 85,
+                "justification": "Reaction forte.",
+            },
+        ]
+
+        selected = select_candidates([{}, {}], [], requested_count=5)
+
+        self.assertEqual(len(selected), 2)
+        evaluate.assert_called_once_with(
+            [{}, {}], [], model="gemini-3.6-flash", selection_count=5
+        )
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
+    @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
+    def test_evaluate_candidates_rejects_wrong_selection_count(self, get_client) -> None:
+        get_client.return_value = FakeGeminiClient(
+            '{"evaluations":[{"candidate_id":"candidate_1",'
+            '"interesting":true,"score":90,"justification":"Moment fort."}]}'
+        )
+        candidates = [
+            {"start": 1, "end": 2, "score": 1},
+            {"start": 3, "end": 4, "score": 1},
+        ]
+
+        with self.assertRaisesRegex(GeminiEvaluationError, "exactement 2"):
+            evaluate_candidates(candidates, [], selection_count=2)
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
+    @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
+    def test_evaluate_candidates_rejects_duplicate_selection_ids(self, get_client) -> None:
+        evaluation = (
+            '{"candidate_id":"candidate_1","interesting":true,'
+            '"score":90,"justification":"Moment fort."}'
+        )
+        get_client.return_value = FakeGeminiClient(
+            f'{{"evaluations":[{evaluation},{evaluation}]}}'
+        )
+        candidates = [
+            {"start": 1, "end": 2, "score": 1},
+            {"start": 3, "end": 4, "score": 1},
+        ]
+
+        with self.assertRaisesRegex(GeminiEvaluationError, "distincts"):
+            evaluate_candidates(candidates, [], selection_count=2)
 
     def test_save_evaluations_writes_json(self) -> None:
         evaluations = [

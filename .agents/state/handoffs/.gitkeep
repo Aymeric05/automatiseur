@@ -1,0 +1,11 @@
+# This directory holds structured handoff reports written by each agent role.
+#
+# Files written here:
+#   analyst-report.md   (if analyst role is introduced later)
+#   developer-report.md
+#   qa-report.md
+#   reviewer-report.md
+#
+# Each report is overwritten at the start of each new task cycle.
+# The Orchestrator reads these before deciding the next action.
+# These files are the source of truth for inter-agent handoff — not conversation history.

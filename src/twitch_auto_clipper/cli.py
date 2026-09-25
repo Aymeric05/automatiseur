@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from threading import Event
 
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, load_chat_messages
@@ -17,7 +18,15 @@ from .gemini_evaluation import (
     select_candidate,
 )
 from .subtitles import generate_ass_subtitles, SubtitleGenerationError
+from .twitch_api import TwitchAPIClient, TwitchAPIError
+from .twitch_monitor import TwitchStreamMonitor, format_monitoring_cycle
 from .video import create_vertical_clip, validate_clip_times
+from .vod_acquisition import (
+    TwitchVODAcquisitionManager,
+    VODMonitoringCycle,
+    format_vod_acquisition_result,
+)
+from .vod_processing import VODProcessingPipeline, format_vod_processing_result
 from .youtube import (
     YouTubeUploadError,
     confirm_privacy_policy,
@@ -34,6 +43,33 @@ def build_parser() -> argparse.ArgumentParser:
         "--upload-youtube",
         action="store_true",
         help="Publie une video sur YouTube via OAuth 2.0.",
+    )
+    parser.add_argument(
+        "--list-twitch-streams",
+        action="store_true",
+        help="Liste les streams Twitch anglais les plus regardes.",
+    )
+    parser.add_argument(
+        "--monitor-twitch-once",
+        action="store_true",
+        help="Surveille les streams Twitch pendant un cycle de polling.",
+    )
+    parser.add_argument(
+        "--monitor-twitch",
+        action="store_true",
+        help="Surveille Twitch en continu et acquiert les VOD apres la fin des streams.",
+    )
+    parser.add_argument(
+        "--monitor-interval",
+        type=float,
+        default=60.0,
+        help="Intervalle de surveillance en secondes (defaut : 60).",
+    )
+    parser.add_argument(
+        "--stream-limit",
+        type=int,
+        default=20,
+        help="Nombre maximum de streams a afficher (defaut : 20).",
     )
     parser.add_argument("--video", type=Path, help="Fichier video a publier.")
     parser.add_argument("--title", help="Titre de la video YouTube.")
@@ -117,6 +153,78 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.monitor_twitch_once or args.monitor_twitch:
+        if args.monitor_interval <= 0:
+            parser.error("--monitor-interval doit etre positif.")
+        monitor = TwitchStreamMonitor(
+            polling_interval_seconds=args.monitor_interval
+        )
+        try:
+            manager = TwitchVODAcquisitionManager(monitor=monitor)
+        except ValueError as error:
+            print(f"Erreur d'etat VOD : {error}", file=sys.stderr)
+            return 1
+        processing_pipeline = VODProcessingPipeline()
+
+        def report_cycle(result: VODMonitoringCycle) -> None:
+            cycle = result.monitoring_cycle
+            for line in format_monitoring_cycle(cycle):
+                print(line, file=sys.stderr if cycle.error else sys.stdout)
+            for acquisition_result in result.acquisition_results:
+                is_error = acquisition_result.status == "error"
+                print(
+                    format_vod_acquisition_result(acquisition_result),
+                    file=sys.stderr if is_error else sys.stdout,
+                )
+                if (
+                    acquisition_result.status
+                    not in {"downloaded", "already_downloaded", "already_processed"}
+                    or acquisition_result.downloaded_path is None
+                ):
+                    continue
+                try:
+                    processing_result = processing_pipeline.process(acquisition_result)
+                except (OSError, ValueError) as error:
+                    print(f"Erreur de traitement VOD : {error}", file=sys.stderr)
+                    continue
+                for line in format_vod_processing_result(processing_result):
+                    print(line, file=sys.stderr if processing_result.errors else sys.stdout)
+
+        if args.monitor_twitch_once:
+            try:
+                result = manager.poll_once()
+            except (OSError, ValueError) as error:
+                print(f"Erreur VOD : {error}", file=sys.stderr)
+                return 1
+            report_cycle(result)
+            has_acquisition_error = any(
+                item.status == "error" for item in result.acquisition_results
+            )
+            return 1 if result.monitoring_cycle.error or has_acquisition_error else 0
+
+        try:
+            manager.run(report_cycle, Event())
+        except KeyboardInterrupt:
+            print("Surveillance Twitch arretee.")
+        return 0
+
+    if args.list_twitch_streams:
+        if args.stream_limit < 1:
+            parser.error("--stream-limit doit etre positif.")
+        try:
+            streams = TwitchAPIClient().fetch_english_streams(limit=args.stream_limit)
+        except TwitchAPIError as error:
+            print(f"Erreur Twitch : {error}", file=sys.stderr)
+            return 1
+        for stream in streams:
+            print(
+                f"{stream.viewer_count:>8} viewers | {stream.broadcaster_name} "
+                f"(@{stream.broadcaster_login}) | {stream.game_name} | {stream.title}"
+            )
+        if not streams:
+            print("Aucun stream anglais en direct trouve.")
+        return 0
 
     if args.upload_youtube:
         if args.video is None or not args.title:
