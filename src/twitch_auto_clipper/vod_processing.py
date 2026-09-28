@@ -92,11 +92,13 @@ class VODProcessingPipeline:
                 errors.append(f"transcription: {error}")
                 self._save_manifest(manifest_path, manifest)
 
-        if manifest.get("chat_attempted"):
-            chat_status = str(manifest.get("chat_status", "unavailable"))
-            if chat_status == "downloaded":
-                chat_status = "already_completed"
+        if manifest.get("chat_status") == "downloaded" and self._valid_json_list(
+            timestamped_chat_path
+        ):
+            chat_status = "already_completed"
         else:
+            # Unavailable chat (missing or failed TwitchDownloaderCLI) is retried
+            # on every later run; an existing raw chat file is reused.
             chat_status = self._process_chat(
                 acquisition.vod_id,
                 chat_path,

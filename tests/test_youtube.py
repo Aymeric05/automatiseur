@@ -64,6 +64,38 @@ class FakeYouTubeService:
 
 
 class YouTubeTests(unittest.TestCase):
+    def test_token_missing_a_needed_scope_triggers_new_consent(self) -> None:
+        import json
+        from google.oauth2.credentials import Credentials
+        from twitch_auto_clipper.youtube import (
+            YOUTUBE_READONLY_SCOPE, YOUTUBE_UPLOAD_SCOPE, authenticate_youtube,
+        )
+
+        class FakeFlow:
+            scopes = None
+
+            @classmethod
+            def from_client_secrets_file(cls, path, scopes):
+                cls.scopes = scopes
+                return cls()
+
+            def run_local_server(self, port):
+                return type("Granted", (), {"to_json": lambda self: "{}"})()
+
+        dependencies = (None, Credentials, FakeFlow, lambda *a, **k: "service", Exception, None)
+        with tempfile.TemporaryDirectory() as directory, \
+                patch("twitch_auto_clipper.youtube._load_google_dependencies", return_value=dependencies):
+            token, secrets = Path(directory) / "token.json", Path(directory) / "client.json"
+            secrets.write_text("{}", encoding="utf-8")
+            token.write_text(json.dumps({  # fake test token, valid until 2099
+                "token": "t", "refresh_token": "r", "client_id": "c", "client_secret": "s",
+                "scopes": [YOUTUBE_UPLOAD_SCOPE], "expiry": "2099-01-01T00:00:00Z",
+            }), encoding="utf-8")
+            self.assertEqual(authenticate_youtube(secrets, token), "service")
+            self.assertIsNone(FakeFlow.scopes)  # upload-only token is enough without channel check
+            self.assertEqual(authenticate_youtube(secrets, token, "channel123"), "service")
+            self.assertEqual(FakeFlow.scopes, [YOUTUBE_UPLOAD_SCOPE, YOUTUBE_READONLY_SCOPE])
+
     @patch("twitch_auto_clipper.youtube._load_google_dependencies")
     def test_upload_video_uses_resumable_upload_and_returns_url(self, load_dependencies):
         fake_service = FakeYouTubeService()

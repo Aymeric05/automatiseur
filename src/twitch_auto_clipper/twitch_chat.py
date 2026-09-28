@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
@@ -9,6 +10,17 @@ from urllib.parse import urlparse
 
 class TwitchChatDownloadError(RuntimeError):
     """Raised when a Twitch chat replay cannot be downloaded."""
+
+
+# Project-local copy (not on PATH): <repo>/tools/TwitchDownloaderCLI/TwitchDownloaderCLI.exe
+LOCAL_CLI = Path(__file__).resolve().parents[2] / "tools" / "TwitchDownloaderCLI" / "TwitchDownloaderCLI.exe"
+
+
+def find_twitch_downloader_cli() -> str | None:
+    """Return the TwitchDownloaderCLI to run: the tools/ copy first, then PATH."""
+    if LOCAL_CLI.is_file():
+        return str(LOCAL_CLI)
+    return shutil.which("TwitchDownloaderCLI")
 
 
 def get_twitch_vod_id(url: str) -> str:
@@ -27,18 +39,35 @@ def get_twitch_vod_id(url: str) -> str:
     return path_parts[1]
 
 
-def download_twitch_chat(url: str, output_path: Path) -> Path:
-    """Download a Twitch VOD chat replay as JSON."""
+def download_twitch_chat(
+    url: str,
+    output_path: Path,
+    start_seconds: float | None = None,
+    end_seconds: float | None = None,
+) -> Path:
+    """Download a Twitch VOD chat replay as JSON.
+
+    ``start_seconds``/``end_seconds`` trim the replay (TwitchDownloaderCLI
+    ``-b``/``-e``, passed in milliseconds). Message offsets stay absolute
+    VOD seconds either way.
+    """
     vod_id = get_twitch_vod_id(url)
+    if start_seconds is not None and start_seconds < 0:
+        raise ValueError("Le debut du chat doit etre positif ou nul.")
+    if end_seconds is not None and end_seconds <= (start_seconds or 0):
+        raise ValueError("La fin du chat doit etre superieure au debut.")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     command = [
-        "TwitchDownloaderCLI",
+        find_twitch_downloader_cli() or "TwitchDownloaderCLI",
         "chatdownload",
         "-u",
         vod_id,
-        "-o",
-        str(output_path),
     ]
+    if start_seconds:
+        command += ["-b", f"{round(start_seconds * 1000)}ms"]
+    if end_seconds is not None:
+        command += ["-e", f"{round(end_seconds * 1000)}ms"]
+    command += ["-o", str(output_path)]
 
     try:
         subprocess.run(command, check=True, capture_output=True, text=True)

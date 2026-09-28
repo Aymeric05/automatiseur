@@ -106,8 +106,14 @@ class TwitchVODAcquisitionManager:
 
             if vod.vod_id in self._processed_vod_ids:
                 self._remember_processed(stream_id, vod.vod_id)
+                known_path = self.input_dir / f"{vod.vod_id}.mp4"
                 results.append(
-                    self._result(monitored, "already_processed", vod_id=vod.vod_id)
+                    self._result(
+                        monitored,
+                        "already_processed",
+                        vod_id=vod.vod_id,
+                        downloaded_path=known_path if known_path.is_file() else None,
+                    )
                 )
                 del self._pending_streams[stream_id]
                 continue
@@ -150,11 +156,12 @@ class TwitchVODAcquisitionManager:
         self,
         on_cycle: Callable[[VODMonitoringCycle], None],
         stop_event: Event,
+        max_cycles: int | None = None,
     ) -> None:
         def handle_monitoring_cycle(cycle: MonitoringCycle) -> None:
             on_cycle(VODMonitoringCycle(cycle, self.process_cycle(cycle)))
 
-        self.monitor.run(handle_monitoring_cycle, stop_event)
+        self.monitor.run(handle_monitoring_cycle, stop_event, max_cycles=max_cycles)
 
     def _load_state(self) -> None:
         try:

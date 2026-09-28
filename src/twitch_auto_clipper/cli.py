@@ -1,15 +1,18 @@
 """Command-line interface for the first local clipping workflow."""
 
 import argparse
+from functools import partial
+import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from threading import Event
 
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
-from .chat_activity import ChatActivityError, add_chat_messages, load_chat_messages
+from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
 from .gemini_evaluation import (
     GeminiEvaluationError,
     evaluate_candidates,
@@ -23,12 +26,24 @@ from .twitch_monitor import TwitchStreamMonitor, format_monitoring_cycle
 from .video import create_vertical_clip, validate_clip_times
 from .vod_acquisition import (
     TwitchVODAcquisitionManager,
+    VODAcquisitionResult,
     VODMonitoringCycle,
     format_vod_acquisition_result,
 )
-from .vod_processing import VODProcessingPipeline, format_vod_processing_result
+from .shorts_upload import VODShortsUploader
+from .twitch import TwitchDownloadError, download_twitch_vod
+from .twitch_chat import download_twitch_chat, find_twitch_downloader_cli
+from .vod_shorts import VODShortsGenerator
+from .vod_highlights import VODHighlightSelector
+from .vod_pipeline import (
+    VODAutomationPipeline,
+    find_unfinished_vods,
+    format_vod_automation_result,
+)
+from .vod_processing import VODProcessingPipeline
 from .youtube import (
     YouTubeUploadError,
+    authenticate_youtube,
     confirm_privacy_policy,
     confirm_upload_rights,
     upload_video,
@@ -64,6 +79,53 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=60.0,
         help="Intervalle de surveillance en secondes (defaut : 60).",
+    )
+    parser.add_argument(
+        "--process-vod",
+        metavar="VOD",
+        help=(
+            "Traite une VOD Twitch terminee (id ou URL) sans monitoring : telechargement si "
+            "necessaire, transcription, chat, Gemini, Shorts et metadonnees. Jamais d'upload."
+        ),
+    )
+    parser.add_argument(
+        "--clip-budget",
+        type=int,
+        default=2,
+        help="Avec --process-vod : nombre de Shorts vises (defaut : 2).",
+    )
+    parser.add_argument(
+        "--test-minutes",
+        type=float,
+        help=(
+            "Avec --process-vod : ne telecharge que les N premieres minutes, en 720p max, "
+            "dans data/test/ (separe des donnees de production)."
+        ),
+    )
+    parser.add_argument(
+        "--verbose-streams",
+        action="store_true",
+        help="Avec --monitor-twitch(-once) : liste chaque stream suivi et chaque changement de viewers.",
+    )
+    parser.add_argument(
+        "--check-config",
+        action="store_true",
+        help="Indique quelles integrations sont configurees (oui/non), sans afficher de secret.",
+    )
+    parser.add_argument(
+        "--max-cycles",
+        type=int,
+        default=None,
+        help="Avec --monitor-twitch : s'arrete apres ce nombre de cycles (defaut : illimite).",
+    )
+    parser.add_argument(
+        "--auto-upload-youtube",
+        action="store_true",
+        help=(
+            "Avec --monitor-twitch(-once) : publie automatiquement les Shorts "
+            "generes en prive sur YouTube, puis supprime le fichier local "
+            "apres confirmation de l'upload."
+        ),
     )
     parser.add_argument(
         "--stream-limit",
@@ -150,13 +212,123 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def config_report(args: argparse.Namespace) -> list[tuple[str, bool, bool]]:
+    """Return (label, configured, required_for_monitoring) without reading secrets."""
+    def env(name: str) -> bool:
+        return bool(os.environ.get(name, "").strip())
+
+    def module(name: str) -> bool:
+        return importlib.util.find_spec(name) is not None
+
+    return [
+        ("TWITCH_CLIENT_ID", env("TWITCH_CLIENT_ID"), True),
+        ("TWITCH_CLIENT_SECRET", env("TWITCH_CLIENT_SECRET"), True),
+        ("GEMINI_API_KEY", env("GEMINI_API_KEY"), True),
+        ("FFmpeg / FFprobe dans le PATH", bool(shutil.which("ffmpeg") and shutil.which("ffprobe")), True),
+        ("yt-dlp installe", module("yt_dlp"), True),
+        ("faster-whisper installe", module("faster_whisper"), True),
+        ("google-genai installe", module("google.genai"), True),
+        ("TwitchDownloaderCLI (tools/ ou PATH, chat)", find_twitch_downloader_cli() is not None, False),
+        ("YOUTUBE_PRIVACY_POLICY_URL (upload)", env("YOUTUBE_PRIVACY_POLICY_URL"), False),
+        ("YOUTUBE_EXPECTED_CHANNEL_ID (verification de chaine)", env("YOUTUBE_EXPECTED_CHANNEL_ID"), False),
+        ("Fichier OAuth YouTube (upload)", args.youtube_client_secrets.is_file(), False),
+        ("Token YouTube local (upload)", args.youtube_token.is_file(), False),
+    ]
+
+
+def process_vod(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """Run the VOD pipeline on one finished VOD. Publication is never enabled."""
+    if args.auto_upload_youtube or args.upload_youtube:
+        parser.error("--process-vod ne publie jamais : retirez l'option d'upload YouTube.")
+    if args.clip_budget < 1:
+        parser.error("--clip-budget doit etre positif.")
+    if args.test_minutes is not None and args.test_minutes <= 0:
+        parser.error("--test-minutes doit etre positif.")
+    vod_id = args.process_vod.rstrip("/").split("/")[-1]
+    if not vod_id.isdigit():
+        parser.error("--process-vod attend un id numerique ou une URL twitch.tv/videos/<id>.")
+
+    root = Path("data/test") if args.test_minutes else Path("data")
+    input_dir, output_dir = root / "input", root / "output"
+    try:
+        client = TwitchAPIClient()
+        vod = client.fetch_vod(vod_id)
+        if vod is None:
+            print(f"VOD {vod_id} introuvable sur Twitch.", file=sys.stderr)
+            return 1
+        # A VOD of a stream still on air keeps growing: refuse it. Any API
+        # error here propagates to the handler below and stops processing.
+        live = client.fetch_live_streams_by_user_ids([vod.broadcaster_id]).get(vod.broadcaster_id)
+        if live is not None and (not vod.stream_id or live.stream_id == vod.stream_id):
+            print(
+                f"VOD {vod_id} refusee : le stream {vod.broadcaster_name} est encore en cours"
+                + ("." if vod.stream_id else " (stream_id de la VOD inconnu, fin non verifiable)."),
+                file=sys.stderr,
+            )
+            return 1
+        source = input_dir / f"{vod_id}.mp4"
+        if source.is_file() and source.stat().st_size > 0:
+            print(f"VOD deja presente : {source}")
+        else:
+            print(f"Telechargement de la VOD {vod_id} vers {input_dir} ...")
+            source = download_twitch_vod(
+                f"https://www.twitch.tv/videos/{vod_id}",
+                input_dir,
+                max_seconds=args.test_minutes * 60 if args.test_minutes else None,
+                max_height=720 if args.test_minutes else None,
+            )
+    except (TwitchAPIError, TwitchDownloadError, OSError, ValueError) as error:
+        print(f"Erreur : {error}", file=sys.stderr)
+        return 1
+
+    acquisition = VODAcquisitionResult(
+        stream_id=vod.stream_id,
+        clip_budget=args.clip_budget,
+        status="downloaded",
+        broadcaster_id=vod.broadcaster_id,
+        broadcaster_login=vod.broadcaster_login,
+        broadcaster_name=vod.broadcaster_name,
+        vod_id=vod_id,
+        downloaded_path=source,
+    )
+    # Test mode: only the chat of the downloaded extract.
+    chat_downloader = (
+        partial(download_twitch_chat, end_seconds=args.test_minutes * 60)
+        if args.test_minutes
+        else None
+    )
+    automation = VODAutomationPipeline(
+        processing_pipeline=VODProcessingPipeline(output_dir, chat_downloader=chat_downloader),
+        highlight_selector=VODHighlightSelector(output_dir, model=args.gemini_model),
+        shorts_generator=VODShortsGenerator(output_dir),
+        uploader=None,  # never publish from --process-vod
+        output_dir=output_dir,
+    )
+    result = automation.run(acquisition)
+    is_failure = result.status != "completed"
+    for line in format_vod_automation_result(result):
+        print(line, file=sys.stderr if is_failure else sys.stdout)
+    return 1 if is_failure else 0
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
+    if args.check_config:
+        report = config_report(args)
+        for label, configured, required in report:
+            print(f"{'oui' if configured else 'NON'}  {label}{'' if required else ' [optionnel]'}")
+        return 0 if all(configured for _, configured, required in report if required) else 1
+
+    if args.process_vod:
+        return process_vod(args, parser)
+
     if args.monitor_twitch_once or args.monitor_twitch:
         if args.monitor_interval <= 0:
             parser.error("--monitor-interval doit etre positif.")
+        if args.max_cycles is not None and args.max_cycles < 1:
+            parser.error("--max-cycles doit etre positif.")
         monitor = TwitchStreamMonitor(
             polling_interval_seconds=args.monitor_interval
         )
@@ -165,11 +337,53 @@ def main() -> int:
         except ValueError as error:
             print(f"Erreur d'etat VOD : {error}", file=sys.stderr)
             return 1
-        processing_pipeline = VODProcessingPipeline()
+        uploader = None
+        if args.auto_upload_youtube:
+            expected_channel_id = os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID", "")
+            if not expected_channel_id:
+                print(
+                    "Avertissement : YOUTUBE_EXPECTED_CHANNEL_ID n'est pas configuree; "
+                    "la verification de chaine n'est pas active.",
+                    file=sys.stderr,
+                )
+            try:
+                if not confirm_upload_rights():
+                    print("Upload automatique annule : droits non confirmes.", file=sys.stderr)
+                    return 1
+                if not confirm_privacy_policy(os.environ.get("YOUTUBE_PRIVACY_POLICY_URL", "")):
+                    print("Upload automatique annule : Privacy Policy non acceptee.", file=sys.stderr)
+                    return 1
+                # Authenticate now, while the user is present: an expired or
+                # missing token would otherwise open the OAuth browser flow in
+                # the middle of unattended monitoring and block the loop.
+                authenticate_youtube(
+                    args.youtube_client_secrets,
+                    args.youtube_token,
+                    expected_channel_id or None,
+                )
+            except YouTubeUploadError as error:
+                print(f"Erreur : {error}", file=sys.stderr)
+                return 1
+            uploader = VODShortsUploader(
+                client_secrets_path=args.youtube_client_secrets,
+                token_path=args.youtube_token,
+                expected_channel_id=expected_channel_id or None,
+            )
+        automation = VODAutomationPipeline(
+            processing_pipeline=VODProcessingPipeline(),
+            highlight_selector=VODHighlightSelector(model=args.gemini_model),
+            uploader=uploader,
+        )
+
+        def run_automation(acquisition_result: VODAcquisitionResult) -> None:
+            automation_result = automation.run(acquisition_result)
+            is_failure = automation_result.status in {"error", "partial"}
+            for line in format_vod_automation_result(automation_result):
+                print(line, file=sys.stderr if is_failure else sys.stdout)
 
         def report_cycle(result: VODMonitoringCycle) -> None:
             cycle = result.monitoring_cycle
-            for line in format_monitoring_cycle(cycle):
+            for line in format_monitoring_cycle(cycle, verbose=args.verbose_streams):
                 print(line, file=sys.stderr if cycle.error else sys.stdout)
             for acquisition_result in result.acquisition_results:
                 is_error = acquisition_result.status == "error"
@@ -183,30 +397,32 @@ def main() -> int:
                     or acquisition_result.downloaded_path is None
                 ):
                     continue
-                try:
-                    processing_result = processing_pipeline.process(acquisition_result)
-                except (OSError, ValueError) as error:
-                    print(f"Erreur de traitement VOD : {error}", file=sys.stderr)
-                    continue
-                for line in format_vod_processing_result(processing_result):
-                    print(line, file=sys.stderr if processing_result.errors else sys.stdout)
-
-        if args.monitor_twitch_once:
-            try:
-                result = manager.poll_once()
-            except (OSError, ValueError) as error:
-                print(f"Erreur VOD : {error}", file=sys.stderr)
-                return 1
-            report_cycle(result)
-            has_acquisition_error = any(
-                item.status == "error" for item in result.acquisition_results
-            )
-            return 1 if result.monitoring_cycle.error or has_acquisition_error else 0
+                run_automation(acquisition_result)
 
         try:
-            manager.run(report_cycle, Event())
+            # Retry VODs whose automation failed or was interrupted last time.
+            for unfinished in find_unfinished_vods():
+                print(f"Reprise du traitement inacheve de la VOD {unfinished.vod_id}.")
+                run_automation(unfinished)
+
+            if args.monitor_twitch_once:
+                try:
+                    result = manager.poll_once()
+                except (OSError, ValueError) as error:
+                    print(f"Erreur VOD : {error}", file=sys.stderr)
+                    return 1
+                report_cycle(result)
+                has_acquisition_error = any(
+                    item.status == "error" for item in result.acquisition_results
+                )
+                return 1 if result.monitoring_cycle.error or has_acquisition_error else 0
+
+            manager.run(report_cycle, Event(), max_cycles=args.max_cycles)
         except KeyboardInterrupt:
+            # Files are only removed after a confirmed upload, so an interruption
+            # keeps every VOD, transcript, manifest and unpublished Short.
             print("Surveillance Twitch arretee.")
+            return 130
         return 0
 
     if args.list_twitch_streams:
@@ -287,7 +503,9 @@ def main() -> int:
                 )
             if args.chat_json:
                 messages = load_chat_messages(args.chat_json)
-                candidates = add_chat_messages(candidates, messages, args.chat_window)
+                candidates = add_chat_signals(
+                    add_chat_messages(candidates, messages, args.chat_window), messages
+                )
             candidate_index, evaluation = select_candidate(
                 candidates, transcript, model=args.gemini_model
             )

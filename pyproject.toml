@@ -12,8 +12,15 @@ dependencies = [
 	"google-auth>=2.0.0",
 	"google-auth-oauthlib>=1.0.0",
 	"google-auth-httplib2>=0.2.0",
-	"opencv-python-headless>=4.9.0",
+	"google-genai>=2.0.0",
+	"yt-dlp>=2024.3.10",
+	"faster-whisper>=1.0.0",
 ]
+
+[project.optional-dependencies]
+# Face-aware framing for the manual clip commands only (framing.py falls back
+# to a centered crop without it). Automated Shorts never use face framing.
+framing = ["opencv-python-headless>=4.9.0"]
 
 [project.scripts]
 tac = "twitch_auto_clipper.cli:main"

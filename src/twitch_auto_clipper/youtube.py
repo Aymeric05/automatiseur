@@ -74,7 +74,8 @@ def authenticate_youtube(
     credentials = None
     try:
         if token_path.is_file():
-            credentials = Credentials.from_authorized_user_file(str(token_path), scopes)
+            # No scopes argument: it would replace the scopes the token was granted.
+            credentials = Credentials.from_authorized_user_file(str(token_path))
             if not credentials.scopes or not set(scopes).issubset(credentials.scopes):
                 credentials = None
         if credentials is None or not credentials.valid:

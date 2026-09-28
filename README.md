@@ -5,9 +5,9 @@ activity, acquires their VODs once they end, transcribes them, collects Twitch c
 replay data, identifies potential highlight moments with heuristics, and uses Gemini
 to select the best candidates for vertical short-form video clips.
 
-> **Status:** The pipeline through Gemini highlight selection and single-clip generation
-> is implemented and tested. Multi-clip generation, YouTube automation, and publishing to
-> Instagram Reels / TikTok are planned but not yet implemented.
+> **Status:** The full pipeline — from live discovery to private YouTube Shorts publication
+> with post-upload cleanup — is implemented and tested. Publishing to Instagram Reels /
+> TikTok is planned but not yet implemented.
 
 ---
 
@@ -24,12 +24,13 @@ to select the best candidates for vertical short-form video clips.
 | Heuristic highlight candidate detection | ✅ Implemented |
 | Gemini highlight selection (single or multi-candidate) | ✅ Implemented |
 | Vertical clip generation (9:16, FFmpeg) | ✅ Implemented |
-| Face-aware horizontal framing (OpenCV, CPU) | ✅ Implemented |
+| Face-aware horizontal framing (OpenCV, manual clip commands only) | ✅ Implemented |
 | ASS subtitle generation from word-level timestamps | ✅ Implemented |
 | Manual YouTube Shorts upload | ✅ Implemented |
-| Automated multi-clip generation per VOD (clip budget) | 🔲 Planned |
-| AI-generated titles and descriptions | 🔲 Planned |
-| Automatic post-upload local file cleanup | 🔲 Planned |
+| Automated multi-clip Shorts generation per VOD (clip budget, dynamic subtitles) | ✅ Implemented |
+| Titles and descriptions from the clip's real transcript | ✅ Implemented |
+| Automatic private YouTube upload (`--auto-upload-youtube`) | ✅ Implemented |
+| Automatic post-upload local file cleanup | ✅ Implemented |
 | Instagram Reels publishing | 🔲 Planned |
 | TikTok publishing | 🔲 Planned |
 | Cloud / always-on deployment | 🔲 Planned |
@@ -44,7 +45,8 @@ to select the best candidates for vertical short-form video clips.
 - [TwitchDownloaderCLI](https://github.com/lay295/TwitchDownloader) — for chat replay
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — for transcription
 - `google-genai` Python package — for Gemini evaluation
-- `opencv-python-headless` — for face-aware framing (optional, falls back to center crop)
+- `opencv-python-headless` — optional, face-aware framing for the manual clip commands
+  (`pip install -e .[framing]`); automated Shorts always use a centered frame
 - Google OAuth Desktop credentials — for YouTube upload
 
 Verify FFmpeg is available:
@@ -63,11 +65,12 @@ python -m venv .venv
 python -m pip install -e .
 ```
 
-The base install (`pyproject.toml` dependencies) covers YouTube upload and OpenCV framing.
-Install optional runtime dependencies as needed:
+The base install covers the whole pipeline (yt-dlp, faster-whisper, google-genai and the
+YouTube API clients). FFmpeg and TwitchDownloaderCLI must be installed separately and be in
+`PATH`. For face-aware framing in the manual clip commands:
 
 ```powershell
-pip install faster-whisper yt-dlp google-genai
+python -m pip install -e .[framing]
 ```
 
 ---
@@ -118,6 +121,15 @@ authorize the channel. The token is then saved locally to `youtube-token.json`
 
 ## Usage
 
+### Check the configuration
+
+```powershell
+python -m twitch_auto_clipper --check-config
+```
+
+Prints `oui`/`NON` for each integration (Twitch, Gemini, FFmpeg, TwitchDownloaderCLI,
+YouTube). Secret values are never printed and nothing is uploaded.
+
 ### List live English Twitch streams
 
 ```powershell
@@ -143,10 +155,44 @@ automatically after download.
 python -m twitch_auto_clipper --monitor-twitch --monitor-interval 60
 ```
 
-Polls Twitch every 60 seconds. Streams with a non-zero clip budget trigger automatic
-VOD download, transcription, chat replay download, and Gemini highlight selection when
-they end. State is persisted to `data/output/twitch_vod_state.json` to avoid
-reprocessing.
+Polls Twitch every 60 seconds. Only streams with a non-zero clip budget (5,000+ viewers by
+default) are listed and tracked, so a cycle takes about a second. A tracked stream missing
+from the list (for example after dropping below 5,000 viewers) is checked directly with
+Twitch; it is considered ended only after three consecutive successful offline checks
+(failed API calls do not count). The clip budget of an ended stream is computed from
+the highest viewer count reached during that live session (a relaunch with a new stream ID
+starts a new session). Output is a per-cycle summary; add `--verbose-streams`
+to list every tracked stream and viewer change. When a stream with a non-zero clip budget ends, its VOD is
+downloaded, then transcribed, its chat replay collected, highlight candidates detected,
+the best moments selected by Gemini within the clip budget, and one vertical Short with
+dynamic subtitles generated per selected moment (`data/output/<vod>_candidate_N_short.mp4`).
+Each step is resumable: finished transcripts, selections, Shorts and uploads are reused.
+State is persisted to `data/output/twitch_vod_state.json` and
+`data/output/<vod>_processing.json`.
+
+To also publish the Shorts automatically, add `--auto-upload-youtube`:
+
+```powershell
+python -m twitch_auto_clipper --monitor-twitch --auto-upload-youtube
+```
+
+Upload rights and the Privacy Policy are confirmed, and YouTube OAuth is checked, once at
+startup. Shorts are uploaded
+as **private**, with a title and description built from what is actually said in the clip.
+A local Short is deleted only after YouTube confirms the upload with a video ID; on any
+failure or interruption it is kept for a retry. Source VODs, transcripts, chat files and
+manifests are never deleted.
+
+### Bounded run (testing)
+
+```powershell
+python -m twitch_auto_clipper --monitor-twitch --max-cycles 3 --monitor-interval 30
+```
+
+Stops after three polling cycles. Without `--max-cycles` the monitoring runs until Ctrl+C.
+At startup, VODs whose previous automation failed or was interrupted (and whose source
+file still exists) are resumed first; finished steps are reused. Ctrl+C never deletes
+unpublished Shorts.
 
 ### Generate a clip manually (time range)
 
@@ -245,12 +291,7 @@ GitHub repository. The site contains no OAuth credentials, API keys, or tokens.
 
 Planned work, in approximate priority order:
 
-- **Multi-clip generation per VOD** — generate one clip per Gemini-selected candidate,
-  up to the assigned clip budget, rather than just one clip.
-- **Automated post-upload cleanup** — delete local VOD and clip files only after a
-  successful YouTube upload confirmation, to avoid data loss on failure.
-- **AI-generated metadata** — use Gemini to generate titles, descriptions, and tags
-  for each Short automatically.
+- **Richer metadata** — optionally let Gemini rephrase titles from the clip transcript.
 - **Instagram Reels publishing** — automated upload after YouTube.
 - **TikTok publishing** — automated upload after YouTube.
 - **Cloud deployment** — run the monitoring and processing pipeline on a server or

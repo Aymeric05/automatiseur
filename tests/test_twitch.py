@@ -41,8 +41,28 @@ class TwitchTests(unittest.TestCase):
                 Path(temporary_directory),
             )
 
-        self.assertEqual(output_path.name, "123.mp4")
+        # Named after the numeric VOD id, not yt-dlp's "v<id>".
+        self.assertEqual(output_path.name, "123456.mp4")
         self.assertTrue(get_youtube_dl.called)
+
+    def test_download_can_be_limited_in_duration_and_resolution(self) -> None:
+        seen = {}
+
+        class RecordingYoutubeDL(FakeYoutubeDL):
+            def __init__(self, options):
+                super().__init__(options)
+                seen.update(options)
+
+        with tempfile.TemporaryDirectory() as temporary_directory, patch(
+            "twitch_auto_clipper.twitch._get_youtube_dl", return_value=RecordingYoutubeDL
+        ):
+            download_twitch_vod(
+                "https://www.twitch.tv/videos/123456", Path(temporary_directory),
+                max_seconds=600, max_height=720,
+            )
+
+        self.assertIn("height<=720", seen["format"])
+        self.assertIn("download_ranges", seen)
 
 
 if __name__ == "__main__":

@@ -43,19 +43,45 @@ class GeminiEvaluationTests(unittest.TestCase):
                 "score": 2.5,
                 "chat_messages": 12,
                 "chat_message_details": [
-                    {"timestamp": 12.0, "text": "Pog!"}
+                    {"timestamp": 12.0, "text": "raw message never sent"}
                 ],
+                "chat_signal": {
+                    "messages": 12, "rate": 1.2, "activity_ratio": 2.5, "distinct_authors": 11,
+                    "laugh_ratio": 0.4, "short_reaction_ratio": 0.2, "top_reactions": [["lol", 4]],
+                    "sample_messages": ["Pog! what a play"], "reliable": True,
+                },
             }
         ]
-        transcription = [{"start": 10.0, "end": 15.0, "text": "No way!"}]
+        transcription = [
+            {"start": 0.0, "end": 9.0, "text": "Watch this."},
+            {"start": 10.0, "end": 15.0, "text": "No way!"},
+            {"start": 16.0, "end": 20.0, "text": "I told you."},
+        ]
 
         evaluations = evaluate_candidates(candidates, transcription)
 
         self.assertEqual(evaluations[0]["candidate_id"], "candidate_1")
         self.assertEqual(evaluations[0]["score"], 91)
         self.assertIn("No way", client.arguments["input"])
-        self.assertIn("chat_messages", client.arguments["input"])
-        self.assertIn("Pog!", client.arguments["input"])
+        prompt = client.arguments["input"]
+        [sent], _ = json.JSONDecoder().raw_decode(prompt.split("\n\n", 1)[1])
+        self.assertEqual(sent["transcript"], "No way!")
+        self.assertEqual((sent["context_before"], sent["context_after"]), ("Watch this.", "I told you."))
+        self.assertEqual(sent["chat"]["top_reactions"], [["lol", 4]])
+        self.assertEqual(sent["chat"]["sample_messages"], ["Pog! what a play"])
+        self.assertTrue(sent["chat"]["reliable"])
+        self.assertNotIn("raw message never sent", prompt)  # compact summary only
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
+    @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
+    def test_candidates_without_chat_send_null_chat(self, get_client) -> None:
+        client = FakeGeminiClient(
+            '{"evaluations":[{"candidate_id":"candidate_1",'
+            '"interesting":false,"score":10,"justification":"Plat."}]}'
+        )
+        get_client.return_value = client
+        evaluate_candidates([{"start": 1.0, "end": 4.0, "score": 1}], [])
+        self.assertIn('"chat": null', client.arguments["input"])
         self.assertEqual(client.arguments["model"], "gemini-3.6-flash")
         self.assertEqual(client.arguments["response_format"], EVALUATION_RESPONSE_FORMAT)
         self.assertEqual(
@@ -185,6 +211,22 @@ class GeminiEvaluationTests(unittest.TestCase):
             saved = json.loads(output_path.read_text(encoding="utf-8"))
 
         self.assertEqual(saved, evaluations)
+
+
+    def test_candidate_context_includes_what_is_said_around_the_clip(self) -> None:
+        from twitch_auto_clipper.gemini_evaluation import _candidate_context
+
+        transcription = [
+            {"start": 3, "end": 8, "text": "Earlier setup."},
+            {"start": 20, "end": 30, "text": "The actual moment."},
+            {"start": 32, "end": 36, "text": "The reaction after."},
+            {"start": 80, "end": 85, "text": "Unrelated later talk."},
+        ]
+        [context] = _candidate_context([{"start": 20, "end": 30, "score": 3}], transcription)
+        self.assertEqual(context["transcript"], "The actual moment.")
+        self.assertEqual(context["context_before"], "Earlier setup.")
+        self.assertEqual(context["context_after"], "The reaction after.")
+        self.assertEqual(context["duration"], 10.0)
 
 
 if __name__ == "__main__":

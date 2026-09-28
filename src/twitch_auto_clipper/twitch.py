@@ -28,21 +28,40 @@ def _get_youtube_dl():
     return YoutubeDL
 
 
-def download_twitch_vod(url: str, output_dir: Path) -> Path:
-    """Download a Twitch VOD and return its local path."""
+def download_twitch_vod(
+    url: str,
+    output_dir: Path,
+    max_seconds: float | None = None,
+    max_height: int | None = None,
+) -> Path:
+    """Download a Twitch VOD and return its local path (``<vod_id>.mp4``).
+
+    ``max_seconds`` keeps only the beginning of the VOD and ``max_height``
+    caps the resolution; both exist to keep test downloads small.
+    """
     if not is_twitch_vod_url(url):
         raise ValueError("L'URL doit etre une URL HTTPS de VOD Twitch valide.")
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    vod_id = urlparse(url).path.rstrip("/").split("/")[-1]
+    video_format = "bestvideo*+bestaudio/best"
+    if max_height:
+        video_format = f"bestvideo*[height<={max_height}]+bestaudio/best[height<={max_height}]"
     options = {
-        "outtmpl": str(output_dir / "%(id)s.%(ext)s"),
-        "format": "bestvideo*+bestaudio/best",
+        # Named after the numeric VOD id (yt-dlp's own id is "v<id>"), which is
+        # the name the acquisition manager looks for.
+        "outtmpl": str(output_dir / f"{vod_id}.%(ext)s"),
+        "format": video_format,
         "merge_output_format": "mp4",
         "noplaylist": True,
     }
 
     try:
         youtube_dl = _get_youtube_dl()
+        if max_seconds:
+            from yt_dlp.utils import download_range_func
+
+            options["download_ranges"] = download_range_func([], [(0, max_seconds)])
         with youtube_dl(options) as downloader:
             info = downloader.extract_info(url, download=True)
             downloaded_path = Path(downloader.prepare_filename(info))

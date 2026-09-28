@@ -5,10 +5,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .chat_activity import add_chat_messages
+from .chat_activity import add_chat_messages, add_chat_signals
 from .gemini_evaluation import GeminiEvaluationError, select_candidates
 from .highlights import HighlightAnalysisError, analyze_transcription, save_highlights
 from .vod_processing import VODProcessingResult
+
+MAX_GEMINI_CANDIDATES = 30  # best heuristic candidates sent to Gemini
 
 
 @dataclass(frozen=True)
@@ -44,10 +46,10 @@ class VODHighlightSelector:
 
         try:
             transcript = self._load_json_list(processed_vod.transcript_path)
-            candidates = analyze_transcription(transcript)
+            candidates = analyze_transcription(transcript, max_candidates=MAX_GEMINI_CANDIDATES)
             chat_messages = self._load_optional_chat(processed_vod.timestamped_chat_path)
             if chat_messages:
-                candidates = add_chat_messages(candidates, chat_messages)
+                candidates = add_chat_signals(add_chat_messages(candidates, chat_messages), chat_messages)
             else:
                 candidates = [
                     {
@@ -91,7 +93,7 @@ class VODHighlightSelector:
                 select_candidates(
                     candidates,
                     transcript,
-                    requested_count=budget,
+                    requested_count=requested_count,
                     model=self.model,
                 )
                 if requested_count

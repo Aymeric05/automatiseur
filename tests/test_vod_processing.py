@@ -101,7 +101,68 @@ class VODProcessingTests(unittest.TestCase):
             self.assertTrue(manifest["transcription_complete"])
             self.assertTrue(manifest["chat_attempted"])
 
-    def test_unavailable_chat_does_not_block_transcription_or_retry_chat(self) -> None:
+    def test_unavailable_chat_is_retried_and_succeeds_later(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            video_path = root / "vod-1.mp4"
+            video_path.write_bytes(b"video")
+
+            def download_chat(url: str, output_path: Path) -> Path:
+                output_path.write_text('{"comments": []}', encoding="utf-8")
+                return output_path
+
+            calls = []
+
+            def flaky(url, output_path):
+                calls.append(url)
+                if len(calls) == 1:
+                    raise TwitchChatDownloadError("TwitchDownloaderCLI est introuvable dans le PATH.")
+                return download_chat(url, output_path)
+
+            pipeline = VODProcessingPipeline(
+                output_dir=root / "output",
+                transcriber=Mock(return_value=[]),
+                chat_downloader=flaky,
+            )
+
+            first = pipeline.process(acquired_vod(video_path))
+            second = pipeline.process(acquired_vod(video_path))
+            third = pipeline.process(acquired_vod(video_path))
+            manifest = json.loads(
+                (root / "output" / "vod-1_processing.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(
+            [first.chat_status, second.chat_status, third.chat_status],
+            ["unavailable", "downloaded", "already_completed"],
+        )
+        self.assertEqual(len(calls), 2)  # valid chat never downloaded again
+        self.assertEqual(manifest["chat_status"], "downloaded")
+        self.assertNotIn("chat_error", manifest)
+
+    def test_existing_raw_chat_is_reused_when_timestamps_are_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            video_path = root / "vod-1.mp4"
+            video_path.write_bytes(b"video")
+            output = root / "output"
+            output.mkdir()
+            (output / "vod-1_chat.json").write_text('{"comments": []}', encoding="utf-8")
+            (output / "vod-1_processing.json").write_text(
+                json.dumps({"chat_attempted": True, "chat_status": "unavailable"}),
+                encoding="utf-8",
+            )
+            chat_downloader = Mock()
+            result = VODProcessingPipeline(
+                output_dir=output, transcriber=Mock(return_value=[]),
+                chat_downloader=chat_downloader,
+            ).process(acquired_vod(video_path))
+            self.assertTrue((output / "vod-1_chat_timestamps.json").is_file())
+
+        self.assertEqual(result.chat_status, "already_completed")
+        chat_downloader.assert_not_called()
+
+    def test_unavailable_chat_does_not_block_transcription(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             video_path = root / "vod-1.mp4"
@@ -125,7 +186,7 @@ class VODProcessingTests(unittest.TestCase):
         self.assertEqual(second.transcription_status, "already_completed")
         self.assertEqual(second.chat_status, "unavailable")
         transcriber.assert_called_once()
-        chat_downloader.assert_called_once()
+        self.assertEqual(chat_downloader.call_count, 2)  # retried, still unavailable
 
     def test_failed_transcription_can_retry_without_redownloading_chat(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

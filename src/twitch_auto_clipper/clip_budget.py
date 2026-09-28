@@ -28,6 +28,12 @@ class ClipBudgetPolicy:
                 raise ValueError("viewer thresholds must be strictly descending")
             previous_minimum = tier.minimum_viewers
 
+    @property
+    def minimum_eligible_viewers(self) -> int | None:
+        """Lowest viewer count that earns at least one clip (None if none do)."""
+        eligible = [tier.minimum_viewers for tier in self.tiers if tier.clip_count > 0]
+        return min(eligible) if eligible else None
+
     def clips_for_viewers(self, viewer_count: int) -> int:
         if viewer_count < 0:
             raise ValueError("viewer_count must be non-negative")

@@ -125,6 +125,24 @@ class VODAcquisitionTests(unittest.TestCase):
         client.find_vod_for_stream.assert_not_called()
         download.assert_not_called()
 
+    def test_known_vod_id_keeps_its_downloaded_path_for_processing(self) -> None:
+        client = Mock()
+        client.find_vod_for_stream.return_value = vod()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "input").mkdir()
+            (root / "input" / "vod-1.mp4").write_bytes(b"video")
+            (root / "state").mkdir()
+            (root / "state" / "vods.json").write_text(
+                '{"processed_streams": {}, "processed_vod_ids": ["vod-1"]}', encoding="utf-8"
+            )
+            manager = self.make_manager(temporary_directory, client)
+
+            result = manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))
+
+            self.assertEqual(result[0].status, "already_processed")
+            self.assertEqual(result[0].downloaded_path, root / "input" / "vod-1.mp4")
+
     def test_existing_vod_file_is_recorded_without_downloading(self) -> None:
         client = Mock()
         client.find_vod_for_stream.return_value = vod()

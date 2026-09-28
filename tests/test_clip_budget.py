@@ -68,5 +68,15 @@ class ClipBudgetTests(unittest.TestCase):
             )
 
 
+class DefaultThresholdTests(unittest.TestCase):
+    def test_default_tiers_are_unchanged(self) -> None:
+        from twitch_auto_clipper.clip_budget import DEFAULT_CLIP_BUDGET_POLICY as policy
+
+        cases = {100_000: 20, 99_999: 15, 50_000: 15, 49_999: 10, 20_000: 10,
+                 19_999: 5, 10_000: 5, 9_999: 2, 5_000: 2, 4_999: 0, 0: 0}
+        self.assertEqual({v: policy.clips_for_viewers(v) for v in cases}, cases)
+        self.assertEqual(policy.minimum_eligible_viewers, 5_000)
+
+
 if __name__ == "__main__":
     unittest.main()

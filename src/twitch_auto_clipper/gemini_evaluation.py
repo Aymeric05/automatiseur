@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any
 
 
+CONTEXT_SECONDS = 15.0  # transcript shared with Gemini before and after each candidate
+
+
 class GeminiEvaluationError(RuntimeError):
     """Raised when Gemini cannot evaluate highlight candidates."""
 
@@ -62,25 +65,34 @@ def _get_gemini_client():
 def _candidate_context(
     candidates: list[dict[str, Any]], transcription: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
+    def spoken(from_time: float, to_time: float) -> str:
+        return " ".join(
+            str(segment.get("text", "")).strip()
+            for segment in transcription
+            if float(segment.get("end", 0)) > from_time
+            and float(segment.get("start", 0)) < to_time
+        ).strip()
+
     context: list[dict[str, Any]] = []
     for index, candidate in enumerate(candidates, start=1):
         start = float(candidate["start"])
         end = float(candidate["end"])
-        transcript_text = " ".join(
-            str(segment.get("text", "")).strip()
-            for segment in transcription
-            if float(segment.get("end", 0)) >= start
-            and float(segment.get("start", 0)) <= end
-        ).strip()
+        signal = candidate.get("chat_signal")
         context.append(
             {
                 "candidate_id": f"candidate_{index}",
                 "start": start,
                 "end": end,
+                "duration": round(end - start, 1),
                 "heuristic_score": candidate.get("score", 0),
-                "chat_messages": candidate.get("chat_messages", 0),
-                "chat_message_details": candidate.get("chat_message_details", []),
-                "transcript": transcript_text,
+                # Compact chat summary, never the raw messages (hundreds per candidate).
+                "chat": {key: value for key, value in signal.items() if key != "rate"}
+                if isinstance(signal, dict)
+                else None,
+                "transcript": spoken(start, end),
+                # What is said just around the clip, to judge if it stands alone.
+                "context_before": spoken(start - CONTEXT_SECONDS, start),
+                "context_after": spoken(end, end + CONTEXT_SECONDS),
             }
         )
     return context
@@ -93,13 +105,22 @@ def _build_prompt(
     prompt = (
         "Evalue les candidats suivants pour un Short Twitch. "
         "Classe-les selon leur potentiel d'interet pour un public court. "
-        "Utilise la transcription, le score heuristique, le nombre de messages "
-        "et le contenu horodate des messages du chat lorsqu'ils sont disponibles. "
+        "Utilise d'abord la transcription, puis le score heuristique et le resume du chat. "
+        "chat (null si indisponible) resume les reactions du chat juste apres le clip : "
+        "messages, distinct_authors, activity_ratio (activite par rapport aux minutes voisines), "
+        "laugh_ratio, short_reaction_ratio, top_reactions (messages courts repetes, codes "
+        "propres a la chaine possibles) et sample_messages (quelques messages). "
+        "Le chat est un contexte secondaire, pas une preuve : une reaction peut viser un "
+        "evenement visuel absent de la transcription. Si reliable est false (debut de stream, "
+        "salutations, pas de reference), ne t'appuie pas sur le chat. "
         "Retourne uniquement un JSON valide sous la forme "
         '{"evaluations":[{"candidate_id":"candidate_1",'
         '"interesting":true,"score":0,"justification":"..."}]} . '
         "Le score Gemini doit etre entre 0 et 100. "
         "La justification doit etre courte et concrete. "
+        "transcript est le texte du clip ; context_before et context_after sont ce qui "
+        "est dit juste avant et apres : juge si le clip se comprend seul et forme un "
+        "moment complet. Base-toi sur le contenu reel, pas seulement sur le score heuristique. "
         "Conserve exactement les candidate_id fournis.\n\n"
         + json.dumps(context, ensure_ascii=False)
     )

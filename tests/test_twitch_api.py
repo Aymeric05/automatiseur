@@ -86,6 +86,86 @@ class TwitchAPITests(unittest.TestCase):
         next_page_request = urlopen.call_args_list[2].args[0]
         self.assertIn("after=next-page", next_page_request.full_url)
 
+    @patch.dict(
+        os.environ,
+        {"TWITCH_CLIENT_ID": "test-client-id", "TWITCH_CLIENT_SECRET": "test-secret"},
+        clear=True,
+    )
+    @patch("twitch_auto_clipper.twitch_api.urlopen")
+    def test_stream_repeated_across_pages_is_returned_once(self, urlopen) -> None:
+        urlopen.side_effect = [
+            FakeResponse({"access_token": "app-token"}),
+            FakeResponse({
+                "data": [stream_payload("one", 500), stream_payload("two", 400)],
+                "pagination": {"cursor": "next-page"},
+            }),
+            # Ordering shifted between pages: "two" appears again.
+            FakeResponse({
+                "data": [stream_payload("two", 390), stream_payload("three", 300)],
+                "pagination": {},
+            }),
+        ]
+
+        streams = TwitchAPIClient().fetch_english_streams()
+
+        self.assertEqual([s.stream_id for s in streams], ["one", "two", "three"])
+        self.assertEqual(streams[1].viewer_count, 400)  # first occurrence kept
+
+    @patch.dict(
+        os.environ,
+        {"TWITCH_CLIENT_ID": "test-client-id", "TWITCH_CLIENT_SECRET": "test-secret"},
+        clear=True,
+    )
+    @patch("twitch_auto_clipper.twitch_api.urlopen")
+    def test_pagination_stops_after_a_full_page_below_min_viewers(self, urlopen) -> None:
+        def page(items, cursor):
+            return FakeResponse({
+                "data": [stream_payload(name, viewers) for name, viewers in items],
+                "pagination": {"cursor": cursor} if cursor else {},
+            })
+
+        urlopen.side_effect = [
+            FakeResponse({"access_token": "app-token"}),
+            page([("a", 9_000), ("b", 6_000)], "p2"),
+            # Boundary page: mixed, with a small inversion (5_100 after 4_900).
+            page([("c", 4_900), ("d", 5_100)], "p3"),
+            page([("e", 4_800), ("f", 4_700)], "p4"),  # all below: stop here
+            page([("g", 100)], None),  # must never be requested
+        ]
+
+        streams = TwitchAPIClient().fetch_english_streams(min_viewers=5_000)
+
+        self.assertEqual([s.stream_id for s in streams], ["a", "b", "c", "d", "e", "f"])
+        self.assertEqual(urlopen.call_count, 4)  # token + 3 pages
+
+    @patch.dict(
+        os.environ,
+        {"TWITCH_CLIENT_ID": "test-client-id", "TWITCH_CLIENT_SECRET": "test-secret"},
+        clear=True,
+    )
+    @patch("twitch_auto_clipper.twitch_api.urlopen")
+    def test_live_status_lookup_is_batched_by_100_user_ids(self, urlopen) -> None:
+        live = dict(stream_payload("s7", 3_000), user_id="u7")
+        urlopen.side_effect = [
+            FakeResponse({"access_token": "app-token"}),
+            FakeResponse({"data": [live]}),
+            FakeResponse({"data": []}),
+        ]
+        user_ids = [f"u{i}" for i in range(150)] + ["u7"]  # duplicate ignored
+
+        result = TwitchAPIClient().fetch_live_streams_by_user_ids(user_ids)
+
+        self.assertEqual(list(result), ["u7"])
+        self.assertEqual(result["u7"].viewer_count, 3_000)
+        first, second = (call.args[0].full_url for call in urlopen.call_args_list[1:])
+        self.assertEqual(first.count("user_id="), 100)
+        self.assertEqual(second.count("user_id="), 50)
+
+    @patch("twitch_auto_clipper.twitch_api.urlopen")
+    def test_live_status_lookup_without_ids_makes_no_request(self, urlopen) -> None:
+        self.assertEqual(TwitchAPIClient().fetch_live_streams_by_user_ids([]), {})
+        urlopen.assert_not_called()
+
     @patch.dict(os.environ, {}, clear=True)
     def test_missing_credentials_raise_without_making_request(self) -> None:
         with patch("twitch_auto_clipper.twitch_api.urlopen") as urlopen:
