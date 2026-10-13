@@ -27,7 +27,7 @@ TRANSCRIPT = [
 ]
 
 
-def fake_gemini(candidates, transcript, requested_count, model, quota=None):
+def fake_gemini(candidates, transcript, requested_count, model, **options):
     return [
         {"candidate_id": f"candidate_{i}", "interesting": True, "score": 90 - i,
          "justification": f"why {i}"}
@@ -129,7 +129,7 @@ class VODAutomationPipelineTests(unittest.TestCase):
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates")
     def test_moments_gemini_finds_uninteresting_are_never_rendered(self, gemini):
-        def mixed(candidates, transcript, requested_count, model, quota=None):
+        def mixed(candidates, transcript, requested_count, model, **options):
             return [
                 {"candidate_id": "candidate_1", "interesting": True, "score": 80, "justification": "Drole."},
                 {"candidate_id": "candidate_2", "interesting": False, "score": 20, "justification": "Plat."},
