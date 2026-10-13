@@ -122,7 +122,11 @@ Required for publishing clips:
 $env:YOUTUBE_PRIVACY_POLICY_URL    = "https://aymeric05.github.io/automatiseur/privacy.html"
 $env:YOUTUBE_EXPECTED_CHANNEL_ID   = "YOUR_YOUTUBE_CHANNEL_ID"  # optional but recommended
 $env:YOUTUBE_MAX_UPLOADS_PER_DAY   = "6"  # optional, default 6
+$env:YOUTUBE_PRIVACY               = "private"  # optional: private (default), unlisted or public
 ```
+
+`YOUTUBE_PRIVACY` sets the visibility of automatic uploads. As long as YouTube has not
+audited the API project, it keeps every upload private whatever this value.
 
 `YOUTUBE_MAX_UPLOADS_PER_DAY` caps automatic uploads per YouTube quota day (the default
 10,000-unit daily quota allows about six uploads). Beyond it, Shorts stay on disk and are
@@ -222,7 +226,8 @@ python -m twitch_auto_clipper --monitor-twitch --auto-upload-youtube
 
 Upload rights and the Privacy Policy are confirmed, and YouTube OAuth is checked, once at
 startup. Shorts are uploaded
-as **private**, with a title and description built from what is actually said in the clip,
+as **private** (or as set by `YOUTUBE_PRIVACY`), with a title and description built from
+what is actually said in the clip,
 within the daily upload limit (`YOUTUBE_MAX_UPLOADS_PER_DAY`). A local Short is deleted only
 after YouTube confirms the upload with a video ID; on any failure or interruption it is
 kept for a retry. Transcripts and manifests are never deleted.
@@ -231,7 +236,7 @@ The console output can be redirected to a log file: it is then written in UTF-8.
 
 ### Automatic start at Windows logon
 
-`start_monitor.cmd` runs the monitoring with automatic private uploads and appends its
+`start_monitor.cmd` runs the monitoring with automatic uploads and appends its
 output to `data/output/monitor.log`. The Windows task "Twitch Auto Clipper" (Task
 Scheduler, trigger "At log on", 2-minute delay) starts it minimized. `--yes` gives the
 upload-rights and Privacy Policy confirmations in advance, since nobody is at the keyboard.
