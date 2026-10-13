@@ -12,6 +12,9 @@ class TwitchChatDownloadError(RuntimeError):
     """Raised when a Twitch chat replay cannot be downloaded."""
 
 
+CHAT_DOWNLOAD_TIMEOUT_SECONDS = 3600  # a long VOD's replay takes minutes, never an hour
+
+
 # Project-local copy (not on PATH): <repo>/tools/TwitchDownloaderCLI/TwitchDownloaderCLI.exe
 LOCAL_CLI = Path(__file__).resolve().parents[2] / "tools" / "TwitchDownloaderCLI" / "TwitchDownloaderCLI.exe"
 
@@ -57,6 +60,9 @@ def download_twitch_chat(
     if end_seconds is not None and end_seconds <= (start_seconds or 0):
         raise ValueError("La fin du chat doit etre superieure au debut.")
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Written under a temporary name (the .json extension selects the format) and
+    # renamed once complete: an interrupted download never looks like a replay.
+    partial_path = output_path.with_name(f"{output_path.stem}.part{output_path.suffix}")
     command = [
         find_twitch_downloader_cli() or "TwitchDownloaderCLI",
         "chatdownload",
@@ -67,10 +73,13 @@ def download_twitch_chat(
         command += ["-b", f"{round(start_seconds * 1000)}ms"]
     if end_seconds is not None:
         command += ["-e", f"{round(end_seconds * 1000)}ms"]
-    command += ["-o", str(output_path)]
+    command += ["-o", str(partial_path)]
 
     try:
-        subprocess.run(command, check=True, capture_output=True, text=True)
+        subprocess.run(
+            command, check=True, capture_output=True, text=True,
+            timeout=CHAT_DOWNLOAD_TIMEOUT_SECONDS,
+        )
     except FileNotFoundError as error:
         raise TwitchChatDownloadError(
             "TwitchDownloaderCLI est introuvable dans le PATH."
@@ -79,9 +88,14 @@ def download_twitch_chat(
         raise TwitchChatDownloadError(
             f"Echec du telechargement du chat Twitch (code {error.returncode})."
         ) from error
+    except subprocess.TimeoutExpired as error:
+        raise TwitchChatDownloadError(
+            f"Telechargement du chat Twitch interrompu apres {CHAT_DOWNLOAD_TIMEOUT_SECONDS} s."
+        ) from error
 
-    if not output_path.is_file() or output_path.stat().st_size == 0:
+    if not partial_path.is_file() or partial_path.stat().st_size == 0:
         raise TwitchChatDownloadError(
             f"Le telechargement est termine mais le fichier chat est vide : {output_path}"
         )
+    partial_path.replace(output_path)
     return output_path

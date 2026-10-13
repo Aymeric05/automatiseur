@@ -230,7 +230,44 @@ class TwitchStreamMonitorTests(unittest.TestCase):
                 downloader=Mock(return_value=Path(directory) / "in" / "vod-1.mp4"),
             )
             results = manager.process_cycle(cycles[-1])
-        self.assertEqual([(r.status, r.clip_budget) for r in results], [("downloaded", 15)])
+            [acquisition] = list(manager.acquire_due())
+        self.assertEqual([(r.status, r.clip_budget) for r in results], [("queued", 15)])
+        self.assertEqual((acquisition.status, acquisition.clip_budget), ("downloaded", 15))
+
+    def test_tracked_streams_and_peaks_survive_a_restart(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "monitor.json"
+            client = Mock()
+            client.fetch_english_streams.side_effect = [[make_stream("one", 70_000)], [make_stream("one", 30_000)]]
+            before = TwitchStreamMonitor(client=client, state_path=state)
+            before.poll_once()
+            before.poll_once()  # peak 70,000 kept while viewers drop
+
+            # Restart: the stream ended while the program was stopped.
+            client = Mock()
+            client.fetch_english_streams.return_value = []
+            client.fetch_live_streams_by_user_ids.return_value = {}
+            after = TwitchStreamMonitor(client=client, state_path=state)
+            cycles = [after.poll_once() for _ in range(3)]
+
+        [ended] = cycles[-1].ended_streams
+        self.assertEqual((ended.stream.stream_id, ended.peak_viewers, ended.clip_budget), ("one", 70_000, 15))
+
+    def test_unreadable_monitor_state_starts_afresh(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "monitor.json"
+            state.write_text("{not json", encoding="utf-8")
+            client = Mock()
+            client.fetch_english_streams.return_value = [make_stream("one", 6_000)]
+            cycle = TwitchStreamMonitor(client=client, state_path=state).poll_once()
+            self.assertEqual(len(cycle.newly_discovered), 1)
+            self.assertIn('"stream_id": "one"', state.read_text(encoding="utf-8"))
 
     def test_console_output_is_concise(self) -> None:
         from twitch_auto_clipper.twitch_monitor import format_monitoring_cycle

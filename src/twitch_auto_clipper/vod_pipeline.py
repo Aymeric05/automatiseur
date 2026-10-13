@@ -9,14 +9,21 @@ pipeline again only redoes the work that is missing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 import json
+import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata
 from .shorts_upload import ShortUploadResult, VODShortsUploader, format_short_upload_result
-from .vod_acquisition import VODAcquisitionResult
+from .vod_acquisition import (
+    MAX_ATTEMPTS,
+    TwitchVODAcquisitionManager,
+    VODAcquisitionResult,
+    format_vod_acquisition_result,
+)
 from .vod_highlights import (
     VODHighlightSelectionResult,
     VODHighlightSelector,
@@ -35,22 +42,46 @@ from .vod_shorts import (
 )
 
 READY_ACQUISITION_STATUSES = frozenset({"downloaded", "already_downloaded", "already_processed"})
+# Gemini answers 429 when the project's quota is used up (the free tier allows
+# 20 requests a day) and 503 when the model is overloaded: the VOD then waits,
+# without counting a failed attempt, instead of being abandoned.
+GEMINI_WAIT = timedelta(minutes=30)
+GEMINI_UNAVAILABLE_MARKERS = ("429", "resource_exhausted", "exceeded", "quota", "503", "unavailable", "high demand")
+
+
+def _gemini_retry_at(message: str | None) -> datetime | None:
+    """When to try Gemini again, or None if the error is not about its availability."""
+    text = (message or "").lower()
+    if not any(marker in text for marker in GEMINI_UNAVAILABLE_MARKERS):
+        return None
+    delay = re.search(r"retrydelay['\"]?\s*:\s*['\"]?(\d+)s", text)  # given by Google with a 429
+    wait = timedelta(seconds=int(delay.group(1)) + 60) if delay else GEMINI_WAIT
+    return datetime.now(timezone.utc) + wait
 
 
 @dataclass(frozen=True)
 class VODAutomationResult:
     vod_id: str | None
-    status: str  # "completed" | "partial" | "skipped" | "error"
+    status: str  # "completed" | "waiting_upload" | "waiting_gemini" | "partial" | "skipped" | "error"
     processing: VODProcessingResult | None = None
     selection: VODHighlightSelectionResult | None = None
     shorts: VODShortsGenerationResult | None = None
     metadata: tuple[tuple[str, ShortMetadata], ...] = ()
     uploads: tuple[ShortUploadResult, ...] = ()
     message: str | None = None
+    retry_at: datetime | None = None  # waiting statuses: when the quota should be back
 
 
 class VODAutomationPipeline:
-    """Chain the existing VOD stages and stop as soon as a required one fails."""
+    """Chain the existing VOD stages and stop as soon as a required one fails.
+
+    ``acquisition.downloaded_path`` is what gets transcribed (the VOD audio or a
+    full video). ``video_source`` gives the video the Shorts are cut from (by
+    default that same file); it is only called when a Short must be rendered.
+    With ``delete_sources_on_success``, the downloaded audio and the chat files
+    are deleted once the VOD is completed; transcript, selection, manifest and
+    unpublished Shorts are always kept.
+    """
 
     def __init__(
         self,
@@ -59,17 +90,24 @@ class VODAutomationPipeline:
         shorts_generator: VODShortsGenerator | None = None,
         uploader: VODShortsUploader | None = None,
         output_dir: Path = Path("data/output"),
+        video_source: Callable[[VODAcquisitionResult], Path | str] | None = None,
+        delete_sources_on_success: bool = False,
     ) -> None:
         self.output_dir = output_dir
         self.processing_pipeline = processing_pipeline or VODProcessingPipeline(output_dir)
         self.highlight_selector = highlight_selector or VODHighlightSelector(output_dir)
         self.shorts_generator = shorts_generator or VODShortsGenerator(output_dir)
         self.uploader = uploader  # None disables publication.
+        self.video_source = video_source
+        self.delete_sources_on_success = delete_sources_on_success
 
     def run(self, acquisition: VODAcquisitionResult) -> VODAutomationResult:
         result = self._run(acquisition)
         if result.processing is not None and result.vod_id:
-            self._update_manifest(result.vod_id, {"automation_status": result.status})
+            update: dict[str, Any] = {"automation_status": result.status}
+            if result.status == "completed" and self.delete_sources_on_success:
+                update["deleted_sources"] = self._delete_sources(acquisition.downloaded_path, result.processing)
+            self._update_manifest(result.vod_id, update)
         return result
 
     def _run(self, acquisition: VODAcquisitionResult) -> VODAutomationResult:
@@ -102,20 +140,33 @@ class VODAutomationPipeline:
         except Exception as error:
             return VODAutomationResult(vod_id, "error", processing, message=f"selection : {error}")
         if selection.status == "error":
+            retry_at = selection.retry_at or _gemini_retry_at(selection.error)
+            if retry_at is not None:
+                return VODAutomationResult(
+                    vod_id, "waiting_gemini", processing, selection,
+                    message=f"Gemini indisponible (quota ou surcharge) : {selection.error}",
+                    retry_at=retry_at,
+                )
             return VODAutomationResult(
                 vod_id, "error", processing, selection,
                 message=f"selection Gemini : {selection.error}",
             )
+        # Only the moments Gemini found worth a Short are rendered and published.
+        selection = replace(selection, selected=tuple(
+            item for item in selection.selected if item.get("gemini_interesting", True) is not False
+        ))
         if not selection.selected:
             return VODAutomationResult(
                 vod_id, "completed", processing, selection,
-                message="Aucun moment selectionne.",
+                message="Aucun moment assez interessant pour un Short.",
             )
 
         # 4. Shorts generation.
+        video_source = self.video_source
+        source: Any = (lambda: video_source(acquisition)) if video_source else source_path
         try:
             shorts = self.shorts_generator.generate(
-                selection, source_path, processing.transcript_path
+                selection, source, processing.transcript_path
             )
         except (ShortsGenerationError, OSError) as error:
             return VODAutomationResult(
@@ -131,7 +182,7 @@ class VODAutomationPipeline:
                 continue
             try:
                 metadata.append((
-                    short.candidate_id,
+                    short.key,
                     build_short_metadata(
                         broadcaster_name=processing.broadcaster_name,
                         broadcaster_login=processing.broadcaster_login,
@@ -144,22 +195,20 @@ class VODAutomationPipeline:
                     ),
                 ))
             except ShortMetadataError as error:
-                metadata_errors.append(f"{short.candidate_id} : {error}")
+                metadata_errors.append(f"{short.key} : {error}")
         self._record_metadata(vod_id, metadata)
 
         # 6. Private YouTube publication, only for Shorts that are ready.
         uploads: list[ShortUploadResult] = []
         if self.uploader is not None:
-            shorts_by_id = {short.candidate_id: short for short in shorts.shorts}
-            for candidate_id, short_metadata in metadata:
+            shorts_by_key = {short.key: short for short in shorts.shorts}
+            for key, short_metadata in metadata:
+                short = shorts_by_key[key]
                 try:
-                    uploads.append(
-                        self.uploader.upload(vod_id, shorts_by_id[candidate_id], short_metadata)
-                    )
+                    uploads.append(self.uploader.upload(vod_id, short, short_metadata))
                 except (OSError, ValueError) as error:
                     uploads.append(ShortUploadResult(
-                        candidate_id, shorts_by_id[candidate_id].output_path, "error",
-                        error=str(error),
+                        short.candidate_id, short.output_path, "error", error=str(error),
                     ))
 
         failed = (
@@ -167,20 +216,39 @@ class VODAutomationPipeline:
             or bool(metadata_errors)
             or any(upload.status == "error" for upload in uploads)
         )
+        waiting = any(upload.status == "deferred" for upload in uploads)
+        quota = self.uploader.quota if self.uploader is not None else None
         return VODAutomationResult(
             vod_id,
-            "partial" if failed else "completed",
+            "partial" if failed else "waiting_upload" if waiting else "completed",
             processing,
             selection,
             shorts,
             tuple(metadata),
             tuple(uploads),
             message="; ".join(f"metadonnees {error}" for error in metadata_errors) or None,
+            retry_at=quota.next_reset() if waiting and quota is not None else None,
         )
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _delete_sources(source_path: Path, processing: VODProcessingResult) -> list[str]:
+        """Delete the downloaded audio and the chat files of a completed VOD."""
+        candidates = [processing.chat_path, processing.timestamped_chat_path]
+        if "_audio." in source_path.name:  # never a full video the user put there
+            candidates.append(source_path)
+        deleted = []
+        for path in candidates:
+            try:
+                if path.is_file():
+                    path.unlink()
+                    deleted.append(path.name)
+            except OSError:
+                pass  # e.g. opened elsewhere on Windows: kept, nothing else depends on it
+        return deleted
 
     @staticmethod
     def _is_valid_file(path: Path) -> bool:
@@ -207,8 +275,8 @@ class VODAutomationPipeline:
             stored = manifest.get("shorts_metadata")
             if not isinstance(stored, dict):
                 stored = {}
-            for candidate_id, item in metadata:
-                stored[candidate_id] = {"title": item.title, "description": item.description}
+            for key, item in metadata:
+                stored[key] = {"title": item.title, "description": item.description}
             manifest["shorts_metadata"] = stored
 
         self._update_manifest(vod_id, merge)
@@ -235,41 +303,44 @@ class VODAutomationPipeline:
             pass
 
 
-def find_unfinished_vods(output_dir: Path = Path("data/output")) -> list[VODAcquisitionResult]:
-    """Rebuild acquisition results for VODs whose automation did not complete.
+def process_due_vods(
+    manager: TwitchVODAcquisitionManager,
+    automation: VODAutomationPipeline,
+    report: Callable[[str, bool], None],
+) -> int:
+    """Acquire and process every due VOD job once; returns how many were due.
 
-    VODs are marked as processed by the acquisition manager as soon as they are
-    downloaded, so a failed Gemini call, FFmpeg run or upload would otherwise
-    never be retried after a restart. Only VODs whose source file still exists
-    and whose manifest has a positive clip budget are returned.
+    Runs on the worker side, never in the monitoring loop. ``report`` receives
+    each line and whether it is an error.
     """
-    unfinished: list[VODAcquisitionResult] = []
-    for manifest_path in sorted(output_dir.glob("*_processing.json")):
+    count = 0
+    for acquisition in manager.acquire_due():
+        count += 1
+        report(format_vod_acquisition_result(acquisition), acquisition.status in {"error", "abandoned"})
+        if acquisition.status not in {"downloaded", "already_downloaded"}:
+            continue  # already rescheduled or closed by the manager
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if not isinstance(manifest, dict) or manifest.get("automation_status") == "completed":
-            continue
-        source = manifest.get("source_path")
-        budget = manifest.get("clip_budget")
-        vod_id = manifest.get("vod_id")
-        if not source or not isinstance(budget, int) or budget <= 0 or not vod_id:
-            continue
-        source_path = Path(source)
-        if not VODAutomationPipeline._is_valid_file(source_path):
-            continue
-        unfinished.append(VODAcquisitionResult(
-            stream_id=str(manifest.get("stream_id", "")),
-            clip_budget=budget,
-            status="already_processed",
-            broadcaster_id=str(manifest.get("broadcaster_id", "")),
-            broadcaster_login=str(manifest.get("broadcaster_login", "")),
-            broadcaster_name=str(manifest.get("broadcaster_name", "")),
-            vod_id=str(vod_id),
-            downloaded_path=source_path,
-        ))
-    return unfinished
+            result = automation.run(acquisition)
+        except Exception as error:  # an unexpected bug must not stop the worker
+            result = VODAutomationResult(acquisition.vod_id, "error", message=f"erreur inattendue : {error!r}")
+        for line in format_vod_automation_result(result):
+            report(line, result.status in {"error", "partial"})
+        outcome = manager.record_automation(
+            acquisition.stream_id, acquisition.vod_id, result.status,
+            retry_at=result.retry_at, error=result.message,
+        )
+        if outcome == "abandoned":
+            report(f"VOD {acquisition.vod_id} abandonnee apres {MAX_ATTEMPTS} echecs (fichiers conserves).", True)
+        elif outcome == "retry":
+            report(f"VOD {acquisition.vod_id} : nouvel essai automatique plus tard.", True)
+        elif outcome == "waiting" and result.status == "waiting_gemini":
+            report(
+                f"VOD {acquisition.vod_id} : Gemini indisponible, nouvel essai apres "
+                f"{result.retry_at:%Y-%m-%d %H:%M} UTC.", True,
+            )
+        elif outcome == "waiting":
+            report(f"VOD {acquisition.vod_id} : Shorts prets, uploads repris apres le quota YouTube.", False)
+    return count
 
 
 def format_vod_automation_result(result: VODAutomationResult) -> list[str]:
@@ -280,8 +351,8 @@ def format_vod_automation_result(result: VODAutomationResult) -> list[str]:
         lines.append(format_vod_highlight_selection(result.selection))
     if result.shorts is not None:
         lines.extend(format_vod_shorts_result(result.shorts))
-    for candidate_id, metadata in result.metadata:
-        lines.append(f"  [titre] {candidate_id} : {metadata.title}")
+    for key, metadata in result.metadata:
+        lines.append(f"  [titre] {key} : {metadata.title}")
     lines.extend(format_short_upload_result(upload) for upload in result.uploads)
     summary = f"Pipeline VOD {result.vod_id} : {result.status}"
     if result.message:

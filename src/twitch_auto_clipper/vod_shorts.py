@@ -23,7 +23,23 @@ class ShortsGenerationError(RuntimeError):
 ZOOM_OUT_EXTRA_WIDTH = 80
 # YouTube Shorts accepts videos up to three minutes.
 MAX_SHORT_DURATION = 180.0
+# Reading a few seconds from Twitch and encoding them never takes this long.
+FFMPEG_TIMEOUT_SECONDS = 1800
 SUCCESS_STATUSES = frozenset({"generated", "already_exists", "already_uploaded"})
+
+# A local video file, a stream URL, or a function returning one (called only
+# when a Short actually has to be rendered).
+VideoSource = Path | str | Callable[[], Path | str]
+
+
+def clip_id(item: dict[str, Any]) -> str:
+    """Stable identifier of a selected moment: its own start and end.
+
+    Gemini's ``candidate_N`` numbers depend on the order of the candidate list,
+    which changes when the transcript or the heuristic changes; files, the
+    manifest and YouTube uploads are therefore keyed by the moment itself.
+    """
+    return f"{float(item['start']):.1f}-{float(item['end']):.1f}"
 
 
 @dataclass(frozen=True)
@@ -32,7 +48,7 @@ class VODShortResult:
 
     vod_id: str
     candidate_id: str
-    source_path: Path
+    source_path: Path | str
     output_path: Path
     start: float
     end: float
@@ -45,6 +61,12 @@ class VODShortResult:
     candidate_end: float | None = None
     subtitles: bool = False
     warning: str | None = None
+    clip_id: str | None = None
+
+    @property
+    def key(self) -> str:
+        """Manifest and upload key: the moment's ``clip_id`` when known."""
+        return self.clip_id or self.candidate_id
 
     @property
     def succeeded(self) -> bool:
@@ -94,7 +116,7 @@ def _subtitles_filter(subtitles_path: Path) -> str:
 
 
 def _build_short_ffmpeg_command(
-    source_path: Path,
+    source_path: Path | str,
     output_path: Path,
     start: float,
     end: float,
@@ -166,7 +188,7 @@ class VODShortsGenerator:
     def generate(
         self,
         selection: VODHighlightSelectionResult,
-        source_path: Path,
+        source: VideoSource,
         transcript_path: Path | None = None,
     ) -> VODShortsGenerationResult:
         """Generate one Short per selected highlight.
@@ -175,8 +197,10 @@ class VODShortsGenerator:
         ----------
         selection:
             The Gemini selection result produced by VODHighlightSelector.
-        source_path:
-            Path to the downloaded source VOD file.
+        source:
+            The VOD video: a local file, a stream URL that FFmpeg reads only for
+            the needed seconds, or a function returning one. A function is
+            called only if a Short really has to be rendered.
         transcript_path:
             Optional transcript JSON with word timestamps, used to burn subtitles.
         """
@@ -187,9 +211,9 @@ class VODShortsGenerator:
             raise ShortsGenerationError(
                 f"La selection Gemini de {vod_id} n'est pas exploitable ({selection.status})."
             )
-        if not _is_valid_output(source_path):
+        if isinstance(source, Path) and not _is_valid_output(source):
             raise ShortsGenerationError(
-                f"Fichier source introuvable ou vide : {source_path}"
+                f"Fichier source introuvable ou vide : {source}"
             )
         if not selection.selected:
             return VODShortsGenerationResult(vod_id, selection.clip_budget, (), "empty")
@@ -200,22 +224,32 @@ class VODShortsGenerator:
         if not isinstance(uploaded, dict):
             uploaded = {}
 
-        vertical_filter = self._filter_builder(source_path)
-        try:
-            duration = float(self._duration_probe(source_path))
-            if duration <= 0:
-                raise ValueError("duree nulle")
-        except Exception:
-            duration = float("inf")  # FFmpeg stops at the end of the file anyway.
+        duration = float("inf")  # FFmpeg stops at the end of the VOD anyway.
+        if isinstance(source, Path):
+            try:
+                duration = float(self._duration_probe(source))
+                if duration <= 0:
+                    raise ValueError("duree nulle")
+            except Exception:
+                duration = float("inf")
         segments = self._load_segments(transcript_path)
+
+        resolved: list[Path | str] = []
+
+        def resolve_source() -> Path | str:
+            if not resolved:
+                try:
+                    resolved.append(source() if callable(source) else source)
+                except Exception as error:  # e.g. Twitch unreachable: retried on the next run
+                    raise ShortsGenerationError(f"Video de la VOD indisponible : {error}") from error
+            return resolved[0]
 
         shorts = [
             self._generate_one(
                 vod_id=vod_id,
                 item=item,
-                source_path=source_path,
+                source=resolve_source,
                 clip_budget=selection.clip_budget,
-                vertical_filter=vertical_filter,
                 duration=duration,
                 segments=segments,
                 already_uploaded=uploaded,
@@ -240,15 +274,19 @@ class VODShortsGenerator:
         *,
         vod_id: str,
         item: dict[str, Any],
-        source_path: Path,
+        source: Callable[[], Path | str],
         clip_budget: int,
-        vertical_filter: str,
         duration: float,
         segments: list[dict[str, Any]] | None,
         already_uploaded: dict[str, Any],
     ) -> VODShortResult:
         candidate_id = str(item.get("candidate_id", "unknown"))
-        output_path = self.output_dir / f"{vod_id}_{candidate_id}_short.mp4"
+        try:
+            key: str | None = clip_id(item)
+        except (KeyError, TypeError, ValueError):
+            key = None  # invalid bounds: reported as an error below
+        output_path = self.output_dir / f"{vod_id}_{key or candidate_id}_short.mp4"
+        source_path: Path | str = ""
         # The highlighted sentence inside the candidate (falls back to the whole candidate).
         candidate_start = self._number(item.get("highlight_start", item.get("start")))
         candidate_end = self._number(item.get("highlight_end", item.get("end")))
@@ -267,6 +305,7 @@ class VODShortsGenerator:
                 status=status,
                 candidate_start=candidate_start,
                 candidate_end=candidate_end,
+                clip_id=key,
                 **extra,
             )
 
@@ -275,7 +314,7 @@ class VODShortsGenerator:
         except ShortsGenerationError as error:
             return result("error", error=str(error))
 
-        if candidate_id in already_uploaded:
+        if key in already_uploaded:
             # Uploaded Shorts are deleted locally: never regenerate them.
             return result("already_uploaded", start, end)
         if _is_valid_output(output_path):
@@ -285,8 +324,10 @@ class VODShortsGenerator:
         temporary_path = output_path.with_name(f"{output_path.stem}.tmp.mp4")
         try:
             temporary_path.unlink(missing_ok=True)
+            source_path = source()
             command = _build_short_ffmpeg_command(
-                source_path, temporary_path, start, end, vertical_filter, subtitles_path
+                source_path, temporary_path, start, end,
+                self._filter_builder(source_path), subtitles_path,
             )
             self._ffmpeg_runner(command)
             if not _is_valid_output(temporary_path):
@@ -294,7 +335,8 @@ class VODShortsGenerator:
                     f"FFmpeg n'a produit aucune video valide pour {candidate_id}."
                 )
             temporary_path.replace(output_path)
-        except (ShortsGenerationError, subprocess.CalledProcessError, OSError) as error:
+        except (ShortsGenerationError, subprocess.CalledProcessError, OSError, ValueError) as error:
+            # ValueError/OSError also cover a VOD stream that cannot be resolved.
             self._remove_quietly(temporary_path)
             return result("error", start, end, error=str(error), warning=warning)
         finally:
@@ -362,11 +404,13 @@ class VODShortsGenerator:
     def _run_ffmpeg(command: list[str]) -> None:
         """Run an FFmpeg command, raising ShortsGenerationError on failure."""
         try:
-            subprocess.run(command, check=True, capture_output=True)
+            subprocess.run(command, check=True, capture_output=True, timeout=FFMPEG_TIMEOUT_SECONDS)
         except FileNotFoundError as error:
             raise ShortsGenerationError(
                 "FFmpeg est introuvable dans le PATH."
             ) from error
+        except subprocess.TimeoutExpired as error:
+            raise ShortsGenerationError(f"FFmpeg interrompu apres {FFMPEG_TIMEOUT_SECONDS} s.") from error
         except subprocess.CalledProcessError as error:
             stderr = (error.stderr or b"").decode(errors="replace").strip()
             raise ShortsGenerationError(
@@ -404,7 +448,8 @@ class VODShortsGenerator:
             errors = {}
         for short in shorts:
             if short.succeeded:
-                existing[short.candidate_id] = {
+                existing[short.key] = {
+                    "candidate_id": short.candidate_id,
                     "file": short.output_path.name,
                     "start": short.start,
                     "end": short.end,
@@ -413,9 +458,9 @@ class VODShortsGenerator:
                     "gemini_score": short.gemini_score,
                     "gemini_justification": short.gemini_justification,
                 }
-                errors.pop(short.candidate_id, None)
+                errors.pop(short.key, None)
             elif short.error:
-                errors[short.candidate_id] = short.error
+                errors[short.key] = short.error
         manifest["generated_shorts"] = existing
         if errors:
             manifest["shorts_errors"] = errors

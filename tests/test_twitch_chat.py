@@ -35,12 +35,14 @@ class TwitchChatTests(unittest.TestCase):
         run.side_effect = lambda command, **kwargs: Path(command[-1]).write_text("{}", encoding="utf-8")
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "c.json"
-            download_twitch_chat("https://www.twitch.tv/videos/123456", output,
-                                 start_seconds=60.5, end_seconds=600)
-        command = run.call_args.args[0]
+            written = download_twitch_chat("https://www.twitch.tv/videos/123456", output,
+                                           start_seconds=60.5, end_seconds=600)
+            command = run.call_args.args[0]
+            # Written under a temporary name, renamed once complete.
+            self.assertTrue(written.is_file() and not output.with_name("c.part.json").exists())
         self.assertEqual(command[command.index("-b") + 1], "60500ms")
         self.assertEqual(command[command.index("-e") + 1], "600000ms")
-        self.assertEqual(command[-2:], ["-o", str(output)])
+        self.assertEqual(command[-2:], ["-o", str(output.with_name("c.part.json"))])
 
     @patch("twitch_auto_clipper.twitch_chat.subprocess.run")
     def test_full_download_has_no_trim_and_zero_start_is_omitted(self, run) -> None:
@@ -55,6 +57,18 @@ class TwitchChatTests(unittest.TestCase):
         self.assertNotIn("-e", full)
         self.assertNotIn("-b", trimmed)
         self.assertIn("-e", trimmed)
+
+    @patch("twitch_auto_clipper.twitch_chat.subprocess.run")
+    def test_stalled_chat_download_times_out(self, run) -> None:
+        import subprocess
+
+        from twitch_auto_clipper.twitch_chat import TwitchChatDownloadError
+
+        run.side_effect = subprocess.TimeoutExpired("TwitchDownloaderCLI", 3600)
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(TwitchChatDownloadError, "interrompu"):
+                download_twitch_chat("https://www.twitch.tv/videos/1", Path(directory) / "c.json")
+        self.assertIn("timeout", run.call_args.kwargs)
 
     def test_invalid_chat_bounds_are_rejected_before_running(self) -> None:
         with patch("twitch_auto_clipper.twitch_chat.subprocess.run") as run:

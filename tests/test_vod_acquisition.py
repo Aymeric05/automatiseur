@@ -1,11 +1,19 @@
+from datetime import datetime, timedelta, timezone
+import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from twitch_auto_clipper.twitch_api import LiveStream, TwitchAPIError, TwitchVOD
 from twitch_auto_clipper.twitch_monitor import MonitoringCycle, MonitoredStream
-from twitch_auto_clipper.vod_acquisition import TwitchVODAcquisitionManager
+from twitch_auto_clipper.vod_acquisition import (
+    MAX_ATTEMPTS,
+    RETRY_BASE_SECONDS,
+    TwitchVODAcquisitionManager,
+    VOD_WAIT_SECONDS,
+    find_downloaded_audio,
+)
 
 
 def monitored_stream(stream_id: str = "stream-1", budget: int = 5) -> MonitoredStream:
@@ -29,137 +37,181 @@ def vod(vod_id: str = "vod-1", stream_id: str = "stream-1") -> TwitchVOD:
     return TwitchVOD(vod_id, stream_id, "broadcaster-1", "Archive title")
 
 
+class Clock:
+    def __init__(self) -> None:
+        self.now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+
+    def __call__(self) -> datetime:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += timedelta(seconds=seconds)
+
+
 class VODAcquisitionTests(unittest.TestCase):
-    def make_manager(self, temporary_directory, client, downloader=None):
-        root = Path(temporary_directory)
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.clock = Clock()
+        self.client = Mock()
+        self.client.find_vod_for_stream.return_value = vod()
+        self.download = Mock(side_effect=self._fake_download)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _fake_download(self, url: str, input_dir: Path) -> Path:
+        path = input_dir / f"{url.rsplit('/', 1)[-1]}_audio.mp4"
+        path.write_bytes(b"audio")
+        return path
+
+    def manager(self) -> TwitchVODAcquisitionManager:
         return TwitchVODAcquisitionManager(
-            api_client=client,
-            input_dir=root / "input",
-            state_path=root / "state" / "vods.json",
-            downloader=downloader,
+            api_client=self.client,
+            input_dir=self.root / "input",
+            state_path=self.root / "state" / "vods.json",
+            downloader=self.download,
+            clock=self.clock,
         )
 
-    def test_ended_stream_resolves_and_downloads_vod_once(self) -> None:
-        client = Mock()
-        client.find_vod_for_stream.return_value = vod()
-        download = Mock(return_value=Path("data/input/vod-1.mp4"))
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            manager = self.make_manager(temporary_directory, client, download)
-            cycle = MonitoringCycle(ended_streams=(monitored_stream(),))
+    def state(self) -> dict:
+        return json.loads((self.root / "state" / "vods.json").read_text(encoding="utf-8"))
 
-            first = manager.process_cycle(cycle)
-            second = manager.process_cycle(cycle)
+    def test_ended_stream_is_queued_then_acquired_and_closed_once(self) -> None:
+        manager = self.manager()
+        cycle = MonitoringCycle(ended_streams=(monitored_stream(),))
 
-            self.assertEqual(first[0].status, "downloaded")
-            self.assertEqual(first[0].clip_budget, 5)
-            self.assertEqual(first[0].vod_id, "vod-1")
-            self.assertEqual(second[0].status, "already_processed")
-            client.find_vod_for_stream.assert_called_once_with("broadcaster-1", "stream-1")
-            download.assert_called_once_with(
-                "https://www.twitch.tv/videos/vod-1",
-                Path(temporary_directory) / "input",
-            )
+        queued = manager.process_cycle(cycle)
+        self.assertEqual(queued[0].status, "queued")
+        self.client.find_vod_for_stream.assert_not_called()  # the monitoring thread never waits
 
-            state = (Path(temporary_directory) / "state" / "vods.json").read_text(
-                encoding="utf-8"
-            )
-            self.assertIn('"stream-1": "vod-1"', state)
-            self.assertIn('"vod-1"', state)
+        [acquisition] = list(manager.acquire_due())
+        self.assertEqual((acquisition.status, acquisition.vod_id, acquisition.clip_budget), ("downloaded", "vod-1", 5))
+        self.assertEqual(acquisition.downloaded_path, self.root / "input" / "vod-1_audio.mp4")
+        self.download.assert_called_once_with("https://www.twitch.tv/videos/vod-1", self.root / "input")
 
-    def test_unavailable_vod_is_retried_on_a_later_cycle(self) -> None:
-        client = Mock()
-        client.find_vod_for_stream.side_effect = [None, vod()]
-        download = Mock(return_value=Path("data/input/vod-1.mp4"))
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            manager = self.make_manager(temporary_directory, client, download)
-            end_cycle = MonitoringCycle(ended_streams=(monitored_stream(),))
+        self.assertEqual(manager.record_automation("stream-1", "vod-1", "completed"), "done")
+        self.assertEqual(list(manager.acquire_due()), [])
+        self.assertEqual(manager.process_cycle(cycle)[0].status, "already_processed")
+        self.assertEqual(self.state()["processed_streams"], {"stream-1": "vod-1"})
+        self.assertEqual(self.state()["jobs"], {})
+        self.download.assert_called_once()
 
-            first = manager.process_cycle(end_cycle)
-            second = manager.process_cycle(MonitoringCycle())
+    def test_queued_job_survives_a_restart_even_mid_processing(self) -> None:
+        first = self.manager()
+        first.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))
+        list(first.acquire_due())  # crash before record_automation: job not closed
 
-        self.assertEqual(first[0].status, "vod_not_available")
-        self.assertEqual(second[0].status, "downloaded")
-        self.assertEqual(client.find_vod_for_stream.call_count, 2)
-        download.assert_called_once()
+        restarted = self.manager()
+        [acquisition] = list(restarted.acquire_due())
+        self.assertEqual(acquisition.status, "already_downloaded")  # audio reused
+        self.download.assert_called_once()
 
-    def test_zero_budget_skips_vod_lookup_and_download(self) -> None:
-        client = Mock()
-        download = Mock()
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            manager = self.make_manager(temporary_directory, client, download)
-            result = manager.process_cycle(
-                MonitoringCycle(ended_streams=(monitored_stream(budget=0),))
-            )
+    def test_unavailable_vod_is_checked_again_without_spending_an_attempt(self) -> None:
+        self.client.find_vod_for_stream.side_effect = [None, vod()]
+        manager = self.manager()
+        manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))
 
+        self.assertEqual([a.status for a in manager.acquire_due()], ["vod_not_available"])
+        self.assertEqual(list(manager.acquire_due()), [])  # not due yet
+        self.assertEqual(self.state()["jobs"]["stream-1"]["attempts"], 0)
+        self.clock.advance(RETRY_BASE_SECONDS)
+        self.assertEqual([a.status for a in manager.acquire_due()], ["downloaded"])
+
+    def test_vod_never_published_is_abandoned_after_a_day(self) -> None:
+        self.client.find_vod_for_stream.return_value = None
+        manager = self.manager()
+        manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))
+        self.clock.advance(VOD_WAIT_SECONDS + 1)
+
+        [acquisition] = list(manager.acquire_due())
+        self.assertEqual(acquisition.status, "abandoned")
+        self.assertIn("stream-1", self.state()["abandoned"])
+        self.assertEqual(manager.process_cycle(
+            MonitoringCycle(ended_streams=(monitored_stream(),))
+        )[0].status, "already_processed")
+
+    def test_biggest_streams_are_processed_first(self) -> None:
+        self.client.find_vod_for_stream.side_effect = lambda broadcaster, stream_id: vod(f"vod-{stream_id}", stream_id)
+        manager = self.manager()
+        manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream("small", budget=2),)))
+        self.clock.advance(60)
+        manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream("big", budget=10),)))
+        self.assertEqual([a.stream_id for a in manager.acquire_due()], ["big", "small"])
+
+    def test_zero_budget_is_never_queued(self) -> None:
+        manager = self.manager()
+        result = manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(budget=0),)))
         self.assertEqual(result[0].status, "skipped_zero_budget")
-        client.find_vod_for_stream.assert_not_called()
-        download.assert_not_called()
+        self.assertEqual(list(manager.acquire_due()), [])
+        self.client.find_vod_for_stream.assert_not_called()
 
-    def test_api_error_does_not_drop_pending_stream(self) -> None:
-        client = Mock()
-        client.find_vod_for_stream.side_effect = [TwitchAPIError("temporary"), vod()]
-        download = Mock(return_value=Path("data/input/vod-1.mp4"))
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            manager = self.make_manager(temporary_directory, client, download)
-            first = manager.process_cycle(
-                MonitoringCycle(ended_streams=(monitored_stream(),))
-            )
-            second = manager.process_cycle(MonitoringCycle())
+    def test_api_error_is_retried_later_with_a_growing_delay(self) -> None:
+        self.client.find_vod_for_stream.side_effect = [TwitchAPIError("temporary"), vod()]
+        manager = self.manager()
+        manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))
 
-        self.assertEqual(first[0].status, "error")
-        self.assertEqual(second[0].status, "downloaded")
+        self.assertEqual([a.status for a in manager.acquire_due()], ["error"])
+        self.assertEqual(self.state()["jobs"]["stream-1"]["attempts"], 1)
+        self.assertEqual(list(manager.acquire_due()), [])
+        self.clock.advance(RETRY_BASE_SECONDS)
+        self.assertEqual([a.status for a in manager.acquire_due()], ["downloaded"])
 
-    def test_persisted_state_prevents_download_after_restart(self) -> None:
-        client = Mock()
-        download = Mock()
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            first_manager = self.make_manager(temporary_directory, client, download)
-            first_manager._remember_processed("stream-1", "vod-1")
-            restarted_manager = self.make_manager(temporary_directory, client, download)
+    def test_pipeline_failures_are_retried_then_abandoned(self) -> None:
+        manager = self.manager()
+        manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))
+        delays = []
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            [acquisition] = list(manager.acquire_due())
+            outcome = manager.record_automation("stream-1", "vod-1", "error", error="Gemini indisponible")
+            if attempt < MAX_ATTEMPTS:
+                self.assertEqual(outcome, "retry")
+                retry_at = datetime.fromisoformat(self.state()["jobs"]["stream-1"]["next_attempt_at"])
+                delays.append((retry_at - self.clock.now).total_seconds())
+                self.clock.now = retry_at
+        self.assertEqual(outcome, "abandoned")
+        self.assertEqual(delays[:3], [RETRY_BASE_SECONDS, 2 * RETRY_BASE_SECONDS, 4 * RETRY_BASE_SECONDS])
+        self.assertEqual(self.state()["abandoned"]["stream-1"]["error"], "Gemini indisponible")
+        self.assertTrue((self.root / "input" / "vod-1_audio.mp4").is_file())  # kept for inspection
 
-            result = restarted_manager.process_cycle(
-                MonitoringCycle(ended_streams=(monitored_stream(),))
-            )
+    def test_waiting_for_the_upload_quota_spends_no_attempt(self) -> None:
+        manager = self.manager()
+        manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))
+        list(manager.acquire_due())
+        reset = self.clock.now + timedelta(hours=10)
 
-        self.assertEqual(result[0].status, "already_processed")
-        client.find_vod_for_stream.assert_not_called()
-        download.assert_not_called()
+        self.assertEqual(manager.record_automation("stream-1", "vod-1", "waiting_upload", retry_at=reset), "waiting")
+        job = self.state()["jobs"]["stream-1"]
+        self.assertEqual((job["attempts"], datetime.fromisoformat(job["next_attempt_at"])), (0, reset))
+        self.clock.now = reset
+        self.assertEqual([a.status for a in manager.acquire_due()], ["already_downloaded"])
+        later = self.clock.now + timedelta(hours=1)
+        self.assertEqual(manager.record_automation("stream-1", "vod-1", "waiting_gemini", retry_at=later), "waiting")
+        self.assertEqual(self.state()["jobs"]["stream-1"]["attempts"], 0)
 
-    def test_known_vod_id_keeps_its_downloaded_path_for_processing(self) -> None:
-        client = Mock()
-        client.find_vod_for_stream.return_value = vod()
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            (root / "input").mkdir()
-            (root / "input" / "vod-1.mp4").write_bytes(b"video")
-            (root / "state").mkdir()
-            (root / "state" / "vods.json").write_text(
-                '{"processed_streams": {}, "processed_vod_ids": ["vod-1"]}', encoding="utf-8"
-            )
-            manager = self.make_manager(temporary_directory, client)
+    def test_low_disk_space_stops_before_downloading(self) -> None:
+        manager = self.manager()
+        manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))
+        with patch("twitch_auto_clipper.vod_acquisition.shutil.disk_usage", return_value=Mock(free=10)):
+            [acquisition] = list(manager.acquire_due())
+        self.assertEqual(acquisition.status, "error")
+        self.assertIn("espace disque insuffisant", acquisition.error)
+        self.download.assert_not_called()
 
-            result = manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))
+    def test_corrupt_state_is_reported_instead_of_ignored(self) -> None:
+        (self.root / "state").mkdir()
+        (self.root / "state" / "vods.json").write_text('{"jobs": {"s": {"stream": {}}}}', encoding="utf-8")
+        with self.assertRaises(ValueError):
+            self.manager()
 
-            self.assertEqual(result[0].status, "already_processed")
-            self.assertEqual(result[0].downloaded_path, root / "input" / "vod-1.mp4")
-
-    def test_existing_vod_file_is_recorded_without_downloading(self) -> None:
-        client = Mock()
-        client.find_vod_for_stream.return_value = vod()
-        download = Mock()
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            manager = self.make_manager(temporary_directory, client, download)
-            existing_path = Path(temporary_directory) / "input" / "vod-1.mp4"
-            existing_path.parent.mkdir(parents=True)
-            existing_path.write_bytes(b"already here")
-
-            result = manager.process_cycle(
-                MonitoringCycle(ended_streams=(monitored_stream(),))
-            )
-
-        self.assertEqual(result[0].status, "already_downloaded")
-        self.assertEqual(result[0].downloaded_path, existing_path)
-        download.assert_not_called()
+    def test_only_complete_audio_files_are_reused(self) -> None:
+        directory = self.root / "input"
+        directory.mkdir()
+        (directory / "vod-1_audio.mp4.part").write_bytes(b"partial")
+        (directory / "vod-1_audio.temp.mp4").write_bytes(b"fixup in progress")
+        self.assertIsNone(find_downloaded_audio(directory, "vod-1"))
+        (directory / "vod-1_audio.mp4").write_bytes(b"audio")
+        self.assertEqual(find_downloaded_audio(directory, "vod-1"), directory / "vod-1_audio.mp4")
 
 
 if __name__ == "__main__":

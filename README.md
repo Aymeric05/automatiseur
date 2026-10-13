@@ -6,7 +6,9 @@ replay data, identifies potential highlight moments with heuristics, and uses Ge
 to select the best candidates for vertical short-form video clips.
 
 > **Status:** The full pipeline — from live discovery to private YouTube Shorts publication
-> with post-upload cleanup — is implemented and tested. Publishing to Instagram Reels /
+> with post-upload cleanup — is implemented and covered by unit tests (external services
+> mocked). Each stage has been run for real on a 10-minute VOD extract, except the YouTube
+> upload itself, which has not been run for real yet. Publishing to Instagram Reels /
 > TikTok is planned but not yet implemented.
 
 ---
@@ -43,6 +45,7 @@ to select the best candidates for vertical short-form video clips.
 - [FFmpeg](https://ffmpeg.org/) (must be in `PATH`)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) — for VOD download
 - [TwitchDownloaderCLI](https://github.com/lay295/TwitchDownloader) — for chat replay
+  (in `tools/TwitchDownloaderCLI/` or in `PATH`)
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — for transcription
 - `google-genai` Python package — for Gemini evaluation
 - `opencv-python-headless` — optional, face-aware framing for the manual clip commands
@@ -66,8 +69,9 @@ python -m pip install -e .
 ```
 
 The base install covers the whole pipeline (yt-dlp, faster-whisper, google-genai and the
-YouTube API clients). FFmpeg and TwitchDownloaderCLI must be installed separately and be in
-`PATH`. For face-aware framing in the manual clip commands:
+YouTube API clients). FFmpeg must be installed separately and be in `PATH`.
+TwitchDownloaderCLI is looked up in `tools/TwitchDownloaderCLI/` first, then in `PATH`.
+For face-aware framing in the manual clip commands:
 
 ```powershell
 python -m pip install -e .[framing]
@@ -78,6 +82,9 @@ python -m pip install -e .[framing]
 ## Configuration
 
 All credentials are read from environment variables. **Never hardcode secrets.**
+They can also be written as `KEY=value` lines in a `.env` file at the project root
+(ignored by git, read from the current directory at startup); a variable already set in
+the environment always takes precedence over `.env`.
 
 ### Twitch API
 
@@ -100,14 +107,27 @@ Required for highlight candidate evaluation:
 $env:GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
 ```
 
+Each VOD needs one Gemini request. The application stays within the free tier of the
+Gemini API: at most `GEMINI_MAX_REQUESTS_PER_DAY` requests per quota day (default 20, the
+free-tier limit per model; retries count). Beyond it, the VODs wait for the next quota day
+(08:00 UTC), the most watched streams first. When Gemini refuses a request (HTTP 429) the
+day is closed early; when it is overloaded (HTTP 503) the VOD waits 30 minutes. Neither
+counts as a failure.
+
 ### YouTube Upload
 
 Required for publishing clips:
 
 ```powershell
-$env:YOUTUBE_PRIVACY_POLICY_URL    = "https://YOUR_GITHUB_PAGES_URL/privacy.html"
+$env:YOUTUBE_PRIVACY_POLICY_URL    = "https://aymeric05.github.io/automatiseur/privacy.html"
 $env:YOUTUBE_EXPECTED_CHANNEL_ID   = "YOUR_YOUTUBE_CHANNEL_ID"  # optional but recommended
+$env:YOUTUBE_MAX_UPLOADS_PER_DAY   = "6"  # optional, default 6
 ```
+
+`YOUTUBE_MAX_UPLOADS_PER_DAY` caps automatic uploads per YouTube quota day (the default
+10,000-unit daily quota allows about six uploads). Beyond it, Shorts stay on disk and are
+uploaded after the next quota reset (08:00 UTC is used, which is after YouTube's midnight
+Pacific reset all year). A quota refusal from YouTube also closes the day early.
 
 Place your Google Cloud OAuth Desktop JSON file at `credentials.json` in the project
 root (excluded from version control). On first upload, a browser window opens to
@@ -139,15 +159,28 @@ python -m twitch_auto_clipper --list-twitch-streams --stream-limit 50
 
 Streams are returned in descending viewer-count order (Twitch Helix default).
 
+### Process one finished VOD
+
+```powershell
+python -m twitch_auto_clipper --process-vod https://www.twitch.tv/videos/VODID --clip-budget 2
+python -m twitch_auto_clipper --process-vod VODID --clip-budget 2 --test-minutes 10
+```
+
+Runs the whole pipeline on one VOD without monitoring, and never uploads. A VOD whose
+stream is still live is refused. Only the VOD audio is downloaded (for the transcription);
+each Short then reads its few seconds of video straight from Twitch. With
+`--test-minutes N`, only the first N minutes (audio and chat) are used and everything is
+written to `data/test/`, separate from production data. An audio file already downloaded
+for this VOD is reused.
+
 ### Run one monitoring cycle
 
 ```powershell
 python -m twitch_auto_clipper --monitor-twitch-once
 ```
 
-Fetches current live streams, computes clip budgets, and acquires VODs for any streams
-that have ended since the last run. Transcription and chat replay are collected
-automatically after download.
+Fetches current live streams, queues the streams that have ended, then processes the VOD
+jobs that are due (see below) before exiting.
 
 ### Run continuous monitoring
 
@@ -162,13 +195,24 @@ Twitch; it is considered ended only after three consecutive successful offline c
 (failed API calls do not count). The clip budget of an ended stream is computed from
 the highest viewer count reached during that live session (a relaunch with a new stream ID
 starts a new session). Output is a per-cycle summary; add `--verbose-streams`
-to list every tracked stream and viewer change. When a stream with a non-zero clip budget ends, its VOD is
-downloaded, then transcribed, its chat replay collected, highlight candidates detected,
-the best moments selected by Gemini within the clip budget, and one vertical Short with
-dynamic subtitles generated per selected moment (`data/output/<vod>_candidate_N_short.mp4`).
-Each step is resumable: finished transcripts, selections, Shorts and uploads are reused.
-State is persisted to `data/output/twitch_vod_state.json` and
-`data/output/<vod>_processing.json`.
+to list every tracked stream and viewer change.
+
+When a stream with a non-zero clip budget ends, it is added to a persistent queue and a
+separate worker processes it, so a long VOD never pauses the monitoring: the VOD audio
+is downloaded (about 70 MB per hour, never the multi-GB video), transcribed, its chat
+replay collected, highlight candidates detected, the best moments selected by Gemini
+within the clip budget, and one vertical Short with dynamic subtitles rendered per
+selected moment (`data/output/<vod>_<start>-<end>_short.mp4`), reading only those
+seconds of video from Twitch. Once a VOD is completed, its audio and chat files are
+deleted; transcript, selection, manifest and unpublished Shorts are kept.
+
+Nothing is lost when the program stops: tracked streams and their peaks
+(`data/output/twitch_monitor_state.json`) and queued VODs
+(`data/output/twitch_vod_state.json`) are saved, and every step is resumable from
+`data/output/<vod>_processing.json`. A failed VOD is retried automatically (after 5, 10,
+20... minutes, up to 6 hours apart) and abandoned after 8 failures, its files kept; a VOD
+that Twitch never publishes is abandoned after 24 hours. Only one monitor can run on the
+same data at a time. A download never starts with less than 2 GB of free disk space.
 
 To also publish the Shorts automatically, add `--auto-upload-youtube`:
 
@@ -178,10 +222,21 @@ python -m twitch_auto_clipper --monitor-twitch --auto-upload-youtube
 
 Upload rights and the Privacy Policy are confirmed, and YouTube OAuth is checked, once at
 startup. Shorts are uploaded
-as **private**, with a title and description built from what is actually said in the clip.
-A local Short is deleted only after YouTube confirms the upload with a video ID; on any
-failure or interruption it is kept for a retry. Source VODs, transcripts, chat files and
-manifests are never deleted.
+as **private**, with a title and description built from what is actually said in the clip,
+within the daily upload limit (`YOUTUBE_MAX_UPLOADS_PER_DAY`). A local Short is deleted only
+after YouTube confirms the upload with a video ID; on any failure or interruption it is
+kept for a retry. Transcripts and manifests are never deleted.
+
+The console output can be redirected to a log file: it is then written in UTF-8.
+
+### Automatic start at Windows logon
+
+`start_monitor.cmd` runs the monitoring with automatic private uploads and appends its
+output to `data/output/monitor.log`. The Windows task "Twitch Auto Clipper" (Task
+Scheduler, trigger "At log on", 2-minute delay) starts it minimized. `--yes` gives the
+upload-rights and Privacy Policy confirmations in advance, since nobody is at the keyboard.
+Nothing runs while the computer is off or asleep: streams tracked before are picked up
+again at the next start, streams that start and end in between are missed.
 
 ### Bounded run (testing)
 
@@ -190,9 +245,8 @@ python -m twitch_auto_clipper --monitor-twitch --max-cycles 3 --monitor-interval
 ```
 
 Stops after three polling cycles. Without `--max-cycles` the monitoring runs until Ctrl+C.
-At startup, VODs whose previous automation failed or was interrupted (and whose source
-file still exists) are resumed first; finished steps are reused. Ctrl+C never deletes
-unpublished Shorts.
+A VOD still being processed at that moment is picked up again at the next start; finished
+steps are reused. Ctrl+C never deletes unpublished Shorts.
 
 ### Generate a clip manually (time range)
 

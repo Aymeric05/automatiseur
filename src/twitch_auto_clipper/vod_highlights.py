@@ -1,11 +1,13 @@
 """Gemini highlight selection for processed Twitch VODs."""
 
 from dataclasses import dataclass
+from datetime import datetime
 import json
 from pathlib import Path
 from typing import Any
 
 from .chat_activity import add_chat_messages, add_chat_signals
+from .daily_quota import DailyQuota
 from .gemini_evaluation import GeminiEvaluationError, select_candidates
 from .highlights import HighlightAnalysisError, analyze_transcription, save_highlights
 from .vod_processing import VODProcessingResult
@@ -24,6 +26,7 @@ class VODHighlightSelectionResult:
     candidate_path: Path
     status: str
     error: str | None = None
+    retry_at: datetime | None = None  # error caused only by the Gemini daily quota
 
 
 class VODHighlightSelector:
@@ -33,9 +36,11 @@ class VODHighlightSelector:
         self,
         output_dir: Path = Path("data/output"),
         model: str = "gemini-3.6-flash",
+        gemini_quota: DailyQuota | None = None,
     ) -> None:
         self.output_dir = output_dir
         self.model = model
+        self.gemini_quota = gemini_quota
 
     def select(self, processed_vod: VODProcessingResult) -> VODHighlightSelectionResult:
         vod_id = processed_vod.vod_id
@@ -95,6 +100,7 @@ class VODHighlightSelector:
                     transcript,
                     requested_count=requested_count,
                     model=self.model,
+                    quota=self.gemini_quota,
                 )
                 if requested_count
                 else []
@@ -124,6 +130,7 @@ class VODHighlightSelector:
                 candidate_path,
                 "error",
                 str(error),
+                retry_at=getattr(error, "retry_at", None),
             )
 
         return self._result(
@@ -273,6 +280,7 @@ class VODHighlightSelector:
         candidate_path: Path,
         status: str,
         error: str | None = None,
+        retry_at: datetime | None = None,
     ) -> VODHighlightSelectionResult:
         return VODHighlightSelectionResult(
             stream_id=processed_vod.stream_id,
@@ -284,6 +292,7 @@ class VODHighlightSelector:
             candidate_path=candidate_path,
             status=status,
             error=error,
+            retry_at=retry_at,
         )
 
 

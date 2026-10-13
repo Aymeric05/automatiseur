@@ -69,6 +69,9 @@ class VODProcessingPipeline:
                 "timestamped_chat_path": str(timestamped_chat_path),
             }
         )
+        # Written before the (possibly hours-long) transcription: an interrupted
+        # run still leaves a trace of the VOD and of its clip budget.
+        self._save_manifest(manifest_path, manifest)
 
         errors: list[str] = []
         transcription_status = "already_completed"
@@ -79,6 +82,7 @@ class VODProcessingPipeline:
             try:
                 segments = self.transcriber(
                     acquisition.downloaded_path,
+                    language="en",  # only English streams are monitored
                     device="cpu",
                     compute_type="int8",
                 )
@@ -132,6 +136,7 @@ class VODProcessingPipeline:
         errors: list[str],
     ) -> str:
         vod_url = f"https://www.twitch.tv/videos/{vod_id}"
+        reused_existing_chat = False
         try:
             reused_existing_chat = chat_path.is_file() and chat_path.stat().st_size > 0
             if not reused_existing_chat:
@@ -142,6 +147,9 @@ class VODProcessingPipeline:
                 encoding="utf-8",
             )
         except (TwitchChatDownloadError, ChatActivityError, OSError, ValueError) as error:
+            if reused_existing_chat and isinstance(error, ChatActivityError):
+                # Truncated or corrupt replay: drop it so the next run downloads it again.
+                chat_path.unlink(missing_ok=True)
             manifest["chat_attempted"] = True
             manifest["chat_status"] = "unavailable"
             manifest["chat_error"] = str(error)

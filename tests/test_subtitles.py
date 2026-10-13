@@ -60,5 +60,14 @@ class SubtitleTests(unittest.TestCase):
         self.assertNotIn("after", content)
 
 
+class SubtitleJoinTests(unittest.TestCase):
+    def test_punctuation_tokens_stick_to_the_previous_word(self) -> None:
+        from twitch_auto_clipper.subtitles import _join_words
+
+        self.assertEqual(_join_words(["4", "p", ".m.", "Oh"]), "4 p.m. Oh")
+        self.assertEqual(_join_words(["cost", "$7", ",000."]), "cost $7,000.")
+        self.assertEqual(_join_words(["it", "'s", "fine"]), "it's fine")
+
+
 if __name__ == "__main__":
     unittest.main()

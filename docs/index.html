@@ -27,7 +27,7 @@
   <section class="section">
     <h2>How it works</h2>
     <ol class="pipeline">
-      <li><div><h3>Acquire</h3><p>Accept a local video, process one finished Twitch VOD on request, or monitor popular English Twitch live streams through the Twitch API and download the VOD after a stream has ended. Twitch chat replay is downloaded with the VOD.</p></div></li>
+      <li><div><h3>Acquire</h3><p>Accept a local video, process one finished Twitch VOD on request, or monitor popular English Twitch live streams through the Twitch API and process the VOD after a stream has ended: only its audio and chat replay are downloaded, and each Short reads its few seconds of video from Twitch.</p></div></li>
       <li><div><h3>Understand</h3><p>Transcribe audio with faster-whisper and retain segment and word timestamps.</p></div></li>
       <li><div><h3>Select</h3><p>Generate explainable heuristic candidates from the transcript, attach a short chat activity summary, and ask Gemini to choose the best moments.</p></div></li>
       <li><div><h3>Render</h3><p>Create a 1080x1920 vertical clip with CPU-friendly framing and optional ASS subtitles.</p></div></li>
