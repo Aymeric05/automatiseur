@@ -12,16 +12,20 @@ pipeline. Each section maps to an implemented component in `src/twitch_auto_clip
 | `twitch_api.py` | Twitch Helix REST client: stream discovery, VOD lookup, app-token auth |
 | `clip_budget.py` | Maps viewer count to a clip count using a tiered policy |
 | `twitch_monitor.py` | Polls live streams, tracks new/ended streams and viewer changes |
-| `twitch.py` | Downloads Twitch VODs via yt-dlp |
+| `twitch.py` | yt-dlp: VOD audio download, VOD video stream URL (for the Shorts) |
 | `twitch_chat.py` | Downloads Twitch chat replay JSON via TwitchDownloaderCLI |
-| `vod_acquisition.py` | Orchestrates VOD download per ended stream, with dedup state file |
+| `vod_acquisition.py` | Persistent queue of ended streams: VOD lookup, audio download, retries |
 | `transcription.py` | Transcribes video using faster-whisper (CPU/int8, word timestamps) |
-| `chat_activity.py` | Parses TwitchDownloaderCLI JSON; enriches candidates with chat counts |
+| `chat_activity.py` | Parses TwitchDownloaderCLI JSON; per-candidate chat summary for Gemini |
 | `vod_processing.py` | Runs transcription + chat download once per acquired VOD |
 | `highlights.py` | Heuristic scoring of transcription segments as highlight candidates |
 | `gemini_evaluation.py` | Sends candidates to Gemini API; parses and validates its JSON response |
 | `vod_highlights.py` | Orchestrates heuristics → chat enrichment → Gemini selection per VOD |
-| `candidate_clip.py` | Generates one vertical clip from a saved highlight candidate |
+| `vod_shorts.py` | Renders one vertical Short per selected moment (FFmpeg, subtitles) |
+| `shorts_metadata.py` | Title and description from the clip's real transcript |
+| `shorts_upload.py` | Private YouTube upload, daily upload quota, post-upload cleanup |
+| `vod_pipeline.py` | Chains all VOD stages; worker that processes the queued VODs |
+| `candidate_clip.py` | Manual command: one vertical clip from a saved highlight candidate |
 | `framing.py` | CPU face detection (OpenCV Haar cascade) for 9:16 crop positioning |
 | `video.py` | FFmpeg command builder and executor for vertical clip output |
 | `subtitles.py` | Generates ASS subtitle files from word-level timestamps |
@@ -42,14 +46,16 @@ twitch_api.py → LiveStream[]
 clip_budget.py → clip_count (int)   ← viewer count tiers
     │
     ▼
-twitch_monitor.py → MonitoringCycle (ended_streams[])
+twitch_monitor.py → MonitoringCycle (ended_streams[])     [monitoring thread]
     │
     ▼
+vod_acquisition.py → persistent job queue (data/output/twitch_vod_state.json)
+    │
+    ▼  vod_pipeline.process_due_vods()                      [worker thread]
 vod_acquisition.py → VODAcquisitionResult
     │   ├─ find_vod_for_stream() via twitch_api.py
-    │   ├─ download_twitch_vod() via twitch.py + yt-dlp
-    │   └─ state: data/output/twitch_vod_state.json
-    │
+    │   └─ download_twitch_vod(audio_only=True) via twitch.py + yt-dlp
+    │       └─ data/input/<vod_id>_audio.<ext>
     ▼
 vod_processing.py → VODProcessingResult
     │   ├─ transcribe_video() via transcription.py + faster-whisper
@@ -57,22 +63,22 @@ vod_processing.py → VODProcessingResult
     │   ├─ download_twitch_chat() via twitch_chat.py + TwitchDownloaderCLI
     │   │   └─ data/output/<vod_id>_chat.json
     │   └─ manifest: data/output/<vod_id>_processing.json
-    │
     ▼
 vod_highlights.py → VODHighlightSelectionResult
-    │   ├─ analyze_transcription() via highlights.py   → heuristic scores
-    │   ├─ add_chat_messages() via chat_activity.py    → chat enrichment
+    │   ├─ analyze_transcription() via highlights.py   → heuristic candidates
+    │   ├─ add_chat_signals() via chat_activity.py     → chat summary
     │   ├─ select_candidates() via gemini_evaluation.py → Gemini selection
     │   └─ data/output/<vod_id>_gemini_selection_<budget>.json
-    │
     ▼
-candidate_clip.py → MP4 clip in data/output/
-    │   ├─ generate_ass_subtitles() via subtitles.py → .ass file
-    │   └─ create_vertical_clip() via video.py + FFmpeg
-    │       └─ build_vertical_filter() via framing.py + OpenCV
-    │
+vod_shorts.py → data/output/<vod_id>_<start>-<end>_short.mp4
+    │   ├─ resolve_twitch_video_url() via twitch.py  → FFmpeg reads only these seconds
+    │   └─ generate_ass_subtitles() via subtitles.py → burned subtitles
     ▼
-youtube.py → YouTube Shorts upload (manual trigger via CLI)
+shorts_metadata.py → title + description from the clip transcript
+    ▼
+shorts_upload.py → private YouTube upload (youtube.py), daily quota, local Short deleted
+    ▼
+vod_pipeline.py → completed: audio and chat files deleted, job closed
 ```
 
 ---
@@ -96,14 +102,21 @@ Streams with a budget of 0 are not downloaded.
 
 ## State and Deduplication
 
-Two JSON state files prevent reprocessing:
+JSON state files make every step resumable after a crash or a restart:
 
-- **`data/output/twitch_vod_state.json`** — written by `vod_acquisition.py`.
-  Maps stream IDs to VOD IDs that have already been downloaded.
-- **`data/output/<vod_id>_processing.json`** — written by `vod_processing.py`
-  and `vod_highlights.py`. Tracks which processing steps are complete for each VOD.
+- **`data/output/twitch_monitor_state.json`** — written by `twitch_monitor.py` after
+  each cycle: tracked live streams, their peak viewers and end-confirmation counters.
+- **`data/output/twitch_vod_state.json`** — written by `vod_acquisition.py`: queued
+  VOD jobs (attempts, next retry), completed and abandoned streams.
+- **`data/output/<vod_id>_processing.json`** — the VOD manifest, written by every
+  stage: transcript and chat status, Gemini selection, generated Shorts, metadata,
+  YouTube uploads and errors, final `automation_status`.
+- **`data/output/youtube_quota.json`** — uploads made in the current YouTube quota day.
 
-Both files are written atomically (write to `.tmp`, then rename) to prevent corruption.
+All files are written atomically (write to `.tmp`, then rename) to prevent corruption.
+Shorts, metadata and uploads are keyed by the moment itself (`<start>-<end>` in seconds),
+never by Gemini's `candidate_N` number, which changes with the candidate list.
+A lock file (`data/output/.monitor.lock`) prevents two monitors on the same data.
 
 ---
 
@@ -130,7 +143,9 @@ is burned into the clip by FFmpeg using the `subtitles=` filter.
 `gemini_evaluation.py` uses the `google-genai` Python SDK. It:
 
 1. Builds a prompt with each candidate's heuristic score, time range, transcript
-   excerpt, and chat message count and details.
+   excerpt with the surrounding context, and a compact chat summary (activity versus
+   the surrounding minutes, laughs, repeated reactions, a few sample messages and a
+   reliability flag).
 2. Calls the Gemini API with a structured JSON response schema.
 3. Validates the response against the expected candidate IDs, score ranges, and format.
 4. Returns scored evaluations sorted by score descending.
