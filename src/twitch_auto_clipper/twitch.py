@@ -33,11 +33,16 @@ def download_twitch_vod(
     output_dir: Path,
     max_seconds: float | None = None,
     max_height: int | None = None,
+    audio_only: bool = False,
+    quiet: bool = False,
 ) -> Path:
-    """Download a Twitch VOD and return its local path (``<vod_id>.mp4``).
+    """Download a Twitch VOD and return its local path.
 
-    ``max_seconds`` keeps only the beginning of the VOD and ``max_height``
-    caps the resolution; both exist to keep test downloads small.
+    The video is saved as ``<vod_id>.mp4``; with ``audio_only`` only the audio
+    track is saved, as ``<vod_id>_audio.<ext>`` (~70 MB per hour instead of
+    several GB): it is all the transcription needs, the Shorts then read their
+    few seconds of video straight from Twitch. ``max_seconds`` keeps only the
+    beginning of the VOD and ``max_height`` caps the resolution (test runs).
     """
     if not is_twitch_vod_url(url):
         raise ValueError("L'URL doit etre une URL HTTPS de VOD Twitch valide.")
@@ -50,11 +55,15 @@ def download_twitch_vod(
     options = {
         # Named after the numeric VOD id (yt-dlp's own id is "v<id>"), which is
         # the name the acquisition manager looks for.
-        "outtmpl": str(output_dir / f"{vod_id}.%(ext)s"),
-        "format": video_format,
-        "merge_output_format": "mp4",
+        "outtmpl": str(output_dir / f"{vod_id}{'_audio' if audio_only else ''}.%(ext)s"),
+        # Twitch VODs have an audio-only rendition; the smallest video is the fallback.
+        "format": "bestaudio/worst" if audio_only else video_format,
         "noplaylist": True,
+        "quiet": quiet,
+        "noprogress": quiet,
     }
+    if not audio_only:
+        options["merge_output_format"] = "mp4"
 
     try:
         youtube_dl = _get_youtube_dl()
@@ -72,7 +81,7 @@ def download_twitch_vod(
     except Exception as error:
         raise TwitchDownloadError(f"Echec du telechargement Twitch : {error}") from error
 
-    if downloaded_path.suffix.lower() != ".mp4":
+    if not audio_only and downloaded_path.suffix.lower() != ".mp4":
         merged_path = downloaded_path.with_suffix(".mp4")
         if merged_path.is_file():
             downloaded_path = merged_path
@@ -84,3 +93,31 @@ def download_twitch_vod(
         )
 
     return downloaded_path
+
+
+def resolve_twitch_video_url(url: str, max_height: int = 1080) -> str:
+    """Return the HLS playlist URL of the VOD video (audio included).
+
+    FFmpeg reads only the requested seconds from it, so a Short never needs
+    the whole VOD on disk. The URL carries a short-lived Twitch token: resolve
+    it right before use, never store it.
+    """
+    if not is_twitch_vod_url(url):
+        raise ValueError("L'URL doit etre une URL HTTPS de VOD Twitch valide.")
+    options = {
+        # Twitch renditions carry video and audio together: one URL is enough.
+        "format": f"best[height<={max_height}]/best",
+        "noplaylist": True,
+        "quiet": True,
+    }
+    try:
+        with _get_youtube_dl()(options) as downloader:
+            info = downloader.extract_info(url, download=False)
+    except ModuleNotFoundError as error:
+        raise TwitchDownloadError("yt-dlp est requis pour lire une VOD Twitch.") from error
+    except Exception as error:
+        raise TwitchDownloadError(f"Flux video Twitch indisponible : {error}") from error
+    stream_url = info.get("url") if isinstance(info, dict) else None
+    if not stream_url:
+        raise TwitchDownloadError("yt-dlp n'a renvoye aucune URL video pour cette VOD.")
+    return stream_url

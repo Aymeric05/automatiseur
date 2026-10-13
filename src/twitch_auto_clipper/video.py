@@ -22,6 +22,7 @@ def get_video_duration(input_path: Path) -> float:
         check=True,
         capture_output=True,
         text=True,
+        timeout=120,
     )
     return float(result.stdout.strip())
 

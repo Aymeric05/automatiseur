@@ -19,12 +19,12 @@ from twitch_auto_clipper.gemini_evaluation import (
 class FakeGeminiClient:
     def __init__(self, response_text: str) -> None:
         self.response_text = response_text
-        self.interactions = self
+        self.models = self
         self.arguments = None
 
-    def create(self, **kwargs):
+    def generate_content(self, **kwargs):
         self.arguments = kwargs
-        return SimpleNamespace(output_text=self.response_text)
+        return SimpleNamespace(text=self.response_text)
 
 
 class GeminiEvaluationTests(unittest.TestCase):
@@ -62,8 +62,8 @@ class GeminiEvaluationTests(unittest.TestCase):
 
         self.assertEqual(evaluations[0]["candidate_id"], "candidate_1")
         self.assertEqual(evaluations[0]["score"], 91)
-        self.assertIn("No way", client.arguments["input"])
-        prompt = client.arguments["input"]
+        self.assertIn("No way", client.arguments["contents"])
+        prompt = client.arguments["contents"]
         [sent], _ = json.JSONDecoder().raw_decode(prompt.split("\n\n", 1)[1])
         self.assertEqual(sent["transcript"], "No way!")
         self.assertEqual((sent["context_before"], sent["context_after"]), ("Watch this.", "I told you."))
@@ -81,16 +81,78 @@ class GeminiEvaluationTests(unittest.TestCase):
         )
         get_client.return_value = client
         evaluate_candidates([{"start": 1.0, "end": 4.0, "score": 1}], [])
-        self.assertIn('"chat": null', client.arguments["input"])
+        self.assertIn('"chat": null', client.arguments["contents"])
         self.assertEqual(client.arguments["model"], "gemini-3.6-flash")
-        self.assertEqual(client.arguments["response_format"], EVALUATION_RESPONSE_FORMAT)
+        config = client.arguments["config"]
+        self.assertEqual(config["response_json_schema"], EVALUATION_RESPONSE_FORMAT["schema"])
         self.assertEqual(
-            client.arguments["response_format"]["mime_type"], "application/json"
+            config["response_mime_type"], "application/json"
         )
         self.assertEqual(
-            client.arguments["response_format"]["schema"]["required"],
+            config["response_json_schema"]["required"],
             ["evaluations"],
         )
+
+    @patch("twitch_auto_clipper.gemini_evaluation.time.sleep")
+    @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
+    def test_transient_unavailability_is_retried_but_quota_is_not(self, get_client, sleep) -> None:
+        client = FakeGeminiClient(
+            '{"evaluations":[{"candidate_id":"candidate_1","interesting":true,"score":70,"justification":"Ok."}]}'
+        )
+        calls = []
+        answer = client.generate_content
+
+        def flaky(**kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("503 UNAVAILABLE. This model is currently experiencing high demand.")
+            return answer(**kwargs)
+
+        client.generate_content = flaky
+        get_client.return_value = client
+        evaluations = evaluate_candidates([{"start": 1.0, "end": 4.0}], [])
+        self.assertEqual((len(calls), evaluations[0]["score"]), (2, 70))
+        sleep.assert_called_once()
+
+        def quota(**kwargs):
+            raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+        client.generate_content = quota
+        sleep.reset_mock()
+        with self.assertRaisesRegex(GeminiEvaluationError, "429"):
+            evaluate_candidates([{"start": 1.0, "end": 4.0}], [])
+        sleep.assert_not_called()
+
+    @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
+    def test_daily_quota_counts_requests_and_stops_before_the_limit(self, get_client) -> None:
+        from twitch_auto_clipper.daily_quota import DailyQuota
+
+        client = FakeGeminiClient(
+            '{"evaluations":[{"candidate_id":"candidate_1","interesting":true,"score":70,"justification":"Ok."}]}'
+        )
+        get_client.return_value = client
+        with tempfile.TemporaryDirectory() as directory:
+            quota = DailyQuota(Path(directory) / "gemini.json", daily_limit=1)
+            evaluate_candidates([{"start": 1.0, "end": 4.0}], [], quota=quota)
+            client.arguments = None
+            with self.assertRaisesRegex(GeminiEvaluationError, "Quota Gemini du jour") as raised:
+                evaluate_candidates([{"start": 1.0, "end": 4.0}], [], quota=quota)
+        self.assertIsNone(client.arguments)  # no request sent beyond the limit
+        self.assertEqual(raised.exception.retry_at, quota.next_reset())
+
+    @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
+    def test_google_quota_refusal_closes_the_day(self, get_client) -> None:
+        from twitch_auto_clipper.daily_quota import DailyQuota
+
+        client = FakeGeminiClient("")
+        client.generate_content = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("429 RESOURCE_EXHAUSTED"))
+        get_client.return_value = client
+        with tempfile.TemporaryDirectory() as directory:
+            quota = DailyQuota(Path(directory) / "gemini.json", daily_limit=20)
+            with self.assertRaises(GeminiEvaluationError) as raised:
+                evaluate_candidates([{"start": 1.0, "end": 4.0}], [], quota=quota)
+            self.assertFalse(quota.available())
+        self.assertIsNotNone(raised.exception.retry_at)
 
     @patch.dict(os.environ, {}, clear=True)
     def test_evaluate_candidates_requires_api_key(self) -> None:
@@ -160,7 +222,8 @@ class GeminiEvaluationTests(unittest.TestCase):
 
         self.assertEqual(len(selected), 2)
         evaluate.assert_called_once_with(
-            [{}, {}], [], model="gemini-3.6-flash", selection_count=5
+            [{}, {}], [], model="gemini-3.6-flash", selection_count=5,
+            quota=None,
         )
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})

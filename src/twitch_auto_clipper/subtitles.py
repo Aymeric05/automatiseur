@@ -22,6 +22,14 @@ def _escape_ass_text(text: str) -> str:
     return text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}").replace("\n", " ")
 
 
+def _join_words(words: list[str]) -> str:
+    # Whisper splits "4 p.m." into "p" + ".m.": punctuation sticks to the previous word.
+    text = ""
+    for word in words:
+        text += word if text and word[0] in ",.!?;:'%" else f" {word}" if text else word
+    return text
+
+
 def _words_from_segments(
     segments: list[dict[str, Any]], clip_start: float, clip_end: float
 ) -> list[dict[str, Any]]:
@@ -66,7 +74,7 @@ def generate_ass_subtitles(
         group = words[index : index + max_words]
         start = group[0]["start"]
         end = max(start + 0.05, group[-1]["end"])
-        text = " ".join(_escape_ass_text(word["text"]) for word in group)
+        text = _join_words([_escape_ass_text(word["text"]) for word in group])
         events.append(
             f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Default,,0,0,0,,{text}"
         )

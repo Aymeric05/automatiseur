@@ -47,6 +47,25 @@ class TranscriptionTests(unittest.TestCase):
         self.assertEqual(segments[0]["words"][0]["start"], 1.5)
         self.assertEqual(model.arguments[1]["word_timestamps"], True)
         self.assertEqual(model.arguments[1]["language"], "fr")
+        self.assertTrue(model.arguments[1]["vad_filter"])  # no invented text over music/silence
+
+    @patch("twitch_auto_clipper.transcription._extract_chunk")
+    @patch("twitch_auto_clipper.transcription._duration", return_value=25.0)
+    @patch("twitch_auto_clipper.transcription._get_whisper_model")
+    def test_long_files_are_transcribed_in_chunks_with_absolute_times(
+        self, get_model, duration, extract
+    ) -> None:
+        model = FakeWhisperModel("base", "cpu", "int8")
+        get_model.return_value = model
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            input_path = Path(temporary_directory) / "vod_audio.mp4"
+            input_path.write_bytes(b"audio")
+            segments = transcribe_video(input_path, chunk_seconds=10)
+
+        self.assertEqual([call.args[1:3] for call in extract.call_args_list], [(0.0, 10), (10.0, 10), (20.0, 10)])
+        self.assertEqual([segment["start"] for segment in segments], [1.5, 11.5, 21.5])
+        self.assertEqual(segments[1]["words"][0]["start"], 11.5)
 
     @patch("twitch_auto_clipper.transcription._get_whisper_model")
     def test_transcribe_video_allows_custom_device_and_compute_type(self, get_model) -> None:

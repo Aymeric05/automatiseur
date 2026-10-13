@@ -78,6 +78,7 @@ class VODProcessingTests(unittest.TestCase):
             self.assertEqual(first.clip_budget, 10)
             transcriber.assert_called_once_with(
                 video_path,
+                language="en",
                 device="cpu",
                 compute_type="int8",
             )
@@ -241,6 +242,41 @@ class VODProcessingTests(unittest.TestCase):
         self.assertEqual(result.chat_status, "already_completed")
         transcriber.assert_not_called()
         chat_downloader.assert_not_called()
+
+    def test_manifest_exists_before_a_long_transcription_is_interrupted(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            audio_path = root / "vod-1_audio.mp4"
+            audio_path.write_bytes(b"audio")
+            pipeline = VODProcessingPipeline(
+                output_dir=root, transcriber=Mock(side_effect=KeyboardInterrupt), chat_downloader=Mock()
+            )
+            with self.assertRaises(KeyboardInterrupt):
+                pipeline.process(acquired_vod(audio_path))
+            manifest = json.loads((root / "vod-1_processing.json").read_text(encoding="utf-8"))
+        self.assertEqual((manifest["vod_id"], manifest["clip_budget"]), ("vod-1", 10))
+
+    def test_corrupt_existing_chat_is_dropped_and_downloaded_again(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            audio_path = root / "vod-1_audio.mp4"
+            audio_path.write_bytes(b"audio")
+            (root / "vod-1_transcript.json").write_text("[]", encoding="utf-8")
+            (root / "vod-1_chat.json").write_text('{"comments": [', encoding="utf-8")  # truncated
+
+            def download(url, path):
+                path.write_text('{"comments": []}', encoding="utf-8")
+                return path
+
+            chat_downloader = Mock(side_effect=download)
+            pipeline = VODProcessingPipeline(output_dir=root, transcriber=Mock(), chat_downloader=chat_downloader)
+
+            first = pipeline.process(acquired_vod(audio_path))
+            self.assertFalse((root / "vod-1_chat.json").exists())
+            second = pipeline.process(acquired_vod(audio_path))
+
+        self.assertEqual((first.chat_status, second.chat_status), ("unavailable", "downloaded"))
+        chat_downloader.assert_called_once()
 
 
 if __name__ == "__main__":

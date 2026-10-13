@@ -65,9 +65,18 @@ def authenticate_youtube(
     client_secrets_path: Path = Path("credentials.json"),
     token_path: Path = Path("youtube-token.json"),
     expected_channel_id: str | None = None,
+    allow_browser: bool = True,
 ):
-    """Load or create local OAuth credentials for YouTube uploads."""
+    """Load or create local OAuth credentials for YouTube uploads.
+
+    When the saved authorization is missing, insufficient or no longer
+    accepted by Google (e.g. expired after 7 days while the Google Cloud app
+    is in "Testing" mode), the Google sign-in page is opened, unless
+    ``allow_browser`` is False: unattended uploads then fail with a clear
+    message instead of waiting for someone in front of a browser.
+    """
     Request, Credentials, InstalledAppFlow, build, _, _ = _load_google_dependencies()
+    from google.auth.exceptions import RefreshError
     scopes = [YOUTUBE_UPLOAD_SCOPE]
     if expected_channel_id:
         scopes.append(YOUTUBE_READONLY_SCOPE)
@@ -80,8 +89,16 @@ def authenticate_youtube(
                 credentials = None
         if credentials is None or not credentials.valid:
             if credentials is not None and credentials.expired and credentials.refresh_token:
-                credentials.refresh(Request())
-            else:
+                try:
+                    credentials.refresh(Request())
+                except RefreshError:
+                    credentials = None  # revoked or expired: a new sign-in is needed
+            if credentials is None or not credentials.valid:
+                if not allow_browser:
+                    raise YouTubeUploadError(
+                        "Autorisation YouTube expiree ou absente : relancez la surveillance avec "
+                        "--auto-upload-youtube (ou un upload manuel) pour vous reconnecter."
+                    )
                 if not client_secrets_path.is_file():
                     raise YouTubeUploadError(
                         f"Fichier OAuth introuvable : {client_secrets_path}"
@@ -89,7 +106,9 @@ def authenticate_youtube(
                 flow = InstalledAppFlow.from_client_secrets_file(
                     str(client_secrets_path), scopes
                 )
-                credentials = flow.run_local_server(port=0)
+                # 127.0.0.1, not "localhost": a browser resolving localhost to IPv6 never
+                # reaches the local server and the sign-in hangs.
+                credentials = flow.run_local_server(host="127.0.0.1", port=0)
             token_path.parent.mkdir(parents=True, exist_ok=True)
             token_path.write_text(credentials.to_json(), encoding="utf-8")
         return build("youtube", "v3", credentials=credentials)
@@ -139,6 +158,7 @@ def upload_video(
     youtube_service: Any | None = None,
     made_for_kids: bool = False,
     expected_channel_id: str | None = None,
+    allow_browser: bool = True,
 ) -> tuple[str, str]:
     """Upload a video with resumable MediaFileUpload and return ID and URL."""
     if not video_path.is_file():
@@ -149,7 +169,7 @@ def upload_video(
     _, _, _, _, HttpError, MediaFileUpload = _load_google_dependencies()
     try:
         service = youtube_service or authenticate_youtube(
-            client_secrets_path, token_path, expected_channel_id
+            client_secrets_path, token_path, expected_channel_id, allow_browser=allow_browser
         )
         verify_expected_channel(service, expected_channel_id)
         body = {

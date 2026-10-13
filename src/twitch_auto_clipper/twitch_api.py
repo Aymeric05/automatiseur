@@ -3,7 +3,8 @@
 from dataclasses import dataclass
 import json
 import os
-from urllib.error import URLError
+import time
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -42,7 +43,15 @@ class TwitchVOD:
 
 
 class TwitchAPIClient:
-    """Small client for app-authenticated Twitch live stream discovery."""
+    """Small client for app-authenticated Twitch live stream discovery.
+
+    The app access token is reused until shortly before it expires (about 60
+    days) and requested again when Twitch rejects it (HTTP 401).
+    """
+
+    def __init__(self) -> None:
+        self._token: str | None = None
+        self._token_expires_at = 0.0
 
     def fetch_english_streams(
         self,
@@ -62,7 +71,6 @@ class TwitchAPIClient:
         if not 1 <= page_size <= MAX_PAGE_SIZE:
             raise ValueError(f"page_size must be between 1 and {MAX_PAGE_SIZE}")
 
-        access_token = self._get_app_access_token()
         streams: list[LiveStream] = []
         seen_stream_ids: set[str] = set()
         cursor: str | None = None
@@ -72,15 +80,7 @@ class TwitchAPIClient:
             params = {"first": page_size, "language": "en"}
             if cursor:
                 params["after"] = cursor
-            payload = self._request_json(
-                Request(
-                    f"{STREAMS_URL}?{urlencode(params)}",
-                    headers={
-                        "Client-Id": self._client_id(),
-                        "Authorization": f"Bearer {access_token}",
-                    },
-                )
-            )
+            payload = self._helix(f"{STREAMS_URL}?{urlencode(params)}")
 
             # Ordering shifts while paginating, so a stream can appear on two
             # pages of the same snapshot: keep only its first occurrence.
@@ -113,20 +113,11 @@ class TwitchAPIClient:
         unique_ids = list(dict.fromkeys(user_ids))
         if not unique_ids:
             return {}
-        access_token = self._get_app_access_token()
         live: dict[str, LiveStream] = {}
         for start in range(0, len(unique_ids), MAX_PAGE_SIZE):
             batch = unique_ids[start : start + MAX_PAGE_SIZE]
             query = urlencode([("user_id", user_id) for user_id in batch] + [("first", MAX_PAGE_SIZE)])
-            payload = self._request_json(
-                Request(
-                    f"{STREAMS_URL}?{query}",
-                    headers={
-                        "Client-Id": self._client_id(),
-                        "Authorization": f"Bearer {access_token}",
-                    },
-                )
-            )
+            payload = self._helix(f"{STREAMS_URL}?{query}")
             for item in payload.get("data", []):
                 stream = self._parse_stream(item)
                 live[stream.broadcaster_id] = stream
@@ -134,15 +125,7 @@ class TwitchAPIClient:
 
     def fetch_vod(self, vod_id: str) -> TwitchVOD | None:
         """Return one archived VOD by its id, or None if it does not exist."""
-        payload = self._request_json(
-            Request(
-                f"{VIDEOS_URL}?{urlencode({'id': vod_id})}",
-                headers={
-                    "Client-Id": self._client_id(),
-                    "Authorization": f"Bearer {self._get_app_access_token()}",
-                },
-            )
-        )
+        payload = self._helix(f"{VIDEOS_URL}?{urlencode({'id': vod_id})}")
         for item in payload.get("data", []):
             return TwitchVOD(
                 vod_id=item["id"],
@@ -160,7 +143,6 @@ class TwitchAPIClient:
         stream_id: str,
     ) -> TwitchVOD | None:
         """Find the archived VOD whose Helix stream_id matches this live."""
-        access_token = self._get_app_access_token()
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
@@ -173,15 +155,7 @@ class TwitchAPIClient:
             }
             if cursor:
                 params["after"] = cursor
-            payload = self._request_json(
-                Request(
-                    f"{VIDEOS_URL}?{urlencode(params)}",
-                    headers={
-                        "Client-Id": self._client_id(),
-                        "Authorization": f"Bearer {access_token}",
-                    },
-                )
-            )
+            payload = self._helix(f"{VIDEOS_URL}?{urlencode(params)}")
 
             for item in payload.get("data", []):
                 if item.get("stream_id") == stream_id:
@@ -205,7 +179,26 @@ class TwitchAPIClient:
             raise TwitchAPIError("TWITCH_CLIENT_ID is not configured.")
         return client_id
 
+    def _helix(self, url: str) -> dict:
+        for attempt in (1, 2):
+            request = Request(
+                url,
+                headers={
+                    "Client-Id": self._client_id(),
+                    "Authorization": f"Bearer {self._get_app_access_token()}",
+                },
+            )
+            try:
+                return self._request_json(request)
+            except TwitchAPIError as error:
+                cause = error.__cause__
+                if attempt == 2 or not (isinstance(cause, HTTPError) and cause.code == 401):
+                    raise
+                self._token = None  # revoked or expired early: ask for a new one once
+
     def _get_app_access_token(self) -> str:
+        if self._token and time.monotonic() < self._token_expires_at:
+            return self._token
         client_id = self._client_id()
         client_secret = os.environ.get("TWITCH_CLIENT_SECRET")
         if not client_secret:
@@ -229,6 +222,10 @@ class TwitchAPIClient:
         access_token = payload.get("access_token")
         if not access_token:
             raise TwitchAPIError("Twitch token response did not include an access token.")
+        expires_in = payload.get("expires_in")
+        lifetime = float(expires_in) if isinstance(expires_in, (int, float)) else 3600.0
+        self._token = access_token
+        self._token_expires_at = time.monotonic() + max(0.0, lifetime - 300)
         return access_token
 
     @staticmethod

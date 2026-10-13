@@ -2,17 +2,33 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import os
 from pathlib import Path
+import time
 from typing import Any
+
+from .daily_quota import DailyQuota
 
 
 CONTEXT_SECONDS = 15.0  # transcript shared with Gemini before and after each candidate
+GEMINI_TIMEOUT_MS = 300_000
+# "503 UNAVAILABLE: high demand" spikes are short: retry once before failing
+# (every attempt counts against the daily request quota).
+TRANSIENT_RETRY_DELAYS = (30.0,)
+TRANSIENT_MARKERS = ("503", "500", "unavailable", "internal", "deadline", "high demand")
 
 
 class GeminiEvaluationError(RuntimeError):
     """Raised when Gemini cannot evaluate highlight candidates."""
+
+    def __init__(self, message: str, retry_at: datetime | None = None) -> None:
+        super().__init__(message)
+        self.retry_at = retry_at  # set when only the daily quota is missing
+
+
+QUOTA_ERROR_MARKERS = ("429", "resource_exhausted", "exceeded your current quota")
 
 
 EVALUATION_RESPONSE_FORMAT = {
@@ -59,7 +75,8 @@ def _get_gemini_client():
             "Le paquet google-genai est requis pour utiliser Gemini."
         ) from error
 
-    return genai.Client(api_key=api_key)
+    # A stalled request must not freeze the VOD worker (timeout in milliseconds).
+    return genai.Client(api_key=api_key, http_options={"timeout": GEMINI_TIMEOUT_MS})
 
 
 def _candidate_context(
@@ -130,6 +147,9 @@ def _build_prompt(
             "en priorisant les moments genuinement interessants selon le contenu, "
             "les reactions du streamer, l'activite du chat et le score heuristique. "
             "Si le nombre de candidats fournis est inferieur, retourne-les tous. "
+            "Mets interesting a false pour tout candidat qui ne ferait pas un Short "
+            "interessant : il ne sera ni genere ni publie. Si aucun moment de la VOD "
+            "ne merite un Short, mets interesting a false partout. "
             "N'invente aucun moment ni aucun candidate_id."
         )
     return prompt
@@ -178,8 +198,13 @@ def evaluate_candidates(
     transcription: list[dict[str, Any]],
     model: str = "gemini-3.6-flash",
     selection_count: int | None = None,
+    quota: DailyQuota | None = None,
 ) -> list[dict[str, Any]]:
-    """Ask Gemini to evaluate candidates using transcript and optional chat counts."""
+    """Ask Gemini to evaluate candidates using transcript and optional chat counts.
+
+    With ``quota``, every request (retries included) is counted and none is
+    sent once the daily limit is reached.
+    """
     context = _candidate_context(candidates, transcription)
     if selection_count is not None:
         if selection_count < 0:
@@ -191,16 +216,39 @@ def evaluate_candidates(
         expected_count = None
 
     client = _get_gemini_client()
-    try:
-        interaction = client.interactions.create(
-            model=model,
-            input=_build_prompt(context, selection_count=expected_count),
-            response_format=EVALUATION_RESPONSE_FORMAT,
-        )
-    except Exception as error:
-        raise GeminiEvaluationError(f"Echec de l'appel Gemini : {error}") from error
+    prompt = _build_prompt(context, selection_count=expected_count)
+    for delay in (*TRANSIENT_RETRY_DELAYS, None):
+        if quota is not None:
+            if not quota.available():
+                raise GeminiEvaluationError(
+                    f"Quota Gemini du jour atteint ({quota.daily_limit} requetes).",
+                    retry_at=quota.next_reset(),
+                )
+            quota.record_use()
+        try:
+            # generate_content, not the beta Interactions API: the latter has its own,
+            # much smaller quota and answered HTTP 429 while generate_content worked.
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config={
+                    "response_mime_type": EVALUATION_RESPONSE_FORMAT["mime_type"],
+                    "response_json_schema": EVALUATION_RESPONSE_FORMAT["schema"],
+                    "automatic_function_calling": {"disable": True},  # no tools: no AFC warning
+                },
+            )
+            break
+        except Exception as error:
+            if quota is not None and any(marker in str(error).lower() for marker in QUOTA_ERROR_MARKERS):
+                quota.mark_exhausted()  # Google refused: no more requests today
+                raise GeminiEvaluationError(
+                    f"Echec de l'appel Gemini : {error}", retry_at=quota.next_reset()
+                ) from error
+            if delay is None or not any(marker in str(error).lower() for marker in TRANSIENT_MARKERS):
+                raise GeminiEvaluationError(f"Echec de l'appel Gemini : {error}") from error
+            time.sleep(delay)
 
-    response_text = getattr(interaction, "output_text", None)
+    response_text = getattr(response, "text", None)
     if not isinstance(response_text, str) or not response_text.strip():
         raise GeminiEvaluationError("Gemini a retourne une reponse vide.")
     evaluations = _parse_response(
@@ -222,6 +270,7 @@ def select_candidates(
     transcription: list[dict[str, Any]],
     requested_count: int,
     model: str = "gemini-3.6-flash",
+    quota: DailyQuota | None = None,
 ) -> list[dict[str, Any]]:
     """Return an exact, distinct Gemini selection, or every candidate if fewer exist."""
     if requested_count < 0:
@@ -233,6 +282,7 @@ def select_candidates(
         transcription,
         model=model,
         selection_count=requested_count,
+        quota=quota,
     )
 
 

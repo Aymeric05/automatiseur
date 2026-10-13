@@ -6,6 +6,9 @@ import tempfile
 import unittest
 
 from twitch_auto_clipper.shorts_metadata import ShortMetadata
+from datetime import datetime, timezone
+
+from twitch_auto_clipper.daily_quota import DailyQuota
 from twitch_auto_clipper.shorts_upload import VODShortsUploader, format_short_upload_result
 from twitch_auto_clipper.vod_shorts import VODShortResult
 from twitch_auto_clipper.youtube import YouTubeUploadError
@@ -58,6 +61,7 @@ class ShortsUploadTests(unittest.TestCase):
         self.assertFalse(self.short_path.exists())
         self.assertEqual(calls[0][2], "private")
         self.assertFalse(calls[0][3]["made_for_kids"])
+        self.assertFalse(calls[0][3]["allow_browser"])  # unattended upload never waits for a sign-in
         record = self._manifest()["youtube_uploads"]["candidate_1"]
         self.assertEqual(record["video_id"], "yt123")
         self.assertEqual(record["privacy"], "private")
@@ -126,11 +130,40 @@ class ShortsUploadTests(unittest.TestCase):
         self.assertFalse(VODShortsUploader._delete_local(self.transcript))
         self._assert_protected_files_kept()
 
+    def test_daily_quota_defers_without_calling_youtube(self):
+        calls = []
+        uploader = VODShortsUploader(self.tmp, uploader=lambda *a, **k: calls.append(a), daily_upload_limit=1)
+        uploader.quota.record_use()
+
+        result = uploader.upload("vod_1", self._short(), METADATA)
+
+        self.assertEqual(result.status, "deferred")
+        self.assertEqual(calls, [])
+        self.assertTrue(self.short_path.is_file())
+        self.assertIn("en attente", format_short_upload_result(result))
+
     def test_format_mentions_kept_file_on_failure(self):
         result = VODShortsUploader(
             self.tmp, uploader=lambda *a, **k: (_ for _ in ()).throw(YouTubeUploadError("x"))
         ).upload("vod_1", self._short(), METADATA)
         self.assertIn("fichier local conserve", format_short_upload_result(result))
+
+
+class DailyQuotaTests(unittest.TestCase):
+    def test_quota_day_starts_at_08_utc_and_is_persisted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            now = [datetime(2026, 10, 12, 7, 59, tzinfo=timezone.utc)]
+            path = Path(directory) / "quota.json"
+            quota = DailyQuota(path, daily_limit=2, clock=lambda: now[0])
+            quota.record_use()
+            quota.record_use()
+            self.assertFalse(DailyQuota(path, 2, clock=lambda: now[0]).available())  # survives a restart
+            self.assertEqual(quota.next_reset(), datetime(2026, 10, 12, 8, 0, tzinfo=timezone.utc))
+            now[0] = datetime(2026, 10, 12, 8, 0, tzinfo=timezone.utc)
+            self.assertTrue(quota.available())  # new YouTube quota day
+            quota.mark_exhausted()
+            self.assertFalse(quota.available())
+            self.assertEqual(quota.next_reset(), datetime(2026, 10, 13, 8, 0, tzinfo=timezone.utc))
 
 
 if __name__ == "__main__":

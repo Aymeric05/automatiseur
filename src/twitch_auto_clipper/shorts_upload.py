@@ -8,18 +8,20 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
+from .daily_quota import DailyQuota
 from .shorts_metadata import ShortMetadata
 from .vod_shorts import VODShortResult
 from .youtube import upload_video
 
 UPLOAD_PRIVACY = "private"
+QUOTA_ERROR_REASONS = ("quotaExceeded", "uploadLimitExceeded", "dailyLimitExceeded")
 
 
 @dataclass(frozen=True)
 class ShortUploadResult:
     candidate_id: str
     output_path: Path
-    status: str  # "uploaded" | "already_uploaded" | "skipped" | "error"
+    status: str  # "uploaded" | "already_uploaded" | "deferred" | "skipped" | "error"
     video_id: str | None = None
     url: str | None = None
     title: str | None = None
@@ -45,8 +47,15 @@ class VODShortsUploader:
         token_path: Path = Path("youtube-token.json"),
         expected_channel_id: str | None = None,
         delete_after_upload: bool = True,
+        daily_upload_limit: int | None = None,
     ) -> None:
         self.output_dir = output_dir
+        # None: no local limit (YouTube's refusals are still honoured per call).
+        self.quota = (
+            DailyQuota(output_dir / "youtube_quota.json", daily_upload_limit)
+            if daily_upload_limit is not None
+            else None
+        )
         self._uploader = uploader or upload_video
         self.client_secrets_path = client_secrets_path
         self.token_path = token_path
@@ -62,8 +71,8 @@ class VODShortsUploader:
         manifest_path = self.output_dir / f"{vod_id}_processing.json"
         manifest = self._load_manifest(manifest_path)
         uploads = manifest.get("youtube_uploads", {})
-        if isinstance(uploads, dict) and short.candidate_id in uploads:
-            previous = uploads[short.candidate_id]
+        if isinstance(uploads, dict) and short.key in uploads:
+            previous = uploads[short.key]
             self._delete_local(short.output_path)
             return ShortUploadResult(
                 short.candidate_id,
@@ -82,6 +91,11 @@ class VODShortsUploader:
                 short.candidate_id, short.output_path, "error",
                 error=f"Fichier video introuvable ou vide : {short.output_path}",
             )
+        if self.quota is not None and not self.quota.available():
+            return ShortUploadResult(
+                short.candidate_id, short.output_path, "deferred", title=metadata.title,
+                error=self._deferred_message(),
+            )
 
         try:
             video_id, url = self._uploader(
@@ -91,23 +105,34 @@ class VODShortsUploader:
                 UPLOAD_PRIVACY,
                 self.client_secrets_path,
                 self.token_path,
-                made_for_kids=False,
+                made_for_kids=False,  # never declared "made for kids": widest audience
                 expected_channel_id=self.expected_channel_id,
+                allow_browser=False,  # unattended: never wait for a sign-in page
             )
         except Exception as error:
-            self._record_error(manifest_path, short.candidate_id, str(error))
+            if any(reason in str(error) for reason in QUOTA_ERROR_REASONS):
+                # Not a failure of this Short: YouTube's daily quota is used up.
+                if self.quota is not None:
+                    self.quota.mark_exhausted()
+                return ShortUploadResult(
+                    short.candidate_id, short.output_path, "deferred", title=metadata.title,
+                    error=f"YouTube refuse l'upload (quota atteint). {self._deferred_message()}",
+                )
+            self._record_error(manifest_path, short.key, str(error))
             return ShortUploadResult(
                 short.candidate_id, short.output_path, "error",
                 title=metadata.title, error=str(error),
             )
         if not isinstance(video_id, str) or not video_id:
             error = "YouTube n'a pas confirme l'upload (aucun identifiant video)."
-            self._record_error(manifest_path, short.candidate_id, error)
+            self._record_error(manifest_path, short.key, error)
             return ShortUploadResult(
                 short.candidate_id, short.output_path, "error",
                 title=metadata.title, error=error,
             )
 
+        if self.quota is not None:
+            self.quota.record_use()
         try:
             self._record_upload(manifest_path, short, metadata, video_id, url)
         except (OSError, ValueError) as error:
@@ -126,6 +151,15 @@ class VODShortsUploader:
             url=url,
             title=metadata.title,
             local_file_deleted=deleted,
+        )
+
+    def _deferred_message(self) -> str:
+        if self.quota is None:
+            return "Nouvel essai au prochain passage."
+        reset = self.quota.next_reset()
+        return (
+            f"Quota YouTube du jour atteint ({self.quota.daily_limit} uploads) : "
+            f"reprise apres {reset:%Y-%m-%d %H:%M} UTC."
         )
 
     # ------------------------------------------------------------------
@@ -156,7 +190,8 @@ class VODShortsUploader:
         uploads = manifest.get("youtube_uploads")
         if not isinstance(uploads, dict):
             uploads = {}
-        uploads[short.candidate_id] = {
+        uploads[short.key] = {
+            "candidate_id": short.candidate_id,
             "video_id": video_id,
             "url": url,
             "privacy": UPLOAD_PRIVACY,
@@ -171,7 +206,7 @@ class VODShortsUploader:
         manifest["youtube_uploads"] = uploads
         errors = manifest.get("youtube_upload_errors")
         if isinstance(errors, dict):
-            errors.pop(short.candidate_id, None)
+            errors.pop(short.key, None)
             if not errors:
                 manifest.pop("youtube_upload_errors", None)
         self._write_manifest(manifest_path, manifest)
@@ -220,4 +255,6 @@ def format_short_upload_result(result: ShortUploadResult) -> str:
         return f"  [deja publie] {result.candidate_id} -> {result.url}"
     if result.status == "skipped":
         return f"  [non publie] {result.candidate_id} : {result.error}"
+    if result.status == "deferred":
+        return f"  [en attente] {result.candidate_id} : {result.error} (fichier local conserve)"
     return f"  [echec upload] {result.candidate_id} : {result.error} (fichier local conserve)"

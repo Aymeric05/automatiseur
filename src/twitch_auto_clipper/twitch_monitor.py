@@ -1,7 +1,9 @@
 """Polling and change detection for discovered Twitch live streams."""
 
 from collections import Counter
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
+import json
+from pathlib import Path
 from threading import Event
 import time
 from typing import Callable
@@ -42,6 +44,7 @@ class MonitoringCycle:
     scanned_stream_count: int = 0
     duration_seconds: float = 0.0
     status_check_error: str | None = None
+    state_error: str | None = None
 
 
 class TwitchStreamMonitor:
@@ -52,6 +55,10 @@ class TwitchStreamMonitor:
     A tracked stream missing from that list may simply have dropped below the
     threshold: its broadcaster is then checked directly, and the stream is
     ended only after ``end_confirmation_polls`` successful offline checks.
+
+    With ``state_path``, tracked streams (and their peaks) are saved after each
+    cycle and restored at start-up, so a stream that ends while the program is
+    stopped is still detected, with its real peak, after a restart.
     """
 
     def __init__(
@@ -60,6 +67,7 @@ class TwitchStreamMonitor:
         polling_interval_seconds: float = 60.0,
         budget_policy: ClipBudgetPolicy = DEFAULT_CLIP_BUDGET_POLICY,
         end_confirmation_polls: int = 3,
+        state_path: Path | None = None,
     ) -> None:
         if polling_interval_seconds <= 0:
             raise ValueError("polling_interval_seconds must be positive")
@@ -71,6 +79,8 @@ class TwitchStreamMonitor:
         self.end_confirmation_polls = end_confirmation_polls
         self._active_streams: dict[str, MonitoredStream] = {}
         self._missing_polls: dict[str, int] = {}
+        self.state_path = state_path
+        self._load_state()
 
     def poll_once(self) -> MonitoringCycle:
         """Fetch and classify one snapshot; API errors are returned, not raised."""
@@ -153,6 +163,11 @@ class TwitchStreamMonitor:
                 current[stream_id] = monitored
 
         self._active_streams = current
+        state_error = None
+        try:
+            self._save_state()
+        except OSError as error:  # tracking goes on in memory; only a restart would lose it
+            state_error = str(error)
         return MonitoringCycle(
             streams=tuple(current.values()),
             newly_discovered=tuple(newly_discovered),
@@ -161,7 +176,45 @@ class TwitchStreamMonitor:
             scanned_stream_count=len(streams),
             duration_seconds=time.monotonic() - started,
             status_check_error=status_check_error,
+            state_error=state_error,
         )
+
+    def _load_state(self) -> None:
+        # Best effort: an unreadable state only means tracking starts afresh.
+        if self.state_path is None:
+            return
+        try:
+            state = json.loads(self.state_path.read_text(encoding="utf-8"))
+            streams = {
+                item["stream"]["stream_id"]: MonitoredStream(
+                    LiveStream(**item["stream"]), int(item["clip_budget"]), item.get("peak_viewer_count")
+                )
+                for item in state.get("streams", [])
+            }
+            missing = {str(key): int(value) for key, value in state.get("missing_polls", {}).items()}
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            return
+        self._active_streams = streams
+        self._missing_polls = {key: value for key, value in missing.items() if key in streams}
+
+    def _save_state(self) -> None:
+        if self.state_path is None:
+            return
+        state = {
+            "streams": [
+                {
+                    "stream": asdict(monitored.stream),
+                    "clip_budget": monitored.clip_budget,
+                    "peak_viewer_count": monitored.peak_viewers,
+                }
+                for monitored in self._active_streams.values()
+            ],
+            "missing_polls": self._missing_polls,
+        }
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = self.state_path.with_name(f"{self.state_path.name}.tmp")
+        temporary_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary_path.replace(self.state_path)
 
     def run(
         self,
@@ -228,6 +281,8 @@ def format_monitoring_cycle(cycle: MonitoringCycle, verbose: bool = False) -> li
             "Verification des streams absents impossible (cycle non compte) : "
             f"{cycle.status_check_error}"
         )
+    if cycle.state_error:
+        lines.append(f"Etat de surveillance non sauvegarde : {cycle.state_error}")
     if verbose:
         for monitored in sorted(cycle.streams, key=lambda m: -m.stream.viewer_count):
             lines.append(

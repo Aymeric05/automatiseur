@@ -161,6 +161,38 @@ class TwitchAPITests(unittest.TestCase):
         self.assertEqual(first.count("user_id="), 100)
         self.assertEqual(second.count("user_id="), 50)
 
+    @patch.dict(
+        os.environ,
+        {"TWITCH_CLIENT_ID": "test-client-id", "TWITCH_CLIENT_SECRET": "test-secret"},
+        clear=True,
+    )
+    @patch("twitch_auto_clipper.twitch_api.urlopen")
+    def test_app_token_is_reused_and_renewed_once_when_rejected(self, urlopen) -> None:
+        from urllib.error import HTTPError
+
+        def rejected(request):
+            raise HTTPError(request.full_url, 401, "Unauthorized", {}, None)
+
+        responses = [
+            FakeResponse({"access_token": "token-1", "expires_in": 5_000_000}),
+            FakeResponse({"data": []}),
+            FakeResponse({"data": []}),  # second call: no new token
+            rejected,
+            FakeResponse({"access_token": "token-2", "expires_in": 5_000_000}),
+            FakeResponse({"data": []}),
+        ]
+        urlopen.side_effect = lambda request, timeout: (
+            responses.pop(0)(request) if callable(responses[0]) else responses.pop(0)
+        )
+        client = TwitchAPIClient()
+        client.fetch_live_streams_by_user_ids(["1"])
+        client.fetch_live_streams_by_user_ids(["1"])
+        client.fetch_live_streams_by_user_ids(["1"])
+
+        urls = [call.args[0].full_url for call in urlopen.call_args_list]
+        self.assertEqual(urls.count(TOKEN_URL), 2)
+        self.assertEqual(urlopen.call_args_list[-1].args[0].get_header("Authorization"), "Bearer token-2")
+
     @patch("twitch_auto_clipper.twitch_api.urlopen")
     def test_live_status_lookup_without_ids_makes_no_request(self, urlopen) -> None:
         self.assertEqual(TwitchAPIClient().fetch_live_streams_by_user_ids([]), {})

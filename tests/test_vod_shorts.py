@@ -88,7 +88,7 @@ class VODShortsGeneratorTests(unittest.TestCase):
         self.assertEqual(first.gemini_score, 80.0)
         self.assertEqual(first.gemini_justification, "Reason 1")
         self.assertTrue(first.output_path.is_file())
-        self.assertEqual(first.output_path.name, "vod_1_candidate_1_short.mp4")
+        self.assertEqual(first.output_path.name, "vod_1_20.0-30.0_short.mp4")
         self.assertEqual(len(ffmpeg.commands), 2)
 
     def test_margins_are_clamped_to_the_vod_limits(self):
@@ -104,7 +104,7 @@ class VODShortsGeneratorTests(unittest.TestCase):
         self.assertEqual((short.candidate_start, short.candidate_end), (44.0, 47.5))
 
     def test_existing_valid_short_is_not_regenerated(self):
-        (self.tmp / "vod_1_candidate_1_short.mp4").write_bytes(b"already here")
+        (self.tmp / "vod_1_20.0-30.0_short.mp4").write_bytes(b"already here")
         ffmpeg = FakeFFmpeg()
         result = self._generator(ffmpeg).generate(
             _selection(self.tmp, [_item(1, 20, 30)]), self.source
@@ -113,7 +113,7 @@ class VODShortsGeneratorTests(unittest.TestCase):
         self.assertEqual(ffmpeg.commands, [])
 
     def test_empty_existing_short_is_regenerated(self):
-        (self.tmp / "vod_1_candidate_1_short.mp4").write_bytes(b"")
+        (self.tmp / "vod_1_20.0-30.0_short.mp4").write_bytes(b"")
         ffmpeg = FakeFFmpeg()
         result = self._generator(ffmpeg).generate(
             _selection(self.tmp, [_item(1, 20, 30)]), self.source
@@ -122,7 +122,7 @@ class VODShortsGeneratorTests(unittest.TestCase):
         self.assertEqual(len(ffmpeg.commands), 1)
 
     def test_already_uploaded_short_is_not_regenerated(self):
-        manifest = {"youtube_uploads": {"candidate_1": {"video_id": "yt1"}}}
+        manifest = {"youtube_uploads": {"20.0-30.0": {"video_id": "yt1"}}}
         (self.tmp / "vod_1_processing.json").write_text(json.dumps(manifest), encoding="utf-8")
         ffmpeg = FakeFFmpeg()
         result = self._generator(ffmpeg).generate(
@@ -133,7 +133,7 @@ class VODShortsGeneratorTests(unittest.TestCase):
         self.assertEqual(ffmpeg.commands, [])
 
     def test_ffmpeg_failure_on_one_clip_does_not_stop_the_others(self):
-        ffmpeg = FakeFFmpeg(fail_for={"candidate_1"})
+        ffmpeg = FakeFFmpeg(fail_for={"20.0-30.0"})
         result = self._generator(ffmpeg).generate(
             _selection(self.tmp, [_item(1, 20, 30), _item(2, 100, 110)]), self.source
         )
@@ -153,7 +153,7 @@ class VODShortsGeneratorTests(unittest.TestCase):
         self.assertEqual(result.status, "failed")
 
     def test_empty_ffmpeg_output_is_an_error(self):
-        result = self._generator(FakeFFmpeg(empty_for={"candidate_1"})).generate(
+        result = self._generator(FakeFFmpeg(empty_for={"20.0-30.0"})).generate(
             _selection(self.tmp, [_item(1, 20, 30)]), self.source
         )
         self.assertEqual(result.shorts[0].status, "error")
@@ -161,7 +161,7 @@ class VODShortsGeneratorTests(unittest.TestCase):
         self.assertFalse(result.shorts[0].output_path.exists())
 
     def test_all_clips_failing_is_failed_not_partial(self):
-        result = self._generator(FakeFFmpeg(fail_for={"candidate"})).generate(
+        result = self._generator(FakeFFmpeg(fail_for={"_short"})).generate(
             _selection(self.tmp, [_item(1, 20, 30), _item(2, 100, 110)]), self.source
         )
         self.assertEqual(result.status, "failed")
@@ -196,17 +196,17 @@ class VODShortsGeneratorTests(unittest.TestCase):
             )
 
     def test_manifest_keeps_candidate_context(self):
-        self._generator(FakeFFmpeg(fail_for={"candidate_2"})).generate(
+        self._generator(FakeFFmpeg(fail_for={"100.0-110.0"})).generate(
             _selection(self.tmp, [_item(1, 20, 30, score=91), _item(2, 100, 110)]),
             self.source,
         )
         manifest = json.loads((self.tmp / "vod_1_processing.json").read_text(encoding="utf-8"))
-        entry = manifest["generated_shorts"]["candidate_1"]
-        self.assertEqual(entry["file"], "vod_1_candidate_1_short.mp4")
+        entry = manifest["generated_shorts"]["20.0-30.0"]
+        self.assertEqual(entry["file"], "vod_1_20.0-30.0_short.mp4")
         self.assertEqual((entry["candidate_start"], entry["candidate_end"]), (20.0, 30.0))
         self.assertEqual(entry["gemini_score"], 91)
         self.assertEqual(entry["gemini_justification"], "Reason 1")
-        self.assertIn("candidate_2", manifest["shorts_errors"])
+        self.assertIn("100.0-110.0", manifest["shorts_errors"])
 
     def test_subtitles_are_burned_from_transcript_and_cleaned_up(self):
         transcript = self.tmp / "transcript.json"
@@ -237,13 +237,65 @@ class VODShortsGeneratorTests(unittest.TestCase):
         self.assertFalse(short.subtitles)
         self.assertIn("sous-titres ignores", short.warning)
 
+    def test_same_candidate_number_for_another_moment_is_a_new_short(self):
+        # candidate_N numbers move when the candidate list changes: an old file
+        # or upload of candidate_1 must never stand for a different moment.
+        (self.tmp / "vod_1_processing.json").write_text(
+            json.dumps({"youtube_uploads": {"20.0-30.0": {"video_id": "yt1"}}}), encoding="utf-8"
+        )
+        ffmpeg = FakeFFmpeg()
+        short = self._generator(ffmpeg).generate(
+            _selection(self.tmp, [_item(1, 300, 310)]), self.source
+        ).shorts[0]
+        self.assertEqual(short.status, "generated")
+        self.assertEqual((short.candidate_id, short.key), ("candidate_1", "300.0-310.0"))
+        self.assertEqual(short.output_path.name, "vod_1_300.0-310.0_short.mp4")
+
+    def test_remote_source_is_resolved_once_and_only_when_needed(self):
+        calls = []
+
+        def stream_url():
+            calls.append(1)
+            return "https://example.test/vod.m3u8"
+
+        ffmpeg = FakeFFmpeg()
+        selection = _selection(self.tmp, [_item(1, 20, 30), _item(2, 100, 110)])
+        result = self._generator(ffmpeg).generate(selection, stream_url)
+        self.assertEqual(result.status, "completed")
+        self.assertEqual(calls, [1])  # one resolution for both clips
+        self.assertEqual(ffmpeg.commands[0][ffmpeg.commands[0].index("-i") + 1], "https://example.test/vod.m3u8")
+        # Nothing left to render: the source is not even resolved.
+        self._generator(FakeFFmpeg()).generate(selection, stream_url)
+        self.assertEqual(calls, [1])
+
+    def test_unreachable_remote_source_is_an_error_per_clip(self):
+        def unreachable():
+            raise RuntimeError("Twitch indisponible")
+
+        result = self._generator(FakeFFmpeg()).generate(
+            _selection(self.tmp, [_item(1, 20, 30)]), unreachable
+        )
+        self.assertEqual(result.status, "failed")
+        self.assertIn("Twitch indisponible", result.shorts[0].error)
+
     def test_format_lists_each_clip(self):
-        result = self._generator(FakeFFmpeg(fail_for={"candidate_2"})).generate(
+        result = self._generator(FakeFFmpeg(fail_for={"100.0-110.0"})).generate(
             _selection(self.tmp, [_item(1, 20, 30), _item(2, 100, 110)]), self.source
         )
         lines = format_vod_shorts_result(result)
         self.assertIn("1/2", lines[0])
         self.assertIn("[erreur] candidate_2", lines[2])
+
+
+class FFmpegRunnerTests(unittest.TestCase):
+    def test_stalled_ffmpeg_is_stopped_and_reported(self):
+        from unittest.mock import patch
+
+        with patch("twitch_auto_clipper.vod_shorts.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired("ffmpeg", 1800)) as run:
+            with self.assertRaisesRegex(ShortsGenerationError, "interrompu"):
+                VODShortsGenerator._run_ffmpeg(["ffmpeg"])
+        self.assertIn("timeout", run.call_args.kwargs)
 
 
 class VerticalFilterTests(unittest.TestCase):

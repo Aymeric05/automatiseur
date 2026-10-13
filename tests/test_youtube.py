@@ -79,7 +79,8 @@ class YouTubeTests(unittest.TestCase):
                 cls.scopes = scopes
                 return cls()
 
-            def run_local_server(self, port):
+            def run_local_server(self, host, port):
+                assert host == "127.0.0.1"
                 return type("Granted", (), {"to_json": lambda self: "{}"})()
 
         dependencies = (None, Credentials, FakeFlow, lambda *a, **k: "service", Exception, None)
@@ -95,6 +96,43 @@ class YouTubeTests(unittest.TestCase):
             self.assertIsNone(FakeFlow.scopes)  # upload-only token is enough without channel check
             self.assertEqual(authenticate_youtube(secrets, token, "channel123"), "service")
             self.assertEqual(FakeFlow.scopes, [YOUTUBE_UPLOAD_SCOPE, YOUTUBE_READONLY_SCOPE])
+
+    def test_rejected_authorization_asks_for_a_new_sign_in_only_when_interactive(self) -> None:
+        import json
+        from google.auth.exceptions import RefreshError
+        from google.oauth2.credentials import Credentials
+        from twitch_auto_clipper.youtube import YOUTUBE_UPLOAD_SCOPE, authenticate_youtube
+
+        signed_in = []
+
+        class FakeFlow:
+            @classmethod
+            def from_client_secrets_file(cls, path, scopes):
+                return cls()
+
+            def run_local_server(self, host, port):
+                assert host == "127.0.0.1"
+                signed_in.append(port)
+                return type("Granted", (), {"to_json": lambda self: "{}"})()
+
+        def refused(self, request):
+            raise RefreshError("invalid_grant: Bad Request")
+
+        dependencies = (lambda: None, Credentials, FakeFlow, lambda *a, **k: "service", Exception, None)
+        with tempfile.TemporaryDirectory() as directory, \
+                patch("twitch_auto_clipper.youtube._load_google_dependencies", return_value=dependencies), \
+                patch.object(Credentials, "refresh", refused):
+            token, secrets = Path(directory) / "token.json", Path(directory) / "client.json"
+            secrets.write_text("{}", encoding="utf-8")
+            token.write_text(json.dumps({  # fake test token, already expired
+                "token": "t", "refresh_token": "r", "client_id": "c", "client_secret": "s",
+                "scopes": [YOUTUBE_UPLOAD_SCOPE], "expiry": "2020-01-01T00:00:00Z",
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(YouTubeUploadError, "reconnecter"):
+                authenticate_youtube(secrets, token, allow_browser=False)
+            self.assertEqual(signed_in, [])
+            self.assertEqual(authenticate_youtube(secrets, token), "service")
+            self.assertEqual(signed_in, [0])  # Google sign-in page opened once
 
     @patch("twitch_auto_clipper.youtube._load_google_dependencies")
     def test_upload_video_uses_resumable_upload_and_returns_url(self, load_dependencies):
