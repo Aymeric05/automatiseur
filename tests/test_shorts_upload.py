@@ -68,6 +68,19 @@ class ShortsUploadTests(unittest.TestCase):
         self.assertEqual(record["title"], METADATA.title)
         self._assert_protected_files_kept()
 
+    def test_visibility_is_private_unless_configured(self):
+        calls = []
+
+        def uploader(path, title, description, privacy, *args, **kwargs):
+            calls.append(privacy)
+            return "yt1", "https://youtu.be/yt1"
+
+        VODShortsUploader(self.tmp, uploader=uploader, privacy="public").upload("vod_1", self._short(), METADATA)
+        self.assertEqual(calls, ["public"])
+        self.assertEqual(self._manifest()["youtube_uploads"]["candidate_1"]["privacy"], "public")
+        with self.assertRaises(ValueError):
+            VODShortsUploader(self.tmp, privacy="everyone")
+
     def test_failed_upload_keeps_local_short(self):
         def uploader(*args, **kwargs):
             raise YouTubeUploadError("quota exceeded")

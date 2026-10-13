@@ -13,7 +13,8 @@ from .shorts_metadata import ShortMetadata
 from .vod_shorts import VODShortResult
 from .youtube import upload_video
 
-UPLOAD_PRIVACY = "private"
+UPLOAD_PRIVACY = "private"  # default visibility of automatic uploads
+UPLOAD_PRIVACIES = frozenset({"private", "unlisted", "public"})
 QUOTA_ERROR_REASONS = ("quotaExceeded", "uploadLimitExceeded", "dailyLimitExceeded")
 
 
@@ -48,8 +49,13 @@ class VODShortsUploader:
         expected_channel_id: str | None = None,
         delete_after_upload: bool = True,
         daily_upload_limit: int | None = None,
+        privacy: str = UPLOAD_PRIVACY,
     ) -> None:
+        if privacy not in UPLOAD_PRIVACIES:
+            raise ValueError(f"privacy must be one of {sorted(UPLOAD_PRIVACIES)}")
         self.output_dir = output_dir
+        # YouTube keeps uploads of an API project it has not audited private anyway.
+        self.privacy = privacy
         # None: no local limit (YouTube's refusals are still honoured per call).
         self.quota = (
             DailyQuota(output_dir / "youtube_quota.json", daily_upload_limit)
@@ -102,7 +108,7 @@ class VODShortsUploader:
                 short.output_path,
                 metadata.title,
                 metadata.description,
-                UPLOAD_PRIVACY,
+                self.privacy,
                 self.client_secrets_path,
                 self.token_path,
                 made_for_kids=False,  # never declared "made for kids": widest audience
@@ -194,7 +200,7 @@ class VODShortsUploader:
             "candidate_id": short.candidate_id,
             "video_id": video_id,
             "url": url,
-            "privacy": UPLOAD_PRIVACY,
+            "privacy": self.privacy,
             "title": metadata.title,
             "description": metadata.description,
             "file": short.output_path.name,
@@ -249,7 +255,7 @@ class VODShortsUploader:
 def format_short_upload_result(result: ShortUploadResult) -> str:
     if result.status == "uploaded":
         cleanup = "fichier local supprime" if result.local_file_deleted else "fichier local conserve"
-        line = f"  [publie prive] {result.candidate_id} -> {result.url} ({cleanup})"
+        line = f"  [publie] {result.candidate_id} -> {result.url} ({cleanup})"
         return f"{line} - {result.error}" if result.error else line
     if result.status == "already_uploaded":
         return f"  [deja publie] {result.candidate_id} -> {result.url}"

@@ -425,6 +425,9 @@ def main() -> int:
             parser.error("--max-cycles doit etre positif.")
         daily_uploads = _daily_limit(parser, "YOUTUBE_MAX_UPLOADS_PER_DAY", DEFAULT_DAILY_UPLOADS)
         daily_gemini = _daily_limit(parser, "GEMINI_MAX_REQUESTS_PER_DAY", DEFAULT_DAILY_GEMINI_REQUESTS)
+        upload_privacy = os.environ.get("YOUTUBE_PRIVACY", "").strip().lower() or "private"
+        if upload_privacy not in {"private", "unlisted", "public"}:
+            parser.error("YOUTUBE_PRIVACY doit valoir private, unlisted ou public.")
         input_dir, output_dir = DATA_DIR / "input", DATA_DIR / "output"
         # Two monitors would download, process and publish the same VODs twice.
         instance_lock = acquire_instance_lock(output_dir / ".monitor.lock")
@@ -481,6 +484,7 @@ def main() -> int:
                 token_path=args.youtube_token,
                 expected_channel_id=expected_channel_id or None,
                 daily_upload_limit=daily_uploads,
+                privacy=upload_privacy,
             )
         automation = VODAutomationPipeline(
             processing_pipeline=VODProcessingPipeline(output_dir),
