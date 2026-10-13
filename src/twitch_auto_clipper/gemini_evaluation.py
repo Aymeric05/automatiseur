@@ -6,7 +6,6 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
-import time
 from typing import Any
 
 from .daily_quota import DailyQuota
@@ -14,9 +13,9 @@ from .daily_quota import DailyQuota
 
 CONTEXT_SECONDS = 15.0  # transcript shared with Gemini before and after each candidate
 GEMINI_TIMEOUT_MS = 300_000
-# "503 UNAVAILABLE: high demand" spikes are short: retry once before failing
-# (every attempt counts against the daily request quota).
-TRANSIENT_RETRY_DELAYS = (30.0,)
+# On the free tier, flash models often answer "503 high demand" to real-size
+# requests: these models are tried next, each with its own free quota.
+GEMINI_FALLBACK_MODELS = ("gemini-flash-latest", "gemini-flash-lite-latest")
 TRANSIENT_MARKERS = ("503", "500", "unavailable", "internal", "deadline", "high demand")
 
 
@@ -198,12 +197,16 @@ def evaluate_candidates(
     transcription: list[dict[str, Any]],
     model: str = "gemini-3.6-flash",
     selection_count: int | None = None,
-    quota: DailyQuota | None = None,
+    quota_dir: Path | None = None,
+    daily_limit: int = 20,
+    fallback_models: tuple[str, ...] = GEMINI_FALLBACK_MODELS,
 ) -> list[dict[str, Any]]:
     """Ask Gemini to evaluate candidates using transcript and optional chat counts.
 
-    With ``quota``, every request (retries included) is counted and none is
-    sent once the daily limit is reached.
+    ``model`` is tried first; when it is overloaded (503) or out of quota, the
+    ``fallback_models`` are tried in turn. With ``quota_dir``, every request
+    is counted per model (``daily_limit`` each, the free-tier limit) and no
+    request is sent to a model whose daily limit is reached.
     """
     context = _candidate_context(candidates, transcription)
     if selection_count is not None:
@@ -217,19 +220,20 @@ def evaluate_candidates(
 
     client = _get_gemini_client()
     prompt = _build_prompt(context, selection_count=expected_count)
-    for delay in (*TRANSIENT_RETRY_DELAYS, None):
+    response = used_model = last_error = None
+    next_reset = None
+    for name in dict.fromkeys((model, *fallback_models)):
+        quota = DailyQuota(quota_dir / f"gemini_quota_{name}.json", daily_limit) if quota_dir else None
         if quota is not None:
+            next_reset = quota.next_reset()
             if not quota.available():
-                raise GeminiEvaluationError(
-                    f"Quota Gemini du jour atteint ({quota.daily_limit} requetes).",
-                    retry_at=quota.next_reset(),
-                )
+                continue
             quota.record_use()
         try:
             # generate_content, not the beta Interactions API: the latter has its own,
             # much smaller quota and answered HTTP 429 while generate_content worked.
             response = client.models.generate_content(
-                model=model,
+                model=name,
                 contents=prompt,
                 config={
                     "response_mime_type": EVALUATION_RESPONSE_FORMAT["mime_type"],
@@ -237,16 +241,27 @@ def evaluate_candidates(
                     "automatic_function_calling": {"disable": True},  # no tools: no AFC warning
                 },
             )
+            used_model = name
             break
         except Exception as error:
-            if quota is not None and any(marker in str(error).lower() for marker in QUOTA_ERROR_MARKERS):
-                quota.mark_exhausted()  # Google refused: no more requests today
-                raise GeminiEvaluationError(
-                    f"Echec de l'appel Gemini : {error}", retry_at=quota.next_reset()
-                ) from error
-            if delay is None or not any(marker in str(error).lower() for marker in TRANSIENT_MARKERS):
+            message = str(error).lower()
+            if any(marker in message for marker in QUOTA_ERROR_MARKERS):
+                if quota is not None:
+                    quota.mark_exhausted()  # Google refused: no more requests to this model today
+            elif not any(marker in message for marker in TRANSIENT_MARKERS):
                 raise GeminiEvaluationError(f"Echec de l'appel Gemini : {error}") from error
-            time.sleep(delay)
+            last_error = error  # overloaded or out of quota: try the next model
+    if response is None:
+        if last_error is None:
+            raise GeminiEvaluationError(
+                f"Quota Gemini du jour atteint pour tous les modeles ({daily_limit} requetes chacun).",
+                retry_at=next_reset,
+            )
+        quota_only = any(marker in str(last_error).lower() for marker in QUOTA_ERROR_MARKERS)
+        raise GeminiEvaluationError(
+            f"Echec de l'appel Gemini : {last_error}",
+            retry_at=next_reset if quota_only else None,
+        )
 
     response_text = getattr(response, "text", None)
     if not isinstance(response_text, str) or not response_text.strip():
@@ -255,13 +270,14 @@ def evaluate_candidates(
         response_text,
         {item["candidate_id"] for item in context},
     )
+    for evaluation in evaluations:
+        evaluation["model"] = used_model
     if expected_count is not None:
-        candidate_ids = [evaluation["candidate_id"] for evaluation in evaluations]
-        if len(evaluations) != expected_count or len(set(candidate_ids)) != expected_count:
-            raise GeminiEvaluationError(
-                f"Gemini doit retourner exactement {expected_count} candidats distincts."
-            )
-        evaluations.sort(key=lambda evaluation: evaluation["score"], reverse=True)
+        # Some models answer for every candidate: keep the best ones, at most the budget.
+        distinct = {}
+        for evaluation in sorted(evaluations, key=lambda item: item["score"], reverse=True):
+            distinct.setdefault(evaluation["candidate_id"], evaluation)
+        evaluations = list(distinct.values())[:expected_count]
     return evaluations
 
 
@@ -270,9 +286,10 @@ def select_candidates(
     transcription: list[dict[str, Any]],
     requested_count: int,
     model: str = "gemini-3.6-flash",
-    quota: DailyQuota | None = None,
+    quota_dir: Path | None = None,
+    daily_limit: int = 20,
 ) -> list[dict[str, Any]]:
-    """Return an exact, distinct Gemini selection, or every candidate if fewer exist."""
+    """Return at most ``requested_count`` distinct candidates chosen by Gemini."""
     if requested_count < 0:
         raise GeminiEvaluationError("Le nombre de selections ne peut pas etre negatif.")
     if requested_count == 0 or not candidates:
@@ -282,7 +299,8 @@ def select_candidates(
         transcription,
         model=model,
         selection_count=requested_count,
-        quota=quota,
+        quota_dir=quota_dir,
+        daily_limit=daily_limit,
     )
 
 

@@ -93,65 +93,55 @@ class GeminiEvaluationTests(unittest.TestCase):
             ["evaluations"],
         )
 
-    @patch("twitch_auto_clipper.gemini_evaluation.time.sleep")
     @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
-    def test_transient_unavailability_is_retried_but_quota_is_not(self, get_client, sleep) -> None:
+    def test_overloaded_model_falls_back_to_the_next_one(self, get_client) -> None:
         client = FakeGeminiClient(
             '{"evaluations":[{"candidate_id":"candidate_1","interesting":true,"score":70,"justification":"Ok."}]}'
         )
-        calls = []
+        models = []
         answer = client.generate_content
 
-        def flaky(**kwargs):
-            calls.append(1)
-            if len(calls) == 1:
+        def overloaded_first(**kwargs):
+            models.append(kwargs["model"])
+            if len(models) == 1:
                 raise RuntimeError("503 UNAVAILABLE. This model is currently experiencing high demand.")
             return answer(**kwargs)
 
-        client.generate_content = flaky
+        client.generate_content = overloaded_first
         get_client.return_value = client
-        evaluations = evaluate_candidates([{"start": 1.0, "end": 4.0}], [])
-        self.assertEqual((len(calls), evaluations[0]["score"]), (2, 70))
-        sleep.assert_called_once()
-
-        def quota(**kwargs):
-            raise RuntimeError("429 RESOURCE_EXHAUSTED")
-
-        client.generate_content = quota
-        sleep.reset_mock()
-        with self.assertRaisesRegex(GeminiEvaluationError, "429"):
-            evaluate_candidates([{"start": 1.0, "end": 4.0}], [])
-        sleep.assert_not_called()
+        [evaluation] = evaluate_candidates([{"start": 1.0, "end": 4.0}], [])
+        self.assertEqual(models, ["gemini-3.6-flash", "gemini-flash-latest"])
+        self.assertEqual((evaluation["score"], evaluation["model"]), (70, "gemini-flash-latest"))
 
     @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
-    def test_daily_quota_counts_requests_and_stops_before_the_limit(self, get_client) -> None:
-        from twitch_auto_clipper.daily_quota import DailyQuota
-
+    def test_daily_quota_is_counted_per_model_and_never_exceeded(self, get_client) -> None:
         client = FakeGeminiClient(
             '{"evaluations":[{"candidate_id":"candidate_1","interesting":true,"score":70,"justification":"Ok."}]}'
         )
         get_client.return_value = client
         with tempfile.TemporaryDirectory() as directory:
-            quota = DailyQuota(Path(directory) / "gemini.json", daily_limit=1)
-            evaluate_candidates([{"start": 1.0, "end": 4.0}], [], quota=quota)
+            options = {"quota_dir": Path(directory), "daily_limit": 1, "fallback_models": ("gemini-lite",)}
+            evaluate_candidates([{"start": 1.0, "end": 4.0}], [], **options)
+            evaluate_candidates([{"start": 1.0, "end": 4.0}], [], **options)
+            self.assertEqual(client.arguments["model"], "gemini-lite")  # first model used up
             client.arguments = None
-            with self.assertRaisesRegex(GeminiEvaluationError, "Quota Gemini du jour") as raised:
-                evaluate_candidates([{"start": 1.0, "end": 4.0}], [], quota=quota)
-        self.assertIsNone(client.arguments)  # no request sent beyond the limit
-        self.assertEqual(raised.exception.retry_at, quota.next_reset())
+            with self.assertRaisesRegex(GeminiEvaluationError, "tous les modeles") as raised:
+                evaluate_candidates([{"start": 1.0, "end": 4.0}], [], **options)
+        self.assertIsNone(client.arguments)  # nothing sent beyond the limits
+        self.assertIsNotNone(raised.exception.retry_at)
 
     @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
-    def test_google_quota_refusal_closes_the_day(self, get_client) -> None:
+    def test_google_quota_refusal_closes_the_day_for_that_model(self, get_client) -> None:
         from twitch_auto_clipper.daily_quota import DailyQuota
 
         client = FakeGeminiClient("")
         client.generate_content = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("429 RESOURCE_EXHAUSTED"))
         get_client.return_value = client
         with tempfile.TemporaryDirectory() as directory:
-            quota = DailyQuota(Path(directory) / "gemini.json", daily_limit=20)
             with self.assertRaises(GeminiEvaluationError) as raised:
-                evaluate_candidates([{"start": 1.0, "end": 4.0}], [], quota=quota)
-            self.assertFalse(quota.available())
+                evaluate_candidates([{"start": 1.0, "end": 4.0}], [], quota_dir=Path(directory),
+                                    fallback_models=())
+            self.assertFalse(DailyQuota(Path(directory) / "gemini_quota_gemini-3.6-flash.json", 20).available())
         self.assertIsNotNone(raised.exception.retry_at)
 
     @patch.dict(os.environ, {}, clear=True)
@@ -223,27 +213,27 @@ class GeminiEvaluationTests(unittest.TestCase):
         self.assertEqual(len(selected), 2)
         evaluate.assert_called_once_with(
             [{}, {}], [], model="gemini-3.6-flash", selection_count=5,
-            quota=None,
+            quota_dir=None,
+            daily_limit=20,
         )
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
     @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
-    def test_evaluate_candidates_rejects_wrong_selection_count(self, get_client) -> None:
+    def test_answer_for_every_candidate_keeps_the_best_within_budget(self, get_client) -> None:
         get_client.return_value = FakeGeminiClient(
-            '{"evaluations":[{"candidate_id":"candidate_1",'
-            '"interesting":true,"score":90,"justification":"Moment fort."}]}'
+            '{"evaluations":['
+            '{"candidate_id":"candidate_1","interesting":false,"score":20,"justification":"Plat."},'
+            '{"candidate_id":"candidate_2","interesting":true,"score":80,"justification":"Fort."},'
+            '{"candidate_id":"candidate_3","interesting":true,"score":60,"justification":"Bien."}]}'
         )
-        candidates = [
-            {"start": 1, "end": 2, "score": 1},
-            {"start": 3, "end": 4, "score": 1},
-        ]
+        candidates = [{"start": i, "end": i + 1, "score": 1} for i in range(1, 4)]
 
-        with self.assertRaisesRegex(GeminiEvaluationError, "exactement 2"):
-            evaluate_candidates(candidates, [], selection_count=2)
+        evaluations = evaluate_candidates(candidates, [], selection_count=2)
+        self.assertEqual([e["candidate_id"] for e in evaluations], ["candidate_2", "candidate_3"])
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
     @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
-    def test_evaluate_candidates_rejects_duplicate_selection_ids(self, get_client) -> None:
+    def test_duplicate_selection_ids_are_kept_once(self, get_client) -> None:
         evaluation = (
             '{"candidate_id":"candidate_1","interesting":true,'
             '"score":90,"justification":"Moment fort."}'
@@ -256,8 +246,8 @@ class GeminiEvaluationTests(unittest.TestCase):
             {"start": 3, "end": 4, "score": 1},
         ]
 
-        with self.assertRaisesRegex(GeminiEvaluationError, "distincts"):
-            evaluate_candidates(candidates, [], selection_count=2)
+        evaluations = evaluate_candidates(candidates, [], selection_count=2)
+        self.assertEqual([e["candidate_id"] for e in evaluations], ["candidate_1"])  # duplicate dropped
 
     def test_save_evaluations_writes_json(self) -> None:
         evaluations = [

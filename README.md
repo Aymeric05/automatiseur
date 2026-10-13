@@ -107,12 +107,14 @@ Required for highlight candidate evaluation:
 $env:GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
 ```
 
-Each VOD needs one Gemini request. The application stays within the free tier of the
-Gemini API: at most `GEMINI_MAX_REQUESTS_PER_DAY` requests per quota day (default 20, the
-free-tier limit per model; retries count). Beyond it, the VODs wait for the next quota day
-(08:00 UTC), the most watched streams first. When Gemini refuses a request (HTTP 429) the
-day is closed early; when it is overloaded (HTTP 503) the VOD waits 30 minutes. Neither
-counts as a failure.
+Each VOD needs one Gemini request. On the free tier, flash models often answer "503 high
+demand" to real-size requests: the configured model (`--gemini-model`, default
+`gemini-3.6-flash`) is tried first, then `gemini-flash-latest`, then
+`gemini-flash-lite-latest`. The application stays within the free tier: at most
+`GEMINI_MAX_REQUESTS_PER_DAY` requests per model and per quota day (default 20; failed
+requests count). When every model is overloaded the VOD waits 30 minutes; when every model
+has reached its daily limit, it waits for the next quota day (08:00 UTC), the most watched
+streams first. Neither counts as a failure.
 
 ### YouTube Upload
 

@@ -22,7 +22,6 @@ from .subtitles import generate_ass_subtitles, SubtitleGenerationError
 from .twitch_api import TwitchAPIClient, TwitchAPIError
 from .twitch_monitor import TwitchStreamMonitor, format_monitoring_cycle
 from .video import create_vertical_clip, validate_clip_times
-from .daily_quota import DailyQuota
 from .vod_acquisition import (
     TwitchVODAcquisitionManager,
     VODAcquisitionResult,
@@ -224,7 +223,7 @@ ENV_FILE = Path(".env")  # optional KEY=value file at the project root, ignored 
 DATA_DIR = Path("data")  # production data; --test-minutes uses DATA_DIR / "test"
 WORKER_IDLE_SECONDS = 30.0  # pause of the VOD worker when no job is due
 DEFAULT_DAILY_UPLOADS = 6  # ~10,000 quota units per day at 1,600 units per upload
-DEFAULT_DAILY_GEMINI_REQUESTS = 20  # Gemini API free tier, per model and per day
+DEFAULT_DAILY_GEMINI_REQUESTS = 20  # Gemini API free tier, per model and per day (each model)
 
 
 def _daily_limit(parser: argparse.ArgumentParser, name: str, default: int) -> int:
@@ -379,9 +378,8 @@ def process_vod(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
         highlight_selector=VODHighlightSelector(
             output_dir,
             model=args.gemini_model,
-            gemini_quota=DailyQuota(
-                output_dir / "gemini_quota.json",
-                _daily_limit(parser, "GEMINI_MAX_REQUESTS_PER_DAY", DEFAULT_DAILY_GEMINI_REQUESTS),
+            gemini_daily_limit=_daily_limit(
+                parser, "GEMINI_MAX_REQUESTS_PER_DAY", DEFAULT_DAILY_GEMINI_REQUESTS
             ),
         ),
         shorts_generator=VODShortsGenerator(output_dir),
@@ -491,7 +489,7 @@ def main() -> int:
             highlight_selector=VODHighlightSelector(
                 output_dir,
                 model=args.gemini_model,
-                gemini_quota=DailyQuota(output_dir / "gemini_quota.json", daily_gemini),
+                gemini_daily_limit=daily_gemini,
             ),
             shorts_generator=VODShortsGenerator(output_dir),
             uploader=uploader,

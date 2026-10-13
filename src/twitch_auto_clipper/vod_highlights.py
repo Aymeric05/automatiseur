@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from .chat_activity import add_chat_messages, add_chat_signals
-from .daily_quota import DailyQuota
 from .gemini_evaluation import GeminiEvaluationError, select_candidates
 from .highlights import HighlightAnalysisError, analyze_transcription, save_highlights
 from .vod_processing import VODProcessingResult
@@ -36,11 +35,12 @@ class VODHighlightSelector:
         self,
         output_dir: Path = Path("data/output"),
         model: str = "gemini-3.6-flash",
-        gemini_quota: DailyQuota | None = None,
+        gemini_daily_limit: int | None = None,
     ) -> None:
         self.output_dir = output_dir
         self.model = model
-        self.gemini_quota = gemini_quota
+        # Requests per Gemini model and per day (free tier), counted in output_dir.
+        self.gemini_daily_limit = gemini_daily_limit
 
     def select(self, processed_vod: VODProcessingResult) -> VODHighlightSelectionResult:
         vod_id = processed_vod.vod_id
@@ -100,7 +100,8 @@ class VODHighlightSelector:
                     transcript,
                     requested_count=requested_count,
                     model=self.model,
-                    quota=self.gemini_quota,
+                    quota_dir=self.output_dir if self.gemini_daily_limit else None,
+                    daily_limit=self.gemini_daily_limit or 20,
                 )
                 if requested_count
                 else []
@@ -182,11 +183,11 @@ class VODHighlightSelector:
             or payload.get("candidate_count") != candidate_count
             or payload.get("requested_count") != expected_count
             or not isinstance(selected, list)
-            or len(selected) != expected_count
+            or len(selected) > expected_count
         ):
             return None
         candidate_ids = [item.get("candidate_id") for item in selected if isinstance(item, dict)]
-        if len(candidate_ids) != expected_count or len(set(candidate_ids)) != expected_count:
+        if len(candidate_ids) != len(selected) or len(set(candidate_ids)) != len(selected):
             return None
         valid_ids = {f"candidate_{index}" for index in range(1, candidate_count + 1)}
         if any(candidate_id not in valid_ids for candidate_id in candidate_ids):
@@ -206,12 +207,9 @@ class VODHighlightSelector:
         requested_count: int,
     ) -> list[dict[str, Any]]:
         candidate_ids = [item.get("candidate_id") for item in evaluations]
-        if (
-            len(evaluations) != requested_count
-            or len(set(candidate_ids)) != requested_count
-        ):
+        if len(evaluations) > requested_count or len(set(candidate_ids)) != len(evaluations):
             raise GeminiEvaluationError(
-                f"Gemini doit retourner exactement {requested_count} candidats distincts."
+                f"Gemini doit retourner au plus {requested_count} candidats distincts."
             )
 
         selected = []
@@ -230,6 +228,7 @@ class VODHighlightSelector:
                     "gemini_interesting": evaluation["interesting"],
                     "gemini_score": evaluation["score"],
                     "gemini_justification": evaluation["justification"],
+                    "gemini_model": evaluation.get("model"),
                 }
             )
         return selected
