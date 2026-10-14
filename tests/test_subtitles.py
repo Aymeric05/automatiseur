@@ -70,6 +70,13 @@ class SubtitleJoinTests(unittest.TestCase):
 
 
 class HookImageTests(unittest.TestCase):
+    def test_joined_emojis_keep_their_base_emoji_only(self) -> None:
+        from twitch_auto_clipper.subtitles import _simple_emojis
+
+        runner = "\U0001F3C3\u200d\u2642\ufe0f"  # man running
+        thumb = "\U0001F44D\U0001F3FD"  # thumbs up, medium skin tone
+        self.assertEqual(_simple_emojis(f"Run {runner} now {thumb}"), "Run \U0001F3C3 now \U0001F44D")
+
     def test_hook_is_bold_text_with_color_emojis_on_a_transparent_image(self) -> None:
         from twitch_auto_clipper.subtitles import HOOK_MAX_TEXT_WIDTH, SubtitleGenerationError, render_hook_image
 

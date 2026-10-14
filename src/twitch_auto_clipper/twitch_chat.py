@@ -68,6 +68,8 @@ def download_twitch_chat(
         "chatdownload",
         "-u",
         vod_id,
+        "-t",  # one download thread instead of 4: slower, but gentle on the connection
+        "1",
     ]
     if start_seconds:
         command += ["-b", f"{round(start_seconds * 1000)}ms"]

@@ -37,7 +37,7 @@ class TwitchCliTests(unittest.TestCase):
             acquire_due.return_value = iter([acquisition])
             automation_run.return_value = Mock(
                 status="completed", processing=None, selection=None, shorts=None,
-                metadata=(), uploads=(), message=None, vod_id="vod-1", retry_at=None,
+                metadata=(), message=None, vod_id="vod-1", retry_at=None,
             )
             arguments = ["twitch_auto_clipper", "--monitor-twitch-once"]
 
@@ -240,7 +240,7 @@ class TwitchCliTests(unittest.TestCase):
         download.return_value = cli.DATA_DIR / "test" / "input" / "123_audio.mp4"
         pipeline_class.return_value.run.return_value = Mock(
             status="completed", processing=None, selection=None, shorts=None,
-            metadata=(), uploads=(), message=None, vod_id="123",
+            metadata=(), message=None, vod_id="123",
         )
         arguments = ["twitch_auto_clipper", "--process-vod",
                      "https://www.twitch.tv/videos/123", "--clip-budget", "3", "--test-minutes", "10"]
@@ -253,7 +253,7 @@ class TwitchCliTests(unittest.TestCase):
             "https://www.twitch.tv/videos/123", cli.DATA_DIR / "test" / "input",
             max_seconds=600, audio_only=True,
         )
-        self.assertIsNone(pipeline_class.call_args.kwargs["uploader"])
+        self.assertNotIn("uploader", pipeline_class.call_args.kwargs)  # never publishes
         self.assertEqual(pipeline_class.call_args.kwargs["output_dir"], cli.DATA_DIR / "test" / "output")
         # The Shorts read their seconds of video from Twitch, not from a local file.
         self.assertIs(pipeline_class.call_args.kwargs["video_source"], cli._twitch_video)
@@ -278,7 +278,7 @@ class TwitchCliTests(unittest.TestCase):
         fetch_vod.return_value = TwitchVOD("123", "s1", "b1", "Title", "login", "Name")
         pipeline_class.return_value.run.return_value = Mock(
             status="partial", processing=None, selection=None, shorts=None,
-            metadata=(), uploads=(), message="x", vod_id="123",
+            metadata=(), message="x", vod_id="123",
         )
         arguments = ["twitch_auto_clipper", "--process-vod", "123"]
         with patch.object(sys, "argv", arguments), patch("builtins.print"):
@@ -304,7 +304,7 @@ class TwitchCliTests(unittest.TestCase):
                 patch("twitch_auto_clipper.cli.find_downloaded_audio", return_value=Path("123_audio.mp4")):
             pipeline_class.return_value.run.return_value = Mock(
                 status="completed", processing=None, selection=None, shorts=None,
-                metadata=(), uploads=(), message=None, vod_id="123",
+                metadata=(), message=None, vod_id="123",
             )
             return main(), pipeline_class.return_value.run.called, download.called
 

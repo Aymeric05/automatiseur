@@ -64,6 +64,7 @@ class VODProcessingPipeline:
                 "broadcaster_login": acquisition.broadcaster_login,
                 "broadcaster_name": acquisition.broadcaster_name,
                 "clip_budget": acquisition.clip_budget,
+                "peak_viewers": acquisition.peak_viewers,  # ranks the top streamers' Shorts
                 "source_path": str(acquisition.downloaded_path),
                 "transcript_path": str(transcript_path),
                 "chat_path": str(chat_path),

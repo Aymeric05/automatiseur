@@ -1,10 +1,11 @@
 """End-to-end automation for one acquired Twitch VOD.
 
 Order: transcription + chat -> heuristic candidates -> Gemini selection within
-the clip budget -> Shorts generation -> metadata -> private YouTube upload.
-Each stage is delegated to its existing module and is resumable on its own
-(existing transcript/chat/selection/Shorts/uploads are reused), so running the
-pipeline again only redoes the work that is missing.
+the clip budget -> Shorts generation -> metadata. Each stage is delegated to its
+existing module and is resumable on its own (existing transcript/chat/selection/
+Shorts are reused), so running the pipeline again only redoes the work that is
+missing. Publication is separate: ``VODShortsUploader.publish_next`` uploads the
+best Shorts of all completed VODs.
 """
 
 from __future__ import annotations
@@ -14,10 +15,11 @@ from datetime import datetime, timedelta, timezone
 import json
 import re
 from pathlib import Path
+import time
 from typing import Any, Callable
 
 from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata
-from .shorts_upload import ShortUploadResult, VODShortsUploader, format_short_upload_result
+from .shorts_upload import READY_MAX_AGE
 from .vod_acquisition import (
     MAX_ATTEMPTS,
     TwitchVODAcquisitionManager,
@@ -62,14 +64,13 @@ def _gemini_retry_at(message: str | None) -> datetime | None:
 @dataclass(frozen=True)
 class VODAutomationResult:
     vod_id: str | None
-    status: str  # "completed" | "waiting_upload" | "waiting_gemini" | "partial" | "skipped" | "error"
+    status: str  # "completed" | "waiting_gemini" | "partial" | "skipped" | "error"
     processing: VODProcessingResult | None = None
     selection: VODHighlightSelectionResult | None = None
     shorts: VODShortsGenerationResult | None = None
     metadata: tuple[tuple[str, ShortMetadata], ...] = ()
-    uploads: tuple[ShortUploadResult, ...] = ()
     message: str | None = None
-    retry_at: datetime | None = None  # waiting statuses: when the quota should be back
+    retry_at: datetime | None = None  # waiting_gemini: when Gemini should be back
 
 
 class VODAutomationPipeline:
@@ -80,7 +81,7 @@ class VODAutomationPipeline:
     default that same file); it is only called when a Short must be rendered.
     With ``delete_sources_on_success``, the downloaded audio and the chat files
     are deleted once the VOD is completed; transcript, selection, manifest and
-    unpublished Shorts are always kept.
+    Shorts are kept (Shorts until they are published or too old).
     """
 
     def __init__(
@@ -88,7 +89,6 @@ class VODAutomationPipeline:
         processing_pipeline: VODProcessingPipeline | None = None,
         highlight_selector: VODHighlightSelector | None = None,
         shorts_generator: VODShortsGenerator | None = None,
-        uploader: VODShortsUploader | None = None,
         output_dir: Path = Path("data/output"),
         video_source: Callable[[VODAcquisitionResult], Path | str] | None = None,
         delete_sources_on_success: bool = False,
@@ -97,7 +97,6 @@ class VODAutomationPipeline:
         self.processing_pipeline = processing_pipeline or VODProcessingPipeline(output_dir)
         self.highlight_selector = highlight_selector or VODHighlightSelector(output_dir)
         self.shorts_generator = shorts_generator or VODShortsGenerator(output_dir)
-        self.uploader = uploader  # None disables publication.
         self.video_source = video_source
         self.delete_sources_on_success = delete_sources_on_success
 
@@ -200,36 +199,15 @@ class VODAutomationPipeline:
                 metadata_errors.append(f"{short.key} : {error}")
         self._record_metadata(vod_id, metadata)
 
-        # 6. Private YouTube publication, only for Shorts that are ready.
-        uploads: list[ShortUploadResult] = []
-        if self.uploader is not None:
-            shorts_by_key = {short.key: short for short in shorts.shorts}
-            for key, short_metadata in metadata:
-                short = shorts_by_key[key]
-                try:
-                    uploads.append(self.uploader.upload(vod_id, short, short_metadata))
-                except (OSError, ValueError) as error:
-                    uploads.append(ShortUploadResult(
-                        short.candidate_id, short.output_path, "error", error=str(error),
-                    ))
-
-        failed = (
-            shorts.status != "completed"
-            or bool(metadata_errors)
-            or any(upload.status == "error" for upload in uploads)
-        )
-        waiting = any(upload.status == "deferred" for upload in uploads)
-        quota = self.uploader.quota if self.uploader is not None else None
+        failed = shorts.status != "completed" or bool(metadata_errors)
         return VODAutomationResult(
             vod_id,
-            "partial" if failed else "waiting_upload" if waiting else "completed",
+            "partial" if failed else "completed",  # completed: the Shorts can be published
             processing,
             selection,
             shorts,
             tuple(metadata),
-            tuple(uploads),
             message="; ".join(f"metadonnees {error}" for error in metadata_errors) or None,
-            retry_at=quota.next_reset() if waiting and quota is not None else None,
         )
 
     # ------------------------------------------------------------------
@@ -305,6 +283,41 @@ class VODAutomationPipeline:
             pass
 
 
+def cleanup_finished_vods(input_dir: Path, output_dir: Path, active_vod_ids: set[str]) -> list[str]:
+    """Delete every file of the VODs that are done; returns their ids.
+
+    A VOD is done when no job is left for it and none of its Shorts waits for
+    publication (Shorts unpublished after ``READY_MAX_AGE`` are deleted first).
+    Its audio, chat, transcript, selections and manifest then go too: the
+    Twitch VOD state still records it, so it is never processed again. Only
+    files named after a VOD id (digits) are touched.
+    """
+    expired_before = time.time() - READY_MAX_AGE.total_seconds()
+    for short in output_dir.glob("*_short.mp4"):
+        try:
+            if short.stat().st_mtime < expired_before:
+                short.unlink()
+        except OSError:
+            pass
+    files: dict[str, list[Path]] = {}
+    for directory in (input_dir, output_dir):
+        for path in directory.glob("*_*"):
+            vod_id = path.name.split("_", 1)[0]
+            if vod_id.isdigit() and path.is_file():
+                files.setdefault(vod_id, []).append(path)
+    done = []
+    for vod_id, paths in files.items():
+        if vod_id in active_vod_ids or any(path.name.endswith("_short.mp4") for path in paths):
+            continue
+        for path in paths:
+            try:
+                path.unlink()
+            except OSError:
+                pass  # e.g. opened elsewhere on Windows: tried again next time
+        done.append(vod_id)
+    return done
+
+
 def process_due_vods(
     manager: TwitchVODAcquisitionManager,
     automation: VODAutomationPipeline,
@@ -313,8 +326,16 @@ def process_due_vods(
     """Acquire and process every due VOD job once; returns how many were due.
 
     Runs on the worker side, never in the monitoring loop. ``report`` receives
-    each line and whether it is an error.
+    each line and whether it is an error. The files of finished VODs are
+    deleted before and after each job.
     """
+
+    def cleanup() -> None:
+        done = cleanup_finished_vods(manager.input_dir, automation.output_dir, manager.active_vod_ids())
+        if done:
+            report(f"Fichiers supprimes (VOD terminees) : {', '.join(sorted(done))}", False)
+
+    cleanup()
     count = 0
     for acquisition in manager.acquire_due():
         count += 1
@@ -335,13 +356,12 @@ def process_due_vods(
             report(f"VOD {acquisition.vod_id} abandonnee apres {MAX_ATTEMPTS} echecs (fichiers conserves).", True)
         elif outcome == "retry":
             report(f"VOD {acquisition.vod_id} : nouvel essai automatique plus tard.", True)
-        elif outcome == "waiting" and result.status == "waiting_gemini":
+        elif outcome == "waiting":
             report(
                 f"VOD {acquisition.vod_id} : Gemini indisponible, nouvel essai apres "
                 f"{result.retry_at:%Y-%m-%d %H:%M} UTC.", True,
             )
-        elif outcome == "waiting":
-            report(f"VOD {acquisition.vod_id} : Shorts prets, uploads repris apres le quota YouTube.", False)
+        cleanup()
     return count
 
 
@@ -355,7 +375,6 @@ def format_vod_automation_result(result: VODAutomationResult) -> list[str]:
         lines.extend(format_vod_shorts_result(result.shorts))
     for key, metadata in result.metadata:
         lines.append(f"  [titre] {key} : {metadata.title}")
-    lines.extend(format_short_upload_result(upload) for upload in result.uploads)
     summary = f"Pipeline VOD {result.vod_id} : {result.status}"
     if result.message:
         summary += f" ({result.message})"

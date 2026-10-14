@@ -1,0 +1,57 @@
+# Top English Twitch streamers (Twitch logins, one per line), ranked by average
+# viewers over the last 30 days (TwitchTracker, October 2026). Edit freely.
+#
+# Their VODs are processed first with a budget of 20 clips, and the daily
+# publication favors their Shorts: those of a streamer who clearly stands out
+# that day (alone in the list, or at least twice the peak viewers of the next
+# one) go first, then the best of the list, then the best of the other streamers.
+caseoh_
+kaicenat
+caedrel
+zackrawrr
+jynxzi
+stableronaldo
+xqc
+hasanabi
+sodapoppin
+brucedropemoff
+buddha
+unboxholics
+xaryu
+s1mple
+joe_bartolozzi
+thebausffs
+emiru
+moonmoon
+northernlion
+rdcgaming
+jerma985
+lirik
+topson
+clix
+shroud
+yourragegaming
+ironmouse
+k3soju
+silky
+summit1g
+fanum
+pikabooirl
+aussieantics
+supertf
+elajjaz
+ludwig
+hutchmf
+cohhcarnage
+berleezy
+quin69
+payo
+mitchjones
+tenz
+forsen
+markiplier
+emongg
+vinesauce
+maya
+gorgc
+loltyler1

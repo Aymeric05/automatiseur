@@ -35,6 +35,7 @@ def download_twitch_vod(
     max_height: int | None = None,
     audio_only: bool = False,
     quiet: bool = False,
+    rate_limit: int | None = None,
 ) -> Path:
     """Download a Twitch VOD and return its local path.
 
@@ -43,6 +44,7 @@ def download_twitch_vod(
     several GB): it is all the transcription needs, the Shorts then read their
     few seconds of video straight from Twitch. ``max_seconds`` keeps only the
     beginning of the VOD and ``max_height`` caps the resolution (test runs).
+    ``rate_limit`` caps the download speed (bytes per second).
     """
     if not is_twitch_vod_url(url):
         raise ValueError("L'URL doit etre une URL HTTPS de VOD Twitch valide.")
@@ -64,6 +66,8 @@ def download_twitch_vod(
     }
     if not audio_only:
         options["merge_output_format"] = "mp4"
+    if rate_limit:
+        options["ratelimit"] = rate_limit  # leaves bandwidth for the rest of the home network
 
     try:
         youtube_dl = _get_youtube_dl()
