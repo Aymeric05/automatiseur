@@ -9,7 +9,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
@@ -127,6 +127,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--log-file",
+        type=Path,
+        help="Ecrit la sortie dans ce fichier, limite en taille (demarrage automatique).",
+    )
+    parser.add_argument(
         "--yes",
         action="store_true",
         help=(
@@ -239,6 +244,47 @@ def _daily_limit(parser: argparse.ArgumentParser, name: str, default: int) -> in
     except ValueError:
         parser.error(f"{name} doit etre un entier positif.")
     return value
+
+
+LOG_MAX_BYTES = 10 * 1024 * 1024  # about two days of monitoring per file
+
+
+class RotatingLog:
+    """stdout and stderr of the unattended app, written to ``path``.
+
+    Past ``max_bytes`` the file is renamed ``<name>.old<suffix>`` (replacing
+    the previous one) and a new one starts: the log never takes more than
+    twice ``max_bytes``.
+    """
+
+    encoding = "utf-8"
+
+    def __init__(self, path: Path, max_bytes: int = LOG_MAX_BYTES) -> None:
+        self.path = path
+        self.max_bytes = max_bytes
+        self._lock = Lock()  # the monitoring, worker and publisher threads all print
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._file = open(path, "a", encoding="utf-8", errors="replace")
+
+    def write(self, text: str) -> int:
+        with self._lock:
+            self._file.write(text)
+            self._file.flush()
+            if self._file.tell() > self.max_bytes:
+                self._file.close()
+                try:
+                    os.replace(self.path, self.path.with_name(f"{self.path.stem}.old{self.path.suffix}"))
+                except OSError:
+                    pass  # opened by another process right now: rotated on a later write
+                self._file = open(self.path, "a", encoding="utf-8", errors="replace")
+        return len(text)
+
+    def flush(self) -> None:
+        with self._lock:
+            self._file.flush()
+
+    def isatty(self) -> bool:
+        return False
 
 
 def kill_children_with_this_process() -> None:
@@ -463,6 +509,8 @@ def main() -> int:
     load_env_file(ENV_FILE)
     parser = build_parser()
     args = parser.parse_args()
+    if args.log_file:
+        sys.stdout = sys.stderr = RotatingLog(args.log_file)
 
     if args.check_config:
         report = config_report(args)

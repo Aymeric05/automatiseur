@@ -85,8 +85,7 @@ class VODProcessingPipeline:
                 segments = self.transcriber(
                     acquisition.downloaded_path,
                     language="en",  # only English streams are monitored
-                    device="cpu",
-                    compute_type="int8",
+                    device="auto",  # NVIDIA GPU when available, else CPU
                 )
                 save_transcription(segments, transcript_path)
                 manifest["transcription_complete"] = True

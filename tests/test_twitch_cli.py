@@ -12,6 +12,20 @@ from twitch_auto_clipper.twitch_monitor import MonitoredStream, MonitoringCycle
 from twitch_auto_clipper.vod_acquisition import VODAcquisitionResult, VODMonitoringCycle
 
 
+class RotatingLogTests(unittest.TestCase):
+    def test_log_never_grows_past_its_limit_and_keeps_the_previous_part(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "monitor.log"
+            log = cli.RotatingLog(path, max_bytes=100)
+            for index in range(30):
+                print(f"ligne {index} \U0001F525", file=log)
+            log._file.close()
+            old = path.with_name("monitor.old.log")
+            self.assertTrue(old.is_file())
+            self.assertLessEqual(path.stat().st_size, 100 + 20)
+            self.assertIn("ligne 29", path.read_text(encoding="utf-8"))
+
+
 class TwitchCliTests(unittest.TestCase):
     @patch("twitch_auto_clipper.cli.TwitchVODAcquisitionManager.record_automation", return_value="done")
     @patch("twitch_auto_clipper.cli.VODAutomationPipeline.run")

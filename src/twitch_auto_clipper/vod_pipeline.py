@@ -48,6 +48,9 @@ READY_ACQUISITION_STATUSES = frozenset({"downloaded", "already_downloaded", "alr
 # 20 requests a day) and 503 when the model is overloaded: the VOD then waits,
 # without counting a failed attempt, instead of being abandoned.
 GEMINI_WAIT = timedelta(minutes=30)
+# Asked for many moments, Gemini calls almost everything "interesting": below
+# this score (0-100) a moment is neither rendered nor published.
+MIN_GEMINI_SCORE = 60
 GEMINI_UNAVAILABLE_MARKERS = ("429", "resource_exhausted", "exceeded", "quota", "503", "unavailable", "high demand")
 
 
@@ -82,6 +85,8 @@ class VODAutomationPipeline:
     With ``delete_sources_on_success``, the downloaded audio and the chat files
     are deleted once the VOD is completed; transcript, selection, manifest and
     Shorts are kept (Shorts until they are published or too old).
+    With ``delete_sources_on_success``, the transcript and selections go too:
+    only the Shorts and the manifest stay.
     """
 
     def __init__(
@@ -152,7 +157,9 @@ class VODAutomationPipeline:
             )
         # Only the moments Gemini found worth a Short are rendered and published.
         selection = replace(selection, selected=tuple(
-            item for item in selection.selected if item.get("gemini_interesting", True) is not False
+            item for item in selection.selected
+            if item.get("gemini_interesting", True) is not False
+            and float(item.get("gemini_score", MIN_GEMINI_SCORE)) >= MIN_GEMINI_SCORE
         ))
         if not selection.selected:
             return VODAutomationResult(
@@ -214,12 +221,23 @@ class VODAutomationPipeline:
     # Helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _delete_sources(source_path: Path, processing: VODProcessingResult) -> list[str]:
-        """Delete the downloaded audio and the chat files of a completed VOD."""
-        candidates = [processing.chat_path, processing.timestamped_chat_path]
+    def _delete_sources(self, source_path: Path, processing: VODProcessingResult) -> list[str]:
+        """Delete everything a completed VOD no longer needs.
+
+        Only its Shorts and its manifest (which holds their titles and
+        descriptions) stay, until the Shorts are published or discarded.
+        """
+        vod_id = processing.vod_id
+        candidates = [
+            processing.chat_path,
+            processing.timestamped_chat_path,
+            processing.transcript_path,
+            *self.output_dir.glob(f"{vod_id}_highlights.json"),
+            *self.output_dir.glob(f"{vod_id}_gemini_selection_*.json"),
+        ]
         if "_audio." in source_path.name:  # never a full video the user put there
-            candidates.append(source_path)
+            # The audio and any leftover of an interrupted download.
+            candidates += source_path.parent.glob(f"{vod_id}_audio*")
         deleted = []
         for path in candidates:
             try:

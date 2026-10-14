@@ -146,6 +146,13 @@ the chat with a single download thread, and each Short reads its seconds of Twit
 playback speed. On Windows, the FFmpeg and TwitchDownloaderCLI processes it starts stop
 with it, so closing the app frees the connection at once.
 
+Moments that Gemini scores below 60 (out of 100) are neither rendered nor published. The
+transcription runs on an NVIDIA GPU when CUDA works (Whisper `small`, float16, about 23
+times real time on an RTX 3050 laptop GPU; install the CUDA libraries with
+`pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12>=9,<10"`), otherwise on the CPU
+(Whisper `base`, int8). When VODs pile up, the top streamers' VODs come first, then the
+highest peak viewers.
+
 `top_streamers.txt` lists the Twitch logins of the top English streamers (editable, one per
 line). Their VODs are processed first with up to 20 moments each. At publication, the
 Shorts of a listed streamer who clearly stands out (the only one of the list with Shorts
@@ -258,8 +265,9 @@ emojis), a short Gemini teaser with emojis at the top of the description and pop
 best first during the daily publication hour, within the daily upload limit
 (`YOUTUBE_MAX_UPLOADS_PER_DAY`). A local Short is deleted only
 after YouTube confirms the upload with a video ID; on any failure or interruption it is
-kept for a retry. When the day's quota is used, the ready Shorts that lost the day's sort
-are deleted (Shorts rendered during the publication hour wait for the next one).
+kept for a retry. Once the day's quota is used, every Short still waiting is deleted, then
+every remaining file of those VODs: after a publication hour, only the VODs still queued
+or being processed for the next one have files left in `data/input` and `data/output`.
 
 The console output can be redirected to a log file: it is then written in UTF-8.
 

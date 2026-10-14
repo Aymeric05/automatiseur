@@ -211,15 +211,11 @@ class VODShortsUploader:
         best = self._best(ready)
         result = self.upload(best.vod_id, best.short, best.metadata)
         if hour is not None and self.quota.remaining() == 0:
-            # The day's sort is done: the Shorts that competed and lost are not kept
-            # (those rendered during the hour wait for the next one).
+            # The day's publications are over: no Short that was waiting is kept,
+            # and the worker then deletes every file of these VODs.
             for item in ready:
-                path = item.short.output_path
-                try:
-                    if item is not best and path.stat().st_mtime < hour[0].timestamp():
-                        self._delete_local(path)
-                except OSError:
-                    pass
+                if item is not best:
+                    self._delete_local(item.short.output_path)
         return best.vod_id, result
 
     def _publication_hour(self) -> tuple[datetime, datetime] | None:
