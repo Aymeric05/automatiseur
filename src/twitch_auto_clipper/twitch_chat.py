@@ -70,6 +70,10 @@ def download_twitch_chat(
         vod_id,
         "-t",  # one download thread instead of 4: slower, but gentle on the connection
         "1",
+        # A partial file left by an interrupted run must not trigger the default
+        # "overwrite? [Y/N]" question, which nobody would ever answer.
+        "--collision",
+        "Overwrite",
     ]
     if start_seconds:
         command += ["-b", f"{round(start_seconds * 1000)}ms"]
@@ -80,6 +84,7 @@ def download_twitch_chat(
     try:
         subprocess.run(
             command, check=True, capture_output=True, text=True,
+            stdin=subprocess.DEVNULL,  # never waits for a keyboard answer
             timeout=CHAT_DOWNLOAD_TIMEOUT_SECONDS,
         )
     except FileNotFoundError as error:
