@@ -328,6 +328,13 @@ class VerticalFilterTests(unittest.TestCase):
         self.assertNotIn("-vf", command)
         self.assertIn("0:a?", command)
 
+    def test_twitch_stream_is_read_at_its_own_pace(self):
+        remote = _build_short_ffmpeg_command("https://example.test/v.m3u8", Path("o.mp4"), 1.0, 2.0, "F")
+        self.assertEqual(remote[remote.index("-readrate") + 1], "1")
+        self.assertLess(remote.index("-readrate"), remote.index("-i"))  # an input option
+        local = _build_short_ffmpeg_command(Path("in.mp4"), Path("o.mp4"), 1.0, 2.0, "F")
+        self.assertNotIn("-readrate", local)
+
 
 if __name__ == "__main__":
     unittest.main()

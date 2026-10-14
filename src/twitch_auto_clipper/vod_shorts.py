@@ -132,7 +132,12 @@ def _build_short_ffmpeg_command(
     video_filter = vertical_filter
     if subtitles_path is not None:
         video_filter += "," + _subtitles_filter(subtitles_path)
-    command = ["ffmpeg", "-y", "-ss", str(start), "-i", str(source_path)]
+    command = ["ffmpeg", "-y"]
+    if str(source_path).startswith(("http://", "https://")):
+        # Read the Twitch stream at its own pace (a few Mbit/s), not as fast as the
+        # connection allows: a Short then takes about its duration to render.
+        command += ["-readrate", "1"]
+    command += ["-ss", str(start), "-i", str(source_path)]
     if hook_path is None:
         command += ["-t", str(duration), "-vf", video_filter]
     else:

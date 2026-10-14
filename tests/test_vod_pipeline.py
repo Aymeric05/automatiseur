@@ -66,7 +66,7 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.uploads.append({"path": path, "title": title, "privacy": privacy})
         return f"yt{len(self.uploads)}", f"https://youtu.be/yt{len(self.uploads)}"
 
-    def _pipeline(self, upload=True, transcriber=None, ffmpeg=fake_ffmpeg):
+    def _pipeline(self, transcriber=None, ffmpeg=fake_ffmpeg):
         def no_chat(url, path):
             raise OSError("TwitchDownloaderCLI missing")
 
@@ -78,7 +78,6 @@ class VODAutomationPipelineTests(unittest.TestCase):
             shorts_generator=VODShortsGenerator(
                 self.tmp, ffmpeg_runner=ffmpeg, duration_probe=lambda _p: 600.0
             ),
-            uploader=VODShortsUploader(self.tmp, uploader=self._upload) if upload else None,
             output_dir=self.tmp,
         )
 
@@ -86,28 +85,39 @@ class VODAutomationPipelineTests(unittest.TestCase):
         return json.loads((self.tmp / "vod_1_processing.json").read_text(encoding="utf-8"))
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
-    def test_full_pipeline_publishes_privately_and_cleans_up(self, gemini):
+    def test_full_pipeline_leaves_shorts_and_metadata_ready_to_publish(self, gemini):
         result = self._pipeline().run(self._acquisition(budget=2))
 
         self.assertEqual(result.status, "completed", format_vod_automation_result(result))
         gemini.assert_called_once()
         self.assertEqual(gemini.call_args.kwargs["requested_count"], 2)
         self.assertEqual(result.shorts.generated_count, 2)
-        self.assertEqual([u.status for u in result.uploads], ["uploaded", "uploaded"])
-        self.assertEqual({u["privacy"] for u in self.uploads}, {"private"})
-        self.assertTrue(self.uploads[0]["title"].startswith("Streamer: “"))
-        self.assertEqual(list(self.tmp.glob("*_short.mp4")), [])  # cleaned after upload
-        # Source VOD, transcript and manifest are never deleted.
+        self.assertEqual(len(list(self.tmp.glob("*_short.mp4"))), 2)  # waiting for publication
         self.assertTrue(self.source.is_file())
         self.assertTrue((self.tmp / "vod_1_transcript.json").is_file())
         manifest = self._manifest()
         keys = {short.key for short in result.shorts.shorts}
-        self.assertEqual(set(manifest["youtube_uploads"]), keys)
+        self.assertEqual(set(manifest["generated_shorts"]), keys)
         self.assertEqual(set(manifest["shorts_metadata"]), keys)
-        self.assertEqual(
-            {record["candidate_id"] for record in manifest["youtube_uploads"].values()},
-            {"candidate_1", "candidate_2"},
-        )
+        self.assertEqual(manifest["automation_status"], "completed")
+
+    @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
+    def test_completed_vod_shorts_are_published_best_score_first_then_cleaned_up(self, gemini):
+        self._pipeline().run(self._acquisition(budget=2))
+        uploader = VODShortsUploader(self.tmp, uploader=self._upload)
+
+        vod_id, first = uploader.publish_next()
+        self.assertEqual((vod_id, first.candidate_id, first.status), ("vod_1", "candidate_1", "uploaded"))
+        self.assertEqual(uploader.publish_next()[1].candidate_id, "candidate_2")  # score 88 < 89
+        self.assertIsNone(uploader.publish_next())  # nothing left
+        self.assertEqual(list(self.tmp.glob("*_short.mp4")), [])
+        self.assertEqual({u["privacy"] for u in self.uploads}, {"private"})
+        self.assertTrue(self.uploads[0]["title"].startswith("Streamer: “"))
+        self.assertEqual(set(self._manifest()["youtube_uploads"]), set(self._manifest()["generated_shorts"]))
+
+        rerun = self._pipeline().run(self._acquisition(budget=2))  # a rerun never re-renders them
+        self.assertEqual({s.status for s in rerun.shorts.shorts}, {"already_uploaded"})
+        self.assertIsNone(uploader.publish_next())
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_rerun_resumes_without_redoing_finished_work(self, gemini):
@@ -123,9 +133,8 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertEqual(result.status, "completed")
         self.assertEqual(self.transcriptions, 1)
         self.assertEqual(gemini.call_count, 1)  # selection file reused
-        self.assertEqual(ffmpeg_calls, [])  # uploaded Shorts not regenerated
-        self.assertEqual(len(self.uploads), 2)  # no duplicate upload
-        self.assertEqual({s.status for s in result.shorts.shorts}, {"already_uploaded"})
+        self.assertEqual(ffmpeg_calls, [])  # existing Shorts not regenerated
+        self.assertEqual({s.status for s in result.shorts.shorts}, {"already_exists"})
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates")
     def test_moments_gemini_finds_uninteresting_are_never_rendered(self, gemini):
@@ -136,7 +145,7 @@ class VODAutomationPipelineTests(unittest.TestCase):
             ]
 
         gemini.side_effect = mixed
-        result = self._pipeline(upload=False).run(self._acquisition(budget=2))
+        result = self._pipeline().run(self._acquisition(budget=2))
         self.assertEqual(result.status, "completed")
         self.assertEqual([short.candidate_id for short in result.shorts.shorts], ["candidate_1"])
         self.assertEqual(len(list(self.tmp.glob("*_short.mp4"))), 1)
@@ -150,19 +159,12 @@ class VODAutomationPipelineTests(unittest.TestCase):
             broadcaster_login="streamer", broadcaster_name="Streamer", vod_id="vod_2",
             downloaded_path=self.tmp / "vod_2_audio.mp4",
         )
-        pipeline = self._pipeline(upload=False)
+        pipeline = self._pipeline()
         pipeline.delete_sources_on_success = True
         result = pipeline.run(boring)
         self.assertEqual((result.status, result.shorts), ("completed", None))
         self.assertIn("interessant", result.message)
         self.assertFalse((self.tmp / "vod_2_audio.mp4").exists())  # nothing kept for a dull VOD
-
-    @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
-    def test_without_uploader_shorts_are_kept_locally(self, gemini):
-        result = self._pipeline(upload=False).run(self._acquisition(budget=1))
-        self.assertEqual(result.status, "completed")
-        self.assertEqual(result.uploads, ())
-        self.assertEqual(len(list(self.tmp.glob("*_short.mp4"))), 1)
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_zero_budget_skips_everything(self, gemini):
@@ -191,7 +193,6 @@ class VODAutomationPipelineTests(unittest.TestCase):
         result = self._pipeline(transcriber=broken).run(self._acquisition())
         self.assertEqual(result.status, "error")
         gemini.assert_not_called()
-        self.assertEqual(self.uploads, [])
 
     @patch(
         "twitch_auto_clipper.vod_highlights.select_candidates",
@@ -228,20 +229,7 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertIsNone(_gemini_retry_at("Gemini a retourne un JSON invalide."))
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
-    def test_failed_upload_keeps_short_and_reports_partial(self, gemini):
-        def failing_upload(*args, **kwargs):
-            raise RuntimeError("upload interrupted")
-
-        pipeline = self._pipeline()
-        pipeline.uploader = VODShortsUploader(self.tmp, uploader=failing_upload)
-        result = pipeline.run(self._acquisition(budget=1))
-
-        self.assertEqual(result.status, "partial")
-        self.assertEqual(result.uploads[0].status, "error")
-        self.assertEqual(len(list(self.tmp.glob("*_short.mp4"))), 1)
-
-    @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
-    def test_one_ffmpeg_failure_still_uploads_the_other_short(self, gemini):
+    def test_one_ffmpeg_failure_keeps_the_other_short_but_waits_for_a_retry(self, gemini):
         calls = []
 
         def ffmpeg(command):
@@ -253,33 +241,28 @@ class VODAutomationPipelineTests(unittest.TestCase):
         result = self._pipeline(ffmpeg=ffmpeg).run(self._acquisition(budget=2))
         self.assertEqual(result.status, "partial")
         self.assertEqual(result.shorts.status, "partial")
-        self.assertEqual([u.candidate_id for u in result.uploads], [result.shorts.shorts[1].candidate_id])
+        self.assertEqual(len(list(self.tmp.glob("*_short.mp4"))), 1)
+        # Not completed yet: nothing of this VOD is published before the retry.
+        self.assertIsNone(VODShortsUploader(self.tmp, uploader=self._upload).publish_next())
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
-    def test_upload_quota_reached_waits_until_the_quota_reset(self, gemini):
-        pipeline = self._pipeline()
-        pipeline.uploader = VODShortsUploader(self.tmp, uploader=self._upload, daily_upload_limit=1)
-
-        result = pipeline.run(self._acquisition(budget=2))
-
-        self.assertEqual(result.status, "waiting_upload")
-        self.assertEqual([u.status for u in result.uploads], ["uploaded", "deferred"])
-        self.assertEqual(result.retry_at, pipeline.uploader.quota.next_reset())
-        self.assertEqual(len(list(self.tmp.glob("*_short.mp4"))), 1)  # kept for tomorrow
-        self.assertEqual(self._manifest()["automation_status"], "waiting_upload")
-
-    @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
-    def test_youtube_quota_refusal_is_a_wait_not_a_failure(self, gemini):
+    def test_youtube_quota_refusal_closes_the_upload_day(self, gemini):
         def refused(*args, **kwargs):
             raise RuntimeError('<HttpError 403 "reason": "quotaExceeded">')
 
-        pipeline = self._pipeline()
-        pipeline.uploader = VODShortsUploader(self.tmp, uploader=refused, daily_upload_limit=6)
-        result = pipeline.run(self._acquisition(budget=1))
+        from datetime import datetime, timezone
 
-        self.assertEqual(result.status, "waiting_upload")
-        self.assertFalse(pipeline.uploader.quota.available())  # no more tries today
+        self._pipeline().run(self._acquisition(budget=1))
+        uploader = VODShortsUploader(
+            self.tmp, uploader=refused, daily_upload_limit=6, random_source=lambda: 0.0,
+            clock=lambda: datetime(2026, 10, 14, 7, 30, tzinfo=timezone.utc),  # publication hour
+        )
+
+        self.assertEqual(uploader.publish_next()[1].status, "deferred")
+        self.assertFalse(uploader.quota.available())  # no more tries today
+        self.assertIsNone(uploader.publish_next())
         self.assertNotIn("youtube_upload_errors", self._manifest())
+        self.assertEqual(len(list(self.tmp.glob("*_short.mp4"))), 1)  # kept for tomorrow
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_completed_vod_deletes_its_audio_and_chat_but_keeps_the_rest(self, gemini):
@@ -287,7 +270,7 @@ class VODAutomationPipelineTests(unittest.TestCase):
         audio.write_bytes(b"audio")
         (self.tmp / "vod_1_chat.json").write_text('{"comments": []}', encoding="utf-8")
         sources = []
-        pipeline = self._pipeline(upload=False)
+        pipeline = self._pipeline()
         pipeline.video_source = lambda acquisition: sources.append(acquisition) or self.source
         pipeline.delete_sources_on_success = True
 
@@ -305,10 +288,11 @@ class VODAutomationPipelineTests(unittest.TestCase):
     def test_unfinished_vod_keeps_its_sources(self, gemini):
         audio = self.tmp / "vod_1_audio.mp4"
         audio.write_bytes(b"audio")
-        pipeline = self._pipeline()
-        pipeline.uploader = VODShortsUploader(
-            self.tmp, uploader=lambda *a, **k: (_ for _ in ()).throw(RuntimeError("network"))
-        )
+
+        def broken_ffmpeg(command):
+            raise OSError("disk full")
+
+        pipeline = self._pipeline(ffmpeg=broken_ffmpeg)
         pipeline.delete_sources_on_success = True
         pipeline.video_source = lambda acquisition: self.source
 
@@ -325,9 +309,13 @@ class DueVODWorkerTests(unittest.TestCase):
         ready = VODAcquisitionResult("s1", 2, "downloaded", "b", "login", "Name", "v1", Path("v1_audio.mp4"))
         waiting = VODAcquisitionResult("s2", 2, "vod_not_available", "b", "login", "Name")
         manager = Mock()
+        manager.input_dir = manager_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(__import__("shutil").rmtree, manager_dir)
+        manager.active_vod_ids.return_value = set()
         manager.acquire_due.return_value = iter([ready, waiting])
         manager.record_automation.return_value = "retry"
         automation = Mock()
+        automation.output_dir = manager_dir
         automation.run.side_effect = RuntimeError("bug")  # must not stop the worker
         lines = []
 
@@ -338,6 +326,40 @@ class DueVODWorkerTests(unittest.TestCase):
         manager.record_automation.assert_called_once()
         self.assertEqual(manager.record_automation.call_args.args[:3], ("s1", "v1", "error"))
         self.assertTrue(any("nouvel essai" in line for line, error in lines))
+
+
+class CleanupTests(unittest.TestCase):
+    def test_only_finished_vods_lose_their_files(self):
+        import os
+        import time
+
+        from twitch_auto_clipper.vod_pipeline import cleanup_finished_vods
+
+        with tempfile.TemporaryDirectory() as directory:
+            input_dir, output_dir = Path(directory, "input"), Path(directory, "output")
+            input_dir.mkdir()
+            output_dir.mkdir()
+            names = {
+                input_dir: ["1_audio.mp4", "2_audio.mp4.part", "3_audio.mp4", "demo.mp4"],
+                output_dir: ["1_transcript.json", "1_processing.json", "2_processing.json",
+                             "3_transcript.json", "4_processing.json", "4_0.0-5.0_short.mp4",
+                             "5_processing.json", "5_0.0-5.0_short.mp4", "monitor.log"],
+            }
+            for folder, files in names.items():
+                for name in files:
+                    (folder / name).write_bytes(b"x")
+            old = time.time() - 49 * 3600
+            os.utime(output_dir / "5_0.0-5.0_short.mp4", (old, old))  # never published, expired
+
+            done = cleanup_finished_vods(input_dir, output_dir, active_vod_ids={"3"})
+
+            self.assertEqual(sorted(done), ["1", "2", "5"])
+            remaining = sorted(p.name for p in [*input_dir.iterdir(), *output_dir.iterdir()])
+            self.assertEqual(remaining, [
+                "3_audio.mp4", "3_transcript.json",  # job still queued
+                "4_0.0-5.0_short.mp4", "4_processing.json",  # Short waiting for publication
+                "demo.mp4", "monitor.log",  # not VOD files
+            ])
 
 
 class ManifestStatusTests(unittest.TestCase):

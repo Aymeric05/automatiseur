@@ -23,7 +23,7 @@ pipeline. Each section maps to an implemented component in `src/twitch_auto_clip
 | `vod_highlights.py` | Orchestrates heuristics → chat enrichment → Gemini selection per VOD |
 | `vod_shorts.py` | Renders one vertical Short per selected moment (FFmpeg, subtitles) |
 | `shorts_metadata.py` | Title and description from the clip's real transcript |
-| `shorts_upload.py` | Private YouTube upload, daily upload quota, post-upload cleanup |
+| `shorts_upload.py` | Publisher: daily publication hour, top streamers first, best-scored ready Shorts, cleanup |
 | `vod_pipeline.py` | Chains all VOD stages; worker that processes the queued VODs |
 | `candidate_clip.py` | Manual command: one vertical clip from a saved highlight candidate |
 | `framing.py` | CPU face detection (OpenCV Haar cascade) for 9:16 crop positioning |
@@ -76,9 +76,14 @@ vod_shorts.py → data/output/<vod_id>_<start>-<end>_short.mp4
     ▼
 shorts_metadata.py → title + description from the clip transcript
     ▼
-shorts_upload.py → private YouTube upload (youtube.py), daily quota, local Short deleted
-    ▼
 vod_pipeline.py → completed: audio and chat files deleted, job closed
+    ▼
+cleanup_finished_vods() → once no Short of the VOD waits for publication, all its files go
+
+Publisher thread (shorts_upload.py, publish_next): during the last hour before the quota
+reset (or the hour after start-up when it was missed), the day's uploads go out at random
+moments: a standout streamer of top_streamers.txt first, then the list, then the others,
+best Gemini score first (youtube.py); unpublished Shorts expire after 48 h.
 ```
 
 ---
@@ -111,7 +116,9 @@ JSON state files make every step resumable after a crash or a restart:
 - **`data/output/<vod_id>_processing.json`** — the VOD manifest, written by every
   stage: transcript and chat status, Gemini selection, generated Shorts, metadata,
   YouTube uploads and errors, final `automation_status`.
-- **`data/output/youtube_quota.json`** — uploads made in the current YouTube quota day.
+- **`data/output/youtube_quota.json`** — uploads made in the current YouTube quota day
+  (also used to spread the uploads over the publication hour).
+- **`data/output/publication_hour.json`** — the current quota day's publication hour.
 
 All files are written atomically (write to `.tmp`, then rename) to prevent corruption.
 Shorts, metadata and uploads are keyed by the moment itself (`<start>-<end>` in seconds),

@@ -124,6 +124,7 @@ Required for publishing clips:
 $env:YOUTUBE_PRIVACY_POLICY_URL    = "https://aymeric05.github.io/automatiseur/privacy.html"
 $env:YOUTUBE_EXPECTED_CHANNEL_ID   = "YOUR_YOUTUBE_CHANNEL_ID"  # optional but recommended
 $env:YOUTUBE_MAX_UPLOADS_PER_DAY   = "6"  # optional, default 6
+$env:DOWNLOAD_MAX_KBPS             = "1000"  # optional: VOD audio download cap in KB/s, default 1000
 $env:YOUTUBE_PRIVACY               = "private"  # optional: private (default), unlisted or public
 ```
 
@@ -131,9 +132,28 @@ $env:YOUTUBE_PRIVACY               = "private"  # optional: private (default), u
 audited the API project, it keeps every upload private whatever this value.
 
 `YOUTUBE_MAX_UPLOADS_PER_DAY` caps automatic uploads per YouTube quota day (the default
-10,000-unit daily quota allows about six uploads). Beyond it, Shorts stay on disk and are
-uploaded after the next quota reset (08:00 UTC is used, which is after YouTube's midnight
-Pacific reset all year). A quota refusal from YouTube also closes the day early.
+10,000-unit daily quota allows about six uploads). Processed VODs leave their Shorts ready
+on disk; the day's uploads all happen during the last hour before the quota reset (the quota
+day starts at 08:00 UTC, which is after YouTube's midnight Pacific reset all year), each at a
+random moment of that hour, so the best Shorts of the whole day compete. If the computer is
+off during that hour, the publication hour starts at the next start-up instead (once per
+quota day), and the Shorts of both days compete. Unpublished Shorts older than 48 hours are
+deleted. A quota refusal from YouTube closes the day early.
+
+The app stays gentle on the home connection: the VOD audio is downloaded at most at
+`DOWNLOAD_MAX_KBPS` (default 1000 KB/s, about 8 Mbit/s; lower it on a slow connection),
+the chat with a single download thread, and each Short reads its seconds of Twitch video at
+playback speed. On Windows, the FFmpeg and TwitchDownloaderCLI processes it starts stop
+with it, so closing the app frees the connection at once.
+
+`top_streamers.txt` lists the Twitch logins of the top English streamers (editable, one per
+line). Their VODs are processed first with up to 20 moments each. At publication, the
+Shorts of a listed streamer who clearly stands out (the only one of the list with Shorts
+ready, or at least twice the peak viewers of the next one) go first, then the best Gemini
+scores of the list, then the best of the other streamers. `favored_streamers.txt` lists
+women streamers to favor: they are handled like the top list, and their Shorts get a bonus
+of 15 points on the Gemini score (0-100) in that ranking. A VOD still waiting 48 hours after
+its stream ended is dropped.
 
 Place your Google Cloud OAuth Desktop JSON file at `credentials.json` in the project
 root (excluded from version control). On first upload, a browser window opens to
@@ -210,7 +230,10 @@ replay collected, highlight candidates detected, the best moments selected by Ge
 within the clip budget, and one vertical Short with dynamic subtitles rendered per
 selected moment (`data/output/<vod>_<start>-<end>_short.mp4`), reading only those
 seconds of video from Twitch. Once a VOD is completed, its audio and chat files are
-deleted; transcript, selection, manifest and unpublished Shorts are kept.
+deleted. Once none of its Shorts waits for publication any more (published, not chosen by
+the day's sort, or older than 48 hours), every remaining file of that VOD in `data/input`
+and `data/output` is deleted too (transcript, selections, manifest); the Twitch VOD state
+still records it, so it is never processed again.
 
 Nothing is lost when the program stops: tracked streams and their peaks
 (`data/output/twitch_monitor_state.json`) and queued VODs
@@ -232,9 +255,11 @@ as **private** (or as set by `YOUTUBE_PRIVACY`), with a title and description bu
 what is actually said in the clip,
 a teaser hook written by Gemini shown at the top of the video (bold yellow text with color
 emojis), a short Gemini teaser with emojis at the top of the description and popular hashtags,
-within the daily upload limit (`YOUTUBE_MAX_UPLOADS_PER_DAY`). A local Short is deleted only
+best first during the daily publication hour, within the daily upload limit
+(`YOUTUBE_MAX_UPLOADS_PER_DAY`). A local Short is deleted only
 after YouTube confirms the upload with a video ID; on any failure or interruption it is
-kept for a retry. Transcripts and manifests are never deleted.
+kept for a retry. When the day's quota is used, the ready Shorts that lost the day's sort
+are deleted (Shorts rendered during the publication hour wait for the next one).
 
 The console output can be redirected to a log file: it is then written in UTF-8.
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any
 
 
@@ -80,6 +81,12 @@ def _runs(text: str) -> list[list[Any]]:
     return runs
 
 
+def _simple_emojis(text: str) -> str:
+    # Without a text shaping library, a joined emoji (runner + male sign) would show
+    # as its parts and variation selectors as boxes: keep the base emoji only.
+    return re.sub("\u200d.|[\ufe0f\U0001F3FB-\U0001F3FF]", "", text)
+
+
 def render_hook_image(text: str, output_path: Path) -> Path:
     """Draw the hook as bold yellow text with color emojis on a transparent PNG.
 
@@ -107,8 +114,7 @@ def render_hook_image(text: str, output_path: Path) -> Path:
         raise SubtitleGenerationError(f"Aucune police disponible parmi {HOOK_FONTS}.")
     fonts = {False: text_font, True: emoji_font}
 
-    # Without a text shaping library, joiners and variation selectors would show as boxes.
-    words = text.replace("\ufe0f", "").replace("\u200d", "").split()
+    words = _simple_emojis(text).split()
     if not words:
         raise SubtitleGenerationError("Phrase d'accroche vide.")
 

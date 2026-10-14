@@ -139,6 +139,29 @@ class VODAcquisitionTests(unittest.TestCase):
         manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream("big", budget=10),)))
         self.assertEqual([a.stream_id for a in manager.acquire_due()], ["big", "small"])
 
+    def test_top_streamer_gets_twenty_moments_and_carries_its_peak(self) -> None:
+        manager = TwitchVODAcquisitionManager(
+            api_client=self.client, input_dir=self.root / "input", state_path=self.root / "state" / "vods.json",
+            downloader=self.download, clock=self.clock, top_streamers=frozenset({"LOGIN"}),
+        )
+        live = monitored_stream(budget=5)
+        manager.process_cycle(MonitoringCycle(ended_streams=(live,)))
+        [acquisition] = list(manager.acquire_due())
+        self.assertEqual((acquisition.clip_budget, acquisition.peak_viewers), (20, 10_000))
+
+    def test_job_too_old_to_publish_is_dropped_with_its_audio(self) -> None:
+        manager = self.manager()
+        manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))
+        list(manager.acquire_due())
+        manager.record_automation("stream-1", "vod-1", "error", error="boom")
+        audio = self.root / "input" / "vod-1_audio.mp4"
+        self.assertTrue(audio.is_file())
+        self.clock.advance(49 * 3600)
+        [result] = list(manager.acquire_due())
+        self.assertEqual(result.status, "abandoned")
+        self.assertFalse(audio.exists())
+        self.assertEqual(manager.pending_jobs, 0)
+
     def test_zero_budget_is_never_queued(self) -> None:
         manager = self.manager()
         result = manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(budget=0),)))
@@ -180,7 +203,7 @@ class VODAcquisitionTests(unittest.TestCase):
         list(manager.acquire_due())
         reset = self.clock.now + timedelta(hours=10)
 
-        self.assertEqual(manager.record_automation("stream-1", "vod-1", "waiting_upload", retry_at=reset), "waiting")
+        self.assertEqual(manager.record_automation("stream-1", "vod-1", "waiting_gemini", retry_at=reset), "waiting")
         job = self.state()["jobs"]["stream-1"]
         self.assertEqual((job["attempts"], datetime.fromisoformat(job["next_attempt_at"])), (0, reset))
         self.clock.now = reset

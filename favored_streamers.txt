@@ -1,0 +1,38 @@
+# Women streamers to favor (Twitch logins, one per line). Edit freely.
+#
+# They are handled like the top streamers list (processed first, up to 20
+# moments per VOD) and their Shorts get a bonus on the Gemini score when the
+# day's Shorts are ranked. Only streams the monitor follows count (English,
+# at least 5,000 viewers).
+emiru
+ironmouse
+maya
+pokimane
+extraemily
+cinna
+kyedae
+fanfan
+qtcinderella
+sweet_anita
+amouranth
+fuslie
+botezlive
+hannahxxrose
+39daph
+kkatamina
+alinity
+loserfruit
+sydeon
+natsumiii
+stpeach
+jinnytty
+valkyrae
+lilypichu
+tinakitten
+angelskimi
+itshafu
+xchocobars
+shylily
+nyanners
+veibae
+filian

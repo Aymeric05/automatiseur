@@ -43,6 +43,10 @@ class DailyQuota:
         state = self._state()
         return not state["exhausted"] and state["used"] < self.daily_limit
 
+    def remaining(self) -> int:
+        state = self._state()
+        return 0 if state["exhausted"] else max(0, self.daily_limit - state["used"])
+
     def record_use(self) -> None:
         state = self._state()
         state["used"] += 1

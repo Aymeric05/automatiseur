@@ -29,7 +29,7 @@ from .vod_acquisition import (
     find_downloaded_audio,
     format_vod_acquisition_result,
 )
-from .shorts_upload import VODShortsUploader
+from .shorts_upload import VODShortsUploader, format_short_upload_result
 from .twitch import TwitchDownloadError, download_twitch_vod, resolve_twitch_video_url
 from .twitch_chat import download_twitch_chat, find_twitch_downloader_cli
 from .vod_shorts import VODShortsGenerator
@@ -222,6 +222,11 @@ def build_parser() -> argparse.ArgumentParser:
 ENV_FILE = Path(".env")  # optional KEY=value file at the project root, ignored by git
 DATA_DIR = Path("data")  # production data; --test-minutes uses DATA_DIR / "test"
 WORKER_IDLE_SECONDS = 30.0  # pause of the VOD worker when no job is due
+PUBLISH_IDLE_SECONDS = 60.0  # how often the publisher checks for a due upload
+TOP_STREAMERS_FILE = Path("top_streamers.txt")
+FAVORED_STREAMERS_FILE = Path("favored_streamers.txt")
+PUBLISH_RETRY_SECONDS = 1800.0  # pause after a failed upload (network, sign-in...)
+DEFAULT_DOWNLOAD_KBPS = 1000  # VOD audio download cap (~8 Mbit/s); DOWNLOAD_MAX_KBPS overrides it
 DEFAULT_DAILY_UPLOADS = 6  # ~10,000 quota units per day at 1,600 units per upload
 DEFAULT_DAILY_GEMINI_REQUESTS = 20  # Gemini API free tier, per model and per day (each model)
 
@@ -234,6 +239,59 @@ def _daily_limit(parser: argparse.ArgumentParser, name: str, default: int) -> in
     except ValueError:
         parser.error(f"{name} doit etre un entier positif.")
     return value
+
+
+def kill_children_with_this_process() -> None:
+    """On Windows, make FFmpeg and TwitchDownloaderCLI die with the app.
+
+    Closing the console window kills Python only: a chat download or a render
+    would otherwise keep running, and keep using the network. Every child
+    process joins a job object that Windows closes when this process ends.
+    """
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    class BasicLimits(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+            ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class ExtendedLimits(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", BasicLimits), ("IoInfo", ctypes.c_uint64 * 6),
+            ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    job = kernel32.CreateJobObjectW(None, None)  # never closed: Windows closes it at exit
+    limits = ExtendedLimits()
+    limits.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not job or not kernel32.SetInformationJobObject(
+        job, 9, ctypes.byref(limits), ctypes.sizeof(limits)  # 9: extended limit information
+    ) or not kernel32.AssignProcessToJobObject(job, kernel32.GetCurrentProcess()):
+        print("Avertissement : les processus enfants ne s'arreteront pas avec l'application.", file=sys.stderr)
+
+
+def load_top_streamers(path: Path) -> frozenset[str]:
+    """Twitch logins of the top streamers list: one per line, # starts a comment."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return frozenset()
+    return frozenset(
+        login for line in lines if (login := line.split("#", 1)[0].strip().lower())
+    )
 
 
 def acquire_instance_lock(path: Path):
@@ -383,7 +441,6 @@ def process_vod(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
             ),
         ),
         shorts_generator=VODShortsGenerator(output_dir),
-        uploader=None,  # never publish from --process-vod
         output_dir=output_dir,
         video_source=_twitch_video,
     )
@@ -421,12 +478,17 @@ def main() -> int:
             parser.error("--monitor-interval doit etre positif.")
         if args.max_cycles is not None and args.max_cycles < 1:
             parser.error("--max-cycles doit etre positif.")
+        kill_children_with_this_process()
+        download_kbps = _daily_limit(parser, "DOWNLOAD_MAX_KBPS", DEFAULT_DOWNLOAD_KBPS)
         daily_uploads = _daily_limit(parser, "YOUTUBE_MAX_UPLOADS_PER_DAY", DEFAULT_DAILY_UPLOADS)
         daily_gemini = _daily_limit(parser, "GEMINI_MAX_REQUESTS_PER_DAY", DEFAULT_DAILY_GEMINI_REQUESTS)
         upload_privacy = os.environ.get("YOUTUBE_PRIVACY", "").strip().lower() or "private"
         if upload_privacy not in {"private", "unlisted", "public"}:
             parser.error("YOUTUBE_PRIVACY doit valoir private, unlisted ou public.")
         input_dir, output_dir = DATA_DIR / "input", DATA_DIR / "output"
+        favored_streamers = load_top_streamers(FAVORED_STREAMERS_FILE)
+        # Favored streamers are handled like the top list, plus a ranking bonus.
+        top_streamers = load_top_streamers(TOP_STREAMERS_FILE) | favored_streamers
         # Two monitors would download, process and publish the same VODs twice.
         instance_lock = acquire_instance_lock(output_dir / ".monitor.lock")
         if instance_lock is None:
@@ -441,6 +503,8 @@ def main() -> int:
                 monitor=monitor,
                 input_dir=input_dir,
                 state_path=output_dir / "twitch_vod_state.json",
+                top_streamers=top_streamers,
+                rate_limit=download_kbps * 1024,
             )
         except ValueError as error:
             print(f"Erreur d'etat VOD : {error}", file=sys.stderr)
@@ -483,6 +547,9 @@ def main() -> int:
                 expected_channel_id=expected_channel_id or None,
                 daily_upload_limit=daily_uploads,
                 privacy=upload_privacy,
+                top_streamers=top_streamers,
+                favored_streamers=favored_streamers,
+                check_seconds=PUBLISH_IDLE_SECONDS,
             )
         automation = VODAutomationPipeline(
             processing_pipeline=VODProcessingPipeline(output_dir),
@@ -492,7 +559,6 @@ def main() -> int:
                 gemini_daily_limit=daily_gemini,
             ),
             shorts_generator=VODShortsGenerator(output_dir),
-            uploader=uploader,
             output_dir=output_dir,
             video_source=_twitch_video,  # no full VOD video on disk
             delete_sources_on_success=True,  # audio and chat, once the VOD is completed
@@ -508,6 +574,20 @@ def main() -> int:
             for acquisition_result in result.acquisition_results:
                 report(format_vod_acquisition_result(acquisition_result), acquisition_result.status == "error")
 
+        def publish_next() -> bool:
+            """Upload the best ready Short if an upload is due; False after a failure."""
+            try:
+                published = uploader.publish_next()
+            except Exception as error:  # keep the publisher alive; Shorts stay on disk
+                report(f"Erreur de publication : {error!r}", True)
+                return False
+            if published is None:
+                return True
+            vod_id, upload = published
+            failed = upload.status == "error"
+            report(f"Publication VOD {vod_id} : {format_short_upload_result(upload).strip()} | {upload.title}", failed)
+            return not failed
+
         stop = Event()
         try:
             if args.monitor_twitch_once:
@@ -518,12 +598,15 @@ def main() -> int:
                     return 1
                 report_cycle(result)
                 process_due_vods(manager, automation, report)  # queued VODs, this one included
+                if uploader is not None:
+                    publish_next()
                 return 1 if result.monitoring_cycle.error else 0
 
             # The monitoring loop only queues ended streams; this worker downloads,
-            # transcribes, selects, renders and uploads, so a long VOD never
-            # pauses the monitoring. Every job is persisted: if the program
-            # stops mid-way, the next start picks it up again.
+            # transcribes, selects and renders, so a long VOD never pauses the
+            # monitoring. Every job is persisted: if the program stops mid-way,
+            # the next start picks it up again. The publisher uploads the day's
+            # best ready Shorts during the publication hour.
             def work() -> None:
                 while not stop.is_set():
                     try:
@@ -532,7 +615,13 @@ def main() -> int:
                         report(f"Erreur du traitement des VOD : {error!r}", True)
                     stop.wait(WORKER_IDLE_SECONDS)
 
+            def publish() -> None:
+                while not stop.is_set():
+                    stop.wait(PUBLISH_IDLE_SECONDS if publish_next() else PUBLISH_RETRY_SECONDS)
+
             Thread(target=work, name="vod-worker", daemon=True).start()
+            if uploader is not None:
+                Thread(target=publish, name="shorts-publisher", daemon=True).start()
             manager.run(report_cycle, stop, max_cycles=args.max_cycles)
         except KeyboardInterrupt:
             print("Surveillance Twitch arretee. Les VOD en cours ou en attente reprendront au prochain lancement.")

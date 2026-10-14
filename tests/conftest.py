@@ -17,3 +17,9 @@ def no_local_env_file(monkeypatch, tmp_path):
 def isolated_data_dir(monkeypatch, tmp_path):
     """CLI tests never read or write the real data/ folder (queued VODs, state, lock)."""
     monkeypatch.setattr("twitch_auto_clipper.cli.DATA_DIR", tmp_path / "data")
+
+
+@pytest.fixture(autouse=True)
+def no_job_object(monkeypatch):
+    """The test runner itself is never tied to a Windows job object."""
+    monkeypatch.setattr("twitch_auto_clipper.cli.kill_children_with_this_process", lambda: None)
