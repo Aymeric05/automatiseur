@@ -35,6 +35,7 @@ class VODAcquisitionResult:
     vod_id: str | None = None
     downloaded_path: Path | None = None
     error: str | None = None
+    game_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -365,6 +366,7 @@ def _result(
         vod_id=vod_id,
         downloaded_path=downloaded_path,
         error=error,
+        game_name=stream.game_name,
     )
 
 

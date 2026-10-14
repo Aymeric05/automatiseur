@@ -37,6 +37,20 @@ class ShortsMetadataTests(unittest.TestCase):
         self.assertIn("https://www.twitch.tv/videos/123", metadata.description)
         self.assertIn("no way he hit that shot", metadata.description)
 
+    def test_description_opens_with_the_teaser_and_ends_with_hashtags(self):
+        metadata = build_short_metadata(
+            broadcaster_name="Streamer", broadcaster_login="streamer", vod_id="123",
+            segments=SEGMENTS, clip_start=5.0, clip_end=19.0,
+            game_name="Grand Theft Auto V", teaser="He hits the shot of the year 🎯🔥",
+        )
+        lines = metadata.description.splitlines()
+        self.assertEqual(lines[0], "He hits the shot of the year 🎯🔥")
+        self.assertIn("🎮 Clip from Streamer's Twitch stream (Grand Theft Auto V).", lines)
+        self.assertEqual(
+            lines[-1],
+            "#shorts #twitch #twitchclips #streamer #GrandTheftAutoV #viral #fyp",
+        )  # the channel tag is not repeated
+
     def test_bare_reaction_title_quotes_the_most_substantial_sentence(self):
         segments = [
             {"start": 0, "end": 2, "text": "Oh my god."},

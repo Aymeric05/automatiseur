@@ -192,6 +192,8 @@ class VODAutomationPipeline:
                         clip_end=short.end,
                         candidate_start=short.candidate_start,
                         candidate_end=short.candidate_end,
+                        game_name=processing.game_name,
+                        teaser=short.description,
                     ),
                 ))
             except ShortMetadataError as error:

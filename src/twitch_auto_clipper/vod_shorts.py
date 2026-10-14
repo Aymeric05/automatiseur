@@ -9,7 +9,7 @@ import subprocess
 from typing import Any, Callable
 
 from .candidate_clip import CandidateClipError, calculate_candidate_bounds
-from .subtitles import SubtitleGenerationError, generate_ass_subtitles
+from .subtitles import SubtitleGenerationError, generate_ass_subtitles, render_hook_image
 from .video import get_video_duration
 from .vod_highlights import VODHighlightSelectionResult
 
@@ -21,6 +21,8 @@ class ShortsGenerationError(RuntimeError):
 # Extra source width (in pixels of the 1920px-high scaled frame) shown compared
 # to the tight 1080px-wide centered crop used by ``framing.build_vertical_filter``.
 ZOOM_OUT_EXTRA_WIDTH = 80
+# Top of the hook box, below the Shorts player's own top icons.
+HOOK_TOP = 200
 # YouTube Shorts accepts videos up to three minutes.
 MAX_SHORT_DURATION = 180.0
 # Reading a few seconds from Twitch and encoding them never takes this long.
@@ -62,6 +64,7 @@ class VODShortResult:
     subtitles: bool = False
     warning: str | None = None
     clip_id: str | None = None
+    description: str | None = None  # Gemini's teaser for the YouTube description
 
     @property
     def key(self) -> str:
@@ -122,19 +125,26 @@ def _build_short_ffmpeg_command(
     end: float,
     vertical_filter: str,
     subtitles_path: Path | None = None,
+    hook_path: Path | None = None,
 ) -> list[str]:
     """Return the FFmpeg command list for generating one vertical Short."""
     duration = end - start
     video_filter = vertical_filter
     if subtitles_path is not None:
         video_filter += "," + _subtitles_filter(subtitles_path)
-    return [
-        "ffmpeg",
-        "-y",
-        "-ss", str(start),
-        "-i", str(source_path),
-        "-t", str(duration),
-        "-vf", video_filter,
+    command = ["ffmpeg", "-y", "-ss", str(start), "-i", str(source_path)]
+    if hook_path is None:
+        command += ["-t", str(duration), "-vf", video_filter]
+    else:
+        # The hook image stays on screen for the whole clip (overlay repeats its only frame).
+        command += [
+            "-i", str(hook_path),
+            "-t", str(duration),
+            "-filter_complex",
+            f"[0:v]{video_filter}[base];[base][1:v]overlay=(W-w)/2:{HOOK_TOP}[v]",
+            "-map", "[v]", "-map", "0:a?",
+        ]
+    return command + [
         "-c:v", "libx264",
         "-c:a", "aac",
         "-movflags", "+faststart",
@@ -306,6 +316,7 @@ class VODShortsGenerator:
                 candidate_start=candidate_start,
                 candidate_end=candidate_end,
                 clip_id=key,
+                description=item.get("gemini_description"),
                 **extra,
             )
 
@@ -321,13 +332,15 @@ class VODShortsGenerator:
             return result("already_exists", start, end)
 
         subtitles_path, warning = self._write_subtitles(segments, output_path, start, end)
+        hook_path, hook_warning = self._write_hook(item.get("gemini_hook"), output_path)
+        warning = "; ".join(filter(None, (warning, hook_warning))) or None
         temporary_path = output_path.with_name(f"{output_path.stem}.tmp.mp4")
         try:
             temporary_path.unlink(missing_ok=True)
             source_path = source()
             command = _build_short_ffmpeg_command(
                 source_path, temporary_path, start, end,
-                self._filter_builder(source_path), subtitles_path,
+                self._filter_builder(source_path), subtitles_path, hook_path,
             )
             self._ffmpeg_runner(command)
             if not _is_valid_output(temporary_path):
@@ -340,8 +353,9 @@ class VODShortsGenerator:
             self._remove_quietly(temporary_path)
             return result("error", start, end, error=str(error), warning=warning)
         finally:
-            if subtitles_path is not None:
-                self._remove_quietly(subtitles_path)
+            for path in (subtitles_path, hook_path):
+                if path is not None:
+                    self._remove_quietly(path)
 
         return result(
             "generated", start, end, subtitles=subtitles_path is not None, warning=warning
@@ -378,6 +392,15 @@ class VODShortsGenerator:
         except (SubtitleGenerationError, OSError) as error:
             return None, f"sous-titres ignores : {error}"
         return subtitles_path, None
+
+    @staticmethod
+    def _write_hook(hook: Any, output_path: Path) -> tuple[Path | None, str | None]:
+        if not isinstance(hook, str) or not hook.strip():
+            return None, None
+        try:
+            return render_hook_image(hook, output_path.with_name(f"{output_path.stem}_hook.png")), None
+        except (SubtitleGenerationError, OSError, ValueError) as error:
+            return None, f"phrase d'accroche ignoree : {error}"
 
     @staticmethod
     def _load_segments(transcript_path: Path | None) -> list[dict[str, Any]] | None:

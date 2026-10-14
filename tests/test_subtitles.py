@@ -69,5 +69,25 @@ class SubtitleJoinTests(unittest.TestCase):
         self.assertEqual(_join_words(["it", "'s", "fine"]), "it's fine")
 
 
+class HookImageTests(unittest.TestCase):
+    def test_hook_is_bold_text_with_color_emojis_on_a_transparent_image(self) -> None:
+        from twitch_auto_clipper.subtitles import HOOK_MAX_TEXT_WIDTH, SubtitleGenerationError, render_hook_image
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "hook.png"
+            try:
+                render_hook_image("He did NOT expect this ending at all 😱🔥 wait for it", path)
+            except SubtitleGenerationError as error:
+                self.skipTest(str(error))  # Windows fonts missing
+            from PIL import Image
+
+            with Image.open(path) as image:
+                self.assertLessEqual(image.width, HOOK_MAX_TEXT_WIDTH + 100)
+                self.assertGreater(image.height, 200)  # wrapped on two lines
+                self.assertEqual(image.getpixel((0, 0))[3], 0)  # no box: transparent around the text
+                colors = image.getcolors(1_000_000)
+            self.assertTrue(any(r > 200 and g < 160 and b < 100 and a == 255 for _, (r, g, b, a) in colors))  # orange flame
+
+
 if __name__ == "__main__":
     unittest.main()

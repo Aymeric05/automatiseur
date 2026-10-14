@@ -102,6 +102,9 @@ class VODHighlightSelector:
                     model=self.model,
                     quota_dir=self.output_dir if self.gemini_daily_limit else None,
                     daily_limit=self.gemini_daily_limit or 20,
+                    streamer=", ".join(
+                        filter(None, (processed_vod.broadcaster_name, processed_vod.game_name))
+                    ),
                 )
                 if requested_count
                 else []
@@ -229,6 +232,8 @@ class VODHighlightSelector:
                     "gemini_score": evaluation["score"],
                     "gemini_justification": evaluation["justification"],
                     "gemini_model": evaluation.get("model"),
+                    "gemini_hook": evaluation.get("hook") or None,
+                    "gemini_description": evaluation.get("description") or None,
                 }
             )
         return selected

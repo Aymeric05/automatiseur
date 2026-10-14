@@ -230,6 +230,8 @@ Upload rights and the Privacy Policy are confirmed, and YouTube OAuth is checked
 startup. Shorts are uploaded
 as **private** (or as set by `YOUTUBE_PRIVACY`), with a title and description built from
 what is actually said in the clip,
+a teaser hook written by Gemini shown at the top of the video (bold yellow text with color
+emojis), a short Gemini teaser with emojis at the top of the description and popular hashtags,
 within the daily upload limit (`YOUTUBE_MAX_UPLOADS_PER_DAY`). A local Short is deleted only
 after YouTube confirms the upload with a video ID; on any failure or interruption it is
 kept for a retry. Transcripts and manifests are never deleted.

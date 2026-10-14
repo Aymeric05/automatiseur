@@ -25,6 +25,7 @@ class VODProcessingResult:
     transcription_status: str
     chat_status: str
     errors: tuple[str, ...] = ()
+    game_name: str = ""
 
 
 class VODProcessingPipeline:
@@ -125,6 +126,7 @@ class VODProcessingPipeline:
             transcription_status=transcription_status,
             chat_status=chat_status,
             errors=tuple(errors),
+            game_name=acquisition.game_name,
         )
 
     def _process_chat(

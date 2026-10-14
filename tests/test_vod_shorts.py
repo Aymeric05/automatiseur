@@ -315,6 +315,19 @@ class VerticalFilterTests(unittest.TestCase):
         self.assertEqual(command[command.index("-f") + 1], "mp4")
         self.assertEqual(command[-1], "out.tmp.mp4")
 
+    def test_hook_image_is_overlaid_on_the_whole_clip(self):
+        command = _build_short_ffmpeg_command(
+            Path("in.mp4"), Path("out.tmp.mp4"), 10.0, 25.0, "FILTER", None, Path("hook.png")
+        )
+        self.assertEqual(command[command.index("-ss") + 1], "10.0")  # seeks the VOD only
+        self.assertEqual(command[command.index("-i", command.index("-i") + 1) + 1], "hook.png")
+        self.assertEqual(
+            command[command.index("-filter_complex") + 1],
+            "[0:v]FILTER[base];[base][1:v]overlay=(W-w)/2:200[v]",
+        )
+        self.assertNotIn("-vf", command)
+        self.assertIn("0:a?", command)
+
 
 if __name__ == "__main__":
     unittest.main()

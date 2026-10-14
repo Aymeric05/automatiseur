@@ -17,6 +17,8 @@ GEMINI_TIMEOUT_MS = 300_000
 # requests: these models are tried next, each with its own free quota.
 GEMINI_FALLBACK_MODELS = ("gemini-flash-latest", "gemini-flash-lite-latest")
 TRANSIENT_MARKERS = ("503", "500", "unavailable", "internal", "deadline", "high demand")
+HOOK_MAX_LENGTH = 80
+DESCRIPTION_MAX_LENGTH = 300
 
 
 class GeminiEvaluationError(RuntimeError):
@@ -45,12 +47,16 @@ EVALUATION_RESPONSE_FORMAT = {
                         "interesting": {"type": "boolean"},
                         "score": {"type": "number", "minimum": 0, "maximum": 100},
                         "justification": {"type": "string"},
+                        "hook": {"type": "string"},
+                        "description": {"type": "string"},
                     },
                     "required": [
                         "candidate_id",
                         "interesting",
                         "score",
                         "justification",
+                        "hook",
+                        "description",
                     ],
                     "additionalProperties": False,
                 },
@@ -117,9 +123,11 @@ def _candidate_context(
 def _build_prompt(
     context: list[dict[str, Any]],
     selection_count: int | None = None,
+    streamer: str | None = None,
 ) -> str:
     prompt = (
-        "Evalue les candidats suivants pour un Short Twitch. "
+        (f"Streamer : {streamer}. " if streamer else "")
+        + "Evalue les candidats suivants pour un Short Twitch. "
         "Classe-les selon leur potentiel d'interet pour un public court. "
         "Utilise d'abord la transcription, puis le score heuristique et le resume du chat. "
         "chat (null si indisponible) resume les reactions du chat juste apres le clip : "
@@ -131,9 +139,17 @@ def _build_prompt(
         "salutations, pas de reference), ne t'appuie pas sur le chat. "
         "Retourne uniquement un JSON valide sous la forme "
         '{"evaluations":[{"candidate_id":"candidate_1",'
-        '"interesting":true,"score":0,"justification":"..."}]} . '
+        '"interesting":true,"score":0,"justification":"...","hook":"...","description":"..."}]} . '
         "Le score Gemini doit etre entre 0 et 100. "
         "La justification doit etre courte et concrete. "
+        "hook et description sont ecrits en anglais (public anglophone). "
+        "hook est la phrase d'accroche affichee en haut du Short pendant tout le clip : "
+        "4 a 9 mots et 1 ou 2 emojis simples, elle tease le moment fort sans le devoiler "
+        "pour que le spectateur reste jusqu'a la fin, en lien direct avec ce qui se passe "
+        "dans le clip ; varie les formulations d'un candidat a l'autre. "
+        "description est une ou deux phrases fun avec des emojis qui decrivent le clip et "
+        "donnent envie de le regarder. Ni hook ni description ne doivent annoncer quelque "
+        "chose qui n'arrive pas dans le clip. "
         "transcript est le texte du clip ; context_before et context_after sont ce qui "
         "est dit juste avant et apres : juge si le clip se comprend seul et forme un "
         "moment complet. Base-toi sur le contenu reel, pas seulement sur le score heuristique. "
@@ -172,6 +188,8 @@ def _parse_response(response_text: str, candidate_ids: set[str]) -> list[dict[st
         justification = evaluation.get("justification")
         score = evaluation.get("score")
         interesting = evaluation.get("interesting")
+        hook = evaluation.get("hook")
+        description = evaluation.get("description")
         if (
             candidate_id not in candidate_ids
             or not isinstance(justification, str)
@@ -187,6 +205,11 @@ def _parse_response(response_text: str, candidate_ids: set[str]) -> list[dict[st
                 "interesting": interesting,
                 "score": score,
                 "justification": justification.strip(),
+                # Optional: a missing hook or description only drops the overlay or teaser.
+                "hook": hook.strip()[:HOOK_MAX_LENGTH] if isinstance(hook, str) else "",
+                "description": description.strip()[:DESCRIPTION_MAX_LENGTH]
+                if isinstance(description, str)
+                else "",
             }
         )
     return validated
@@ -200,6 +223,7 @@ def evaluate_candidates(
     quota_dir: Path | None = None,
     daily_limit: int = 20,
     fallback_models: tuple[str, ...] = GEMINI_FALLBACK_MODELS,
+    streamer: str | None = None,
 ) -> list[dict[str, Any]]:
     """Ask Gemini to evaluate candidates using transcript and optional chat counts.
 
@@ -219,7 +243,7 @@ def evaluate_candidates(
         expected_count = None
 
     client = _get_gemini_client()
-    prompt = _build_prompt(context, selection_count=expected_count)
+    prompt = _build_prompt(context, selection_count=expected_count, streamer=streamer)
     response = used_model = last_error = None
     next_reset = None
     for name in dict.fromkeys((model, *fallback_models)):
@@ -288,6 +312,7 @@ def select_candidates(
     model: str = "gemini-3.6-flash",
     quota_dir: Path | None = None,
     daily_limit: int = 20,
+    streamer: str | None = None,
 ) -> list[dict[str, Any]]:
     """Return at most ``requested_count`` distinct candidates chosen by Gemini."""
     if requested_count < 0:
@@ -301,6 +326,7 @@ def select_candidates(
         selection_count=requested_count,
         quota_dir=quota_dir,
         daily_limit=daily_limit,
+        streamer=streamer,
     )
 
 
