@@ -149,6 +149,17 @@ class VODAcquisitionTests(unittest.TestCase):
         [acquisition] = list(manager.acquire_due())
         self.assertEqual((acquisition.clip_budget, acquisition.peak_viewers), (20, 10_000))
 
+    def test_biggest_peak_goes_first_even_if_it_ended_last(self) -> None:
+        manager = self.manager()
+        small, big = monitored_stream("stream-small", budget=5), monitored_stream("stream-big", budget=5)
+        big = MonitoredStream(big.stream, 5, peak_viewer_count=57_000)
+        manager.process_cycle(MonitoringCycle(ended_streams=(small,)))
+        self.clock.advance(3600)
+        manager.process_cycle(MonitoringCycle(ended_streams=(big,)))
+        self.client.find_vod_for_stream.side_effect = lambda broadcaster, stream_id: vod(f"vod-{stream_id}", stream_id)
+        order = [result.stream_id for result in manager.acquire_due()]
+        self.assertEqual(order, ["stream-big", "stream-small"])
+
     def test_job_too_old_to_publish_is_dropped_with_its_audio(self) -> None:
         manager = self.manager()
         manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))

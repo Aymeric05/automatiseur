@@ -84,6 +84,35 @@ class TranscriptionTests(unittest.TestCase):
 
         get_model.assert_called_once_with("small", "cuda", "float16")
 
+    @patch("twitch_auto_clipper.transcription._get_whisper_model")
+    def test_auto_uses_the_gpu_model_when_cuda_works_and_the_cpu_otherwise(self, get_model) -> None:
+        get_model.return_value = FakeWhisperModel("x", "x", "x")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            input_path = Path(temporary_directory) / "audio.mp4"
+            input_path.write_bytes(b"audio")
+            with patch("twitch_auto_clipper.transcription.cuda_available", return_value=True):
+                transcribe_video(input_path, device="auto")
+            self.assertEqual(get_model.call_args.args, ("small", "cuda", "float16"))
+            with patch("twitch_auto_clipper.transcription.cuda_available", return_value=False):
+                transcribe_video(input_path, device="auto")
+            self.assertEqual(get_model.call_args.args, ("base", "cpu", "int8"))
+
+    @patch("twitch_auto_clipper.transcription._get_whisper_model")
+    def test_gpu_failure_falls_back_to_the_cpu(self, get_model) -> None:
+        def load(model_size, device, compute_type):
+            if device == "cuda":
+                raise RuntimeError("CUDA out of memory")
+            return FakeWhisperModel(model_size, device, compute_type)
+
+        get_model.side_effect = load
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            input_path = Path(temporary_directory) / "audio.mp4"
+            input_path.write_bytes(b"audio")
+            with patch("twitch_auto_clipper.transcription.cuda_available", return_value=True):
+                segments = transcribe_video(input_path, device="auto")
+        self.assertEqual(segments[0]["text"], "Bonjour")
+        self.assertEqual(get_model.call_args.args, ("base", "cpu", "int8"))
+
     def test_save_transcription_writes_json(self) -> None:
         segments = [{"start": 0.0, "end": 1.0, "text": "Bonjour", "words": []}]
 

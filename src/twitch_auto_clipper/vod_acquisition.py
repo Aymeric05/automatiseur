@@ -156,8 +156,9 @@ class TwitchVODAcquisitionManager:
     def acquire_due(self) -> Iterator[VODAcquisitionResult]:
         """Yield one acquisition per due job, biggest clip budget first.
 
-        When VODs pile up, the most watched streams are processed first; among
-        equal budgets, the oldest stream end goes first.
+        When VODs pile up, the top streamers' VODs are processed first, then
+        the most watched streams (highest peak viewers), so a big live that
+        just ended never waits behind smaller older ones.
 
         A "downloaded" or "already_downloaded" result must be followed by
         ``record_automation`` once the pipeline ran; every other result has
@@ -166,16 +167,20 @@ class TwitchVODAcquisitionManager:
         now = self._clock()
         with self._lock:
             due = sorted(
-                (-self._budget(job["stream"]["broadcaster_login"], int(job["clip_budget"])), job["ended_at"], stream_id)
+                (
+                    -self._budget(job["stream"]["broadcaster_login"], int(job["clip_budget"])),
+                    -_peak(job),
+                    job["ended_at"],
+                    stream_id,
+                )
                 for stream_id, job in self._jobs.items()
                 if _parse(job["next_attempt_at"]) <= now
             )
-        for _, _, stream_id in due:
+        for *_, stream_id in due:
             with self._lock:
                 job = dict(self._jobs.get(stream_id) or {})
             if job:
-                peak = job.get("peak_viewers") or job["stream"].get("viewer_count") or 0
-                yield replace(self._acquire(stream_id, job), peak_viewers=int(peak))
+                yield replace(self._acquire(stream_id, job), peak_viewers=_peak(job))
 
     def record_automation(
         self,
@@ -381,6 +386,11 @@ def _iso(moment: datetime) -> str:
 
 def _parse(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def _peak(job: dict[str, Any]) -> int:
+    # Jobs queued before peaks were recorded fall back to their last viewer count.
+    return int(job.get("peak_viewers") or job["stream"].get("viewer_count") or 0)
 
 
 def _result(

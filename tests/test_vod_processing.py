@@ -79,8 +79,7 @@ class VODProcessingTests(unittest.TestCase):
             transcriber.assert_called_once_with(
                 video_path,
                 language="en",
-                device="cpu",
-                compute_type="int8",
+                device="auto",
             )
             chat_downloader.assert_called_once_with(
                 "https://www.twitch.tv/videos/vod-1",

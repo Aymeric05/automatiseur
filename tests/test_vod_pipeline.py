@@ -166,6 +166,15 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertIn("interessant", result.message)
         self.assertFalse((self.tmp / "vod_2_audio.mp4").exists())  # nothing kept for a dull VOD
 
+    @patch("twitch_auto_clipper.vod_highlights.select_candidates")
+    def test_moments_below_the_minimum_score_are_never_rendered(self, gemini):
+        gemini.side_effect = lambda *a, **k: [
+            {"candidate_id": "candidate_1", "interesting": True, "score": 60, "justification": "Ok."},
+            {"candidate_id": "candidate_2", "interesting": True, "score": 59, "justification": "Moyen."},
+        ]
+        result = self._pipeline().run(self._acquisition(budget=2))
+        self.assertEqual([short.candidate_id for short in result.shorts.shorts], ["candidate_1"])
+
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_zero_budget_skips_everything(self, gemini):
         result = self._pipeline().run(self._acquisition(budget=0))
@@ -265,9 +274,11 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertEqual(len(list(self.tmp.glob("*_short.mp4"))), 1)  # kept for tomorrow
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
-    def test_completed_vod_deletes_its_audio_and_chat_but_keeps_the_rest(self, gemini):
+    def test_completed_vod_keeps_only_its_shorts_and_manifest(self, gemini):
         audio = self.tmp / "vod_1_audio.mp4"
         audio.write_bytes(b"audio")
+        leftover = self.tmp / "vod_1_audio.mp4.part-Frag12.part"  # an interrupted download
+        leftover.write_bytes(b"part")
         (self.tmp / "vod_1_chat.json").write_text('{"comments": []}', encoding="utf-8")
         sources = []
         pipeline = self._pipeline()
@@ -279,10 +290,13 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertEqual(result.status, "completed")
         self.assertEqual(len(sources), 1)  # the Shorts read the video source, not the audio
         self.assertFalse(audio.exists())
-        self.assertFalse((self.tmp / "vod_1_chat.json").exists())
-        self.assertTrue((self.tmp / "vod_1_transcript.json").is_file())
-        self.assertEqual(len(list(self.tmp.glob("*_short.mp4"))), 1)  # unpublished Short kept
+        self.assertFalse(leftover.exists())
+        self.assertEqual(
+            sorted(path.name for path in self.tmp.iterdir() if path.name.startswith("vod_1_")),
+            sorted(["vod_1_processing.json", *(p.name for p in self.tmp.glob("*_short.mp4"))]),
+        )  # unpublished Short and manifest only
         self.assertIn("vod_1_audio.mp4", self._manifest()["deleted_sources"])
+        self.assertIn("title", next(iter(self._manifest()["shorts_metadata"].values())))
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_unfinished_vod_keeps_its_sources(self, gemini):

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -13,6 +15,8 @@ from .video import get_video_duration
 # Whisper decodes its whole input in memory (about 2.5 GB for an 11-hour VOD):
 # long files are transcribed 30 minutes at a time (about 120 MB each).
 CHUNK_SECONDS = 1800.0
+# With a CUDA GPU, a better model still runs many times faster than "base" on the CPU.
+GPU_MODEL_SIZE = "small"
 
 
 class TranscriptionError(RuntimeError):
@@ -28,6 +32,40 @@ def _get_whisper_model(model_size: str, device: str, compute_type: str):
         ) from error
 
     return WhisperModel(model_size, device=device, compute_type=compute_type)
+
+
+def cuda_available() -> bool:
+    """Whether Whisper can run on an NVIDIA GPU here.
+
+    The CUDA libraries come from the pip packages nvidia-cublas-cu12 and
+    nvidia-cudnn-cu12; their DLL folders are made loadable first.
+    """
+    try:
+        import ctranslate2
+
+        if ctranslate2.get_cuda_device_count() < 1:
+            return False
+    except Exception:
+        return False
+    if os.name == "nt":
+        import ctypes
+
+        for package in ("nvidia.cublas", "nvidia.cudnn"):
+            try:
+                spec = importlib.util.find_spec(package)
+            except ModuleNotFoundError:
+                spec = None
+            for location in (spec.submodule_search_locations or []) if spec else []:
+                bin_dir = Path(location) / "bin"
+                if bin_dir.is_dir():
+                    os.add_dll_directory(str(bin_dir))
+                    os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
+        try:
+            ctypes.WinDLL("cublas64_12.dll")
+            ctypes.WinDLL("cudnn64_9.dll")
+        except OSError:
+            return False
+    return True
 
 
 def _serialize_word(word: Any, offset: float = 0.0) -> dict[str, Any]:
@@ -77,13 +115,24 @@ def transcribe_video(
 ) -> list[dict[str, Any]]:
     """Transcribe a video or audio file using CPU/int8 by default.
 
-    The voice-activity filter skips music and silences, where Whisper tends to
+    With ``device="auto"``, the GPU model (``GPU_MODEL_SIZE``, float16) is used
+    when CUDA works, else ``model_size`` on the CPU (int8); a GPU failure falls
+    back to the CPU. The voice-activity filter skips music and silences, where Whisper tends to
     invent sentences that could otherwise end up in Short titles. Files longer
     than ``chunk_seconds`` are cut with FFmpeg and transcribed piece by piece;
     timestamps stay those of the whole file.
     """
     if not input_path.is_file():
         raise TranscriptionError(f"Fichier video introuvable : {input_path}")
+    if device == "auto":
+        if cuda_available():
+            try:
+                return transcribe_video(
+                    input_path, GPU_MODEL_SIZE, language, "cuda", "float16", chunk_seconds
+                )
+            except TranscriptionError:
+                pass  # e.g. GPU out of memory: the CPU still works
+        return transcribe_video(input_path, model_size, language, "cpu", "int8", chunk_seconds)
 
     try:
         model = _get_whisper_model(model_size, device, compute_type)
