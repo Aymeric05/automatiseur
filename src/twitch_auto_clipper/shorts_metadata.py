@@ -11,6 +11,9 @@ DESCRIPTION_MAX_LENGTH = 5000  # YouTube limit
 QUOTE_MAX_WORDS = 12
 TITLE_MIN_QUOTE_WORDS = 6
 EXCERPT_MAX_LENGTH = 400
+# Broad tags plus the channel and game ones; YouTube ignores every hashtag past 60.
+LEADING_HASHTAGS = ("#shorts", "#twitch", "#twitchclips")
+TRAILING_HASHTAGS = ("#streamer", "#viral", "#fyp")
 
 
 class ShortMetadataError(ValueError):
@@ -80,6 +83,12 @@ def clip_transcript_text(
     return _clean(" ".join(word.strip() for word in words if word.strip()))
 
 
+def _hashtags(broadcaster_login: str, game_name: str) -> str:
+    own = ("#" + re.sub(r"[^0-9A-Za-z]", "", value) for value in (broadcaster_login, game_name))
+    tags = [*LEADING_HASHTAGS, *(tag for tag in own if len(tag) > 1), *TRAILING_HASHTAGS]
+    return " ".join(dict.fromkeys(tags))  # a channel named "streamer" is tagged once
+
+
 def build_short_metadata(
     *,
     broadcaster_name: str,
@@ -90,12 +99,15 @@ def build_short_metadata(
     clip_end: float,
     candidate_start: float | None = None,
     candidate_end: float | None = None,
+    game_name: str = "",
+    teaser: str | None = None,
 ) -> ShortMetadata:
-    """Build a title and description only from the clip's transcript and source.
+    """Build a title and description from the clip's transcript and source.
 
     The title quotes what is said at the highlighted moment (the Gemini-selected
-    candidate), and the description adds the spoken excerpt of the whole clip
-    plus a credit to the Twitch channel and VOD. Nothing is invented.
+    candidate). The description opens with Gemini's teaser (written from the
+    clip's transcript), then the spoken excerpt of the whole clip, a credit to
+    the Twitch channel and VOD, and hashtags.
     """
     name = _clean(broadcaster_name) or _clean(broadcaster_login)
     if not name:
@@ -118,11 +130,14 @@ def build_short_metadata(
         short_quote += "…"
     title = _truncate(f"{name}: “{short_quote}”", TITLE_MAX_LENGTH)
 
-    lines = [f"“{_truncate(excerpt or quote, EXCERPT_MAX_LENGTH)}”", ""]
-    lines.append(f"Clip from {name}'s Twitch stream.")
+    teaser = _clean(teaser or "")
+    game = _clean(game_name)
+    lines = [teaser, ""] if teaser else []
+    lines.extend([f"💬 “{_truncate(excerpt or quote, EXCERPT_MAX_LENGTH)}”", ""])
+    lines.append(f"🎮 Clip from {name}'s Twitch stream" + (f" ({game})." if game else "."))
     if broadcaster_login:
-        lines.append(f"Channel: https://www.twitch.tv/{_clean(broadcaster_login)}")
-    lines.append(f"Original VOD: https://www.twitch.tv/videos/{_clean(vod_id)}")
-    lines.extend(["", "#Shorts #Twitch"])
+        lines.append(f"📺 Channel: https://www.twitch.tv/{_clean(broadcaster_login)}")
+    lines.append(f"🎬 Full VOD: https://www.twitch.tv/videos/{_clean(vod_id)}")
+    lines.extend(["", _hashtags(_clean(broadcaster_login), game)])
     description = _truncate("\n".join(lines), DESCRIPTION_MAX_LENGTH)
     return ShortMetadata(title=title, description=description)

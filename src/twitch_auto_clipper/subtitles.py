@@ -6,6 +6,15 @@ from pathlib import Path
 from typing import Any
 
 
+# Gill Sans Ultra Bold (installed with Office), else Impact, else Arial Bold.
+HOOK_FONTS = ("GILSANUB.TTF", "impact.ttf", "arialbd.ttf")
+HOOK_FONT_SIZE = 70
+HOOK_COLOR = "#FFE135"  # yellow, black outline: readable on any background
+HOOK_STROKE = 8
+HOOK_DEPTH = 7  # pixels of 3D relief under the text
+HOOK_MAX_TEXT_WIDTH = 960  # pixels, in the 1080px-wide Short
+
+
 class SubtitleGenerationError(RuntimeError):
     """Raised when word timestamps cannot be converted to subtitles."""
 
@@ -51,6 +60,100 @@ def _words_from_segments(
                     }
                 )
     return words
+
+
+def _is_emoji(char: str) -> bool:
+    # ponytail: code point ranges, not the full emoji list; enough for simple emojis.
+    code = ord(char)
+    return code >= 0x1F000 or 0x2600 <= code <= 0x27BF or 0x2B00 <= code <= 0x2BFF
+
+
+def _runs(text: str) -> list[list[Any]]:
+    """Split text into [chunk, is_emoji] runs, each drawn with its own font."""
+    runs: list[list[Any]] = []
+    for char in text:
+        emoji = _is_emoji(char)
+        if runs and runs[-1][1] == emoji:
+            runs[-1][0] += char
+        else:
+            runs.append([char, emoji])
+    return runs
+
+
+def render_hook_image(text: str, output_path: Path) -> Path:
+    """Draw the hook as bold yellow text with color emojis on a transparent PNG.
+
+    A black outline, a 3D extrusion and a soft drop shadow keep it readable on
+    any background. libass draws emojis as plain white outlines, hence an image
+    overlay. Uses Windows fonts (the first available of ``HOOK_FONTS``, and
+    Segoe UI Emoji).
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFilter, ImageFont
+    except ImportError as error:
+        raise SubtitleGenerationError(f"Pillow indisponible : {error}") from error
+    text_font = None
+    for name in HOOK_FONTS:
+        try:
+            text_font = ImageFont.truetype(name, HOOK_FONT_SIZE)
+            break
+        except OSError:
+            continue
+    try:
+        emoji_font = ImageFont.truetype("seguiemj.ttf", round(HOOK_FONT_SIZE * 0.85))
+    except OSError as error:
+        raise SubtitleGenerationError(f"Police emoji indisponible : {error}") from error
+    if text_font is None:
+        raise SubtitleGenerationError(f"Aucune police disponible parmi {HOOK_FONTS}.")
+    fonts = {False: text_font, True: emoji_font}
+
+    # Without a text shaping library, joiners and variation selectors would show as boxes.
+    words = text.replace("\ufe0f", "").replace("\u200d", "").split()
+    if not words:
+        raise SubtitleGenerationError("Phrase d'accroche vide.")
+
+    def width(line: str) -> float:
+        return sum(fonts[emoji].getlength(chunk) for chunk, emoji in _runs(line))
+
+    lines: list[str] = []
+    for word in words:
+        if lines and width(f"{lines[-1]} {word}") <= HOOK_MAX_TEXT_WIDTH:
+            lines[-1] = f"{lines[-1]} {word}"
+        else:
+            lines.append(word)
+    ascent, descent = text_font.getmetrics()
+    line_height = ascent + descent
+    margin = HOOK_STROKE + HOOK_DEPTH + 20  # room for the outline, relief and shadow
+    size = (
+        round(max(width(line) for line in lines)) + 2 * margin,
+        len(lines) * line_height + 2 * margin,
+    )
+    face = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(face)
+    for index, line in enumerate(lines):
+        x = (size[0] - width(line)) / 2
+        baseline = margin + index * line_height + ascent
+        for chunk, emoji in _runs(line):
+            if emoji:
+                draw.text((x, baseline), chunk, font=emoji_font, anchor="ls", embedded_color=True)
+            else:
+                draw.text((x, baseline), chunk, font=text_font, fill=HOOK_COLOR, anchor="ls",
+                          stroke_width=HOOK_STROKE, stroke_fill="black")
+            x += fonts[emoji].getlength(chunk)
+
+    alpha = face.getchannel("A")
+    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    shadow = Image.new("RGBA", size, (0, 0, 0, 0))
+    shadow.putalpha(alpha.filter(ImageFilter.GaussianBlur(10)).point(lambda a: a * 7 // 10))
+    image.alpha_composite(shadow, dest=(0, HOOK_DEPTH + 6))
+    relief = Image.new("RGBA", size, (0, 0, 0, 255))
+    relief.putalpha(alpha)
+    for depth in range(HOOK_DEPTH, 0, -1):  # the text's own shape, stacked downwards
+        image.alpha_composite(relief, dest=(0, depth))
+    image.alpha_composite(face)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output_path)
+    return output_path
 
 
 def generate_ass_subtitles(
