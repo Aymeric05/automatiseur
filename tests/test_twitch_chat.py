@@ -70,6 +70,19 @@ class TwitchChatTests(unittest.TestCase):
                 download_twitch_chat("https://www.twitch.tv/videos/1", Path(directory) / "c.json")
         self.assertIn("timeout", run.call_args.kwargs)
 
+    @patch("twitch_auto_clipper.twitch_chat.subprocess.run")
+    def test_leftover_partial_file_never_blocks_on_a_question(self, run) -> None:
+        import subprocess
+
+        run.side_effect = lambda command, **kwargs: Path(command[-1]).write_text("{}", encoding="utf-8")
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "c.json"
+            output.with_name("c.part.json").write_bytes(b"")  # left by an interrupted run
+            download_twitch_chat("https://www.twitch.tv/videos/1", output)
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index("--collision") + 1], "Overwrite")
+        self.assertIs(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
+
     def test_invalid_chat_bounds_are_rejected_before_running(self) -> None:
         with patch("twitch_auto_clipper.twitch_chat.subprocess.run") as run:
             for start, end in ((-1, 10), (10, 10), (20, 5), (None, 0)):
