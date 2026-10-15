@@ -317,6 +317,8 @@ class VODShortsUploader:
                 meta = metadata.get(key)
                 if key in uploads or not isinstance(record, dict) or not isinstance(meta, dict):
                     continue
+                if not record.get("profanity_filtered"):
+                    continue  # rendered before swear words were muted: never published
                 path = self.output_dir / str(record.get("file", ""))
                 if not path.name.endswith("_short.mp4") or not path.is_file():
                     continue

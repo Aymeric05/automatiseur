@@ -177,7 +177,8 @@ class PublishNextTests(unittest.TestCase):
             key = f"{index}.0-{index + 5}.0"
             (self.tmp / f"{vod_id}_{key}_short.mp4").write_bytes(b"short")
             generated[key] = {"candidate_id": f"candidate_{index + 1}", "file": f"{vod_id}_{key}_short.mp4",
-                              "start": float(index), "end": index + 5.0, "gemini_score": score}
+                              "start": float(index), "end": index + 5.0, "gemini_score": score,
+                              "profanity_filtered": True}
             metadata[key] = {"title": f"{vod_id} {score}", "description": "d"}
         (self.tmp / f"{vod_id}_processing.json").write_text(json.dumps({
             "vod_id": vod_id, "clip_budget": budget, "automation_status": status,
@@ -196,6 +197,19 @@ class PublishNextTests(unittest.TestCase):
         while uploader.publish_next():
             pass
         self.assertEqual(self.uploaded, ["late 95", "early 70", "early 60"])
+
+    def test_shorts_rendered_without_the_profanity_filter_are_never_published(self):
+        self._vod("old", [99])
+        manifest = self.tmp / "old_processing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        for record in data["generated_shorts"].values():
+            record.pop("profanity_filtered")
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        self._vod("new", [50])
+        uploader = VODShortsUploader(self.tmp, uploader=self._upload)
+        while uploader.publish_next():
+            pass
+        self.assertEqual(self.uploaded, ["new 50"])
 
     def test_old_unpublished_shorts_are_dropped(self):
         import os

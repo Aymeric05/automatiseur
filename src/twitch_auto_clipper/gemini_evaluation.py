@@ -149,7 +149,7 @@ def _build_prompt(
         "dans le clip ; varie les formulations d'un candidat a l'autre. "
         "description est une ou deux phrases fun avec des emojis qui decrivent le clip et "
         "donnent envie de le regarder. Ni hook ni description ne doivent annoncer quelque "
-        "chose qui n'arrive pas dans le clip. "
+        "chose qui n'arrive pas dans le clip, ni contenir de gros mot ou d'insulte. "
         "transcript est le texte du clip ; context_before et context_after sont ce qui "
         "est dit juste avant et apres : juge si le clip se comprend seul et forme un "
         "moment complet. Base-toi sur le contenu reel, pas seulement sur le score heuristique. "

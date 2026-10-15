@@ -176,6 +176,16 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertEqual([short.candidate_id for short in result.shorts.shorts], ["candidate_1"])
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
+    def test_a_moment_with_a_slur_is_never_rendered(self, gemini):
+        slur = [{"start": 100.0, "end": 104.0, "text": "You retard!",
+                 "words": [{"start": 100.0, "end": 100.5, "word": "You"},
+                           {"start": 100.5, "end": 101.0, "word": "retard!"}]}]
+        pipeline = self._pipeline(transcriber=lambda path, **kwargs: TRANSCRIPT[:1] + slur)
+        result = pipeline.run(self._acquisition(budget=2))
+        texts = [short.candidate_start for short in result.shorts.shorts]
+        self.assertTrue(texts and all(start < 50 for start in texts))  # only the clean moment
+
+    @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_zero_budget_skips_everything(self, gemini):
         result = self._pipeline().run(self._acquisition(budget=0))
         self.assertEqual(result.status, "skipped")

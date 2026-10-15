@@ -6,14 +6,15 @@ from dataclasses import dataclass
 import re
 from typing import Any
 
+from .profanity import censor
+
 TITLE_MAX_LENGTH = 100  # YouTube limit
 DESCRIPTION_MAX_LENGTH = 5000  # YouTube limit
 QUOTE_MAX_WORDS = 12
 TITLE_MIN_QUOTE_WORDS = 6
 EXCERPT_MAX_LENGTH = 400
-# Broad tags plus the channel and game ones; YouTube ignores every hashtag past 60.
-LEADING_HASHTAGS = ("#shorts", "#twitch", "#twitchclips")
-TRAILING_HASHTAGS = ("#streamer", "#viral", "#fyp")
+# Only broad, popular tags: niche per-video tags (channel, game) are left out.
+HASHTAGS = "#shorts #twitch #twitchclips #streamer #viral #fyp"
 
 
 class ShortMetadataError(ValueError):
@@ -83,12 +84,6 @@ def clip_transcript_text(
     return _clean(" ".join(word.strip() for word in words if word.strip()))
 
 
-def _hashtags(broadcaster_login: str, game_name: str) -> str:
-    own = ("#" + re.sub(r"[^0-9A-Za-z]", "", value) for value in (broadcaster_login, game_name))
-    tags = [*LEADING_HASHTAGS, *(tag for tag in own if len(tag) > 1), *TRAILING_HASHTAGS]
-    return " ".join(dict.fromkeys(tags))  # a channel named "streamer" is tagged once
-
-
 def build_short_metadata(
     *,
     broadcaster_name: str,
@@ -115,8 +110,9 @@ def build_short_metadata(
 
     highlight_start = candidate_start if candidate_start is not None else clip_start
     highlight_end = candidate_end if candidate_end is not None else clip_end
-    quote = clip_transcript_text(segments, highlight_start, highlight_end)
-    excerpt = clip_transcript_text(segments, clip_start, clip_end)
+    # Swear words are masked ("****"), as they are muted in the Short itself.
+    quote = censor(clip_transcript_text(segments, highlight_start, highlight_end))
+    excerpt = censor(clip_transcript_text(segments, clip_start, clip_end))
     if len(quote.split()) < TITLE_MIN_QUOTE_WORDS and excerpt:
         # A bare reaction ("Oh my god.") says little: quote the clip's most
         # substantial sentence instead.
@@ -130,7 +126,7 @@ def build_short_metadata(
         short_quote += "…"
     title = _truncate(f"{name}: “{short_quote}”", TITLE_MAX_LENGTH)
 
-    teaser = _clean(teaser or "")
+    teaser = censor(_clean(teaser or ""))
     game = _clean(game_name)
     lines = [teaser, ""] if teaser else []
     lines.extend([f"💬 “{_truncate(excerpt or quote, EXCERPT_MAX_LENGTH)}”", ""])
@@ -138,6 +134,6 @@ def build_short_metadata(
     if broadcaster_login:
         lines.append(f"📺 Channel: https://www.twitch.tv/{_clean(broadcaster_login)}")
     lines.append(f"🎬 Full VOD: https://www.twitch.tv/videos/{_clean(vod_id)}")
-    lines.extend(["", _hashtags(_clean(broadcaster_login), game)])
+    lines.extend(["", HASHTAGS])
     description = _truncate("\n".join(lines), DESCRIPTION_MAX_LENGTH)
     return ShortMetadata(title=title, description=description)

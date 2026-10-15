@@ -18,7 +18,8 @@ from pathlib import Path
 import time
 from typing import Any, Callable
 
-from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata
+from .profanity import has_slur
+from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata, clip_transcript_text
 from .shorts_upload import READY_MAX_AGE
 from .vod_acquisition import (
     MAX_ATTEMPTS,
@@ -155,11 +156,20 @@ class VODAutomationPipeline:
                 vod_id, "error", processing, selection,
                 message=f"selection Gemini : {selection.error}",
             )
-        # Only the moments Gemini found worth a Short are rendered and published.
+        # Only the moments Gemini found worth a Short are rendered and published;
+        # a moment with a slur is dropped (swear words are only muted).
+        segments = self._load_segments(processing.transcript_path)
+
+        def has_slurs(item: dict[str, Any]) -> bool:
+            start, end = float(item.get("start", 0)), float(item.get("end", 0))
+            spoken = clip_transcript_text(segments, start - 1.0, end + 2.0)  # with the render margins
+            return has_slur(spoken) or has_slur(str(item.get("gemini_hook") or ""))
+
         selection = replace(selection, selected=tuple(
             item for item in selection.selected
             if item.get("gemini_interesting", True) is not False
             and float(item.get("gemini_score", MIN_GEMINI_SCORE)) >= MIN_GEMINI_SCORE
+            and not has_slurs(item)
         ))
         if not selection.selected:
             return VODAutomationResult(
@@ -180,7 +190,6 @@ class VODAutomationPipeline:
             )
 
         # 5. Metadata from the clips' real transcript.
-        segments = self._load_segments(processing.transcript_path)
         metadata: list[tuple[str, ShortMetadata]] = []
         metadata_errors: list[str] = []
         for short in shorts.shorts:
