@@ -123,7 +123,7 @@ Required for publishing clips:
 ```powershell
 $env:YOUTUBE_PRIVACY_POLICY_URL    = "https://aymeric05.github.io/automatiseur/privacy.html"
 $env:YOUTUBE_EXPECTED_CHANNEL_ID   = "YOUR_YOUTUBE_CHANNEL_ID"  # optional but recommended
-$env:YOUTUBE_MAX_UPLOADS_PER_DAY   = "6"  # optional, default 6
+$env:YOUTUBE_MAX_UPLOADS_PER_DAY   = "10"  # optional, default 10
 $env:DOWNLOAD_MAX_KBPS             = "1000"  # optional: VOD audio download cap in KB/s, default 1000
 $env:YOUTUBE_PRIVACY               = "private"  # optional: private (default), unlisted or public
 ```
@@ -132,7 +132,7 @@ $env:YOUTUBE_PRIVACY               = "private"  # optional: private (default), u
 audited the API project, it keeps every upload private whatever this value.
 
 `YOUTUBE_MAX_UPLOADS_PER_DAY` caps automatic uploads per YouTube quota day (the default
-10,000-unit daily quota allows about six uploads). Processed VODs leave their Shorts ready
+default API quota accepted 10 uploads a day, then refused the 11th). Processed VODs leave their Shorts ready
 on disk; the day's uploads all happen during the last hour before the quota reset (the quota
 day starts at 08:00 UTC, which is after YouTube's midnight Pacific reset all year), each at a
 random moment of that hour, so the best Shorts of the whole day compete. If the computer is
@@ -146,7 +146,9 @@ the chat with a single download thread, and each Short reads its seconds of Twit
 playback speed. On Windows, the FFmpeg and TwitchDownloaderCLI processes it starts stop
 with it, so closing the app frees the connection at once.
 
-Moments that Gemini scores below 60 (out of 100) are neither rendered nor published. The
+Moments that Gemini scores below 60 (out of 100) are neither rendered nor published. Swear words are muted in the audio and masked (`****`) in the subtitles, hook, title
+and description; a moment with a slur is dropped. Shorts rendered before this filter are never
+published. The
 transcription runs on an NVIDIA GPU when CUDA works (Whisper `small`, float16, about 23
 times real time on an RTX 3050 laptop GPU; install the CUDA libraries with
 `pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12>=9,<10"`), otherwise on the CPU

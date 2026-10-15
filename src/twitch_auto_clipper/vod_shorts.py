@@ -9,6 +9,7 @@ import subprocess
 from typing import Any, Callable
 
 from .candidate_clip import CandidateClipError, calculate_candidate_bounds
+from .profanity import censor, profane_intervals
 from .subtitles import SubtitleGenerationError, generate_ass_subtitles, render_hook_image
 from .video import get_video_duration
 from .vod_highlights import VODHighlightSelectionResult
@@ -20,7 +21,7 @@ class ShortsGenerationError(RuntimeError):
 
 # Extra source width (in pixels of the 1920px-high scaled frame) shown compared
 # to the tight 1080px-wide centered crop used by ``framing.build_vertical_filter``.
-ZOOM_OUT_EXTRA_WIDTH = 80
+ZOOM_OUT_EXTRA_WIDTH = 140
 # Top of the hook box, below the Shorts player's own top icons.
 HOOK_TOP = 200
 # YouTube Shorts accepts videos up to three minutes.
@@ -126,12 +127,21 @@ def _build_short_ffmpeg_command(
     vertical_filter: str,
     subtitles_path: Path | None = None,
     hook_path: Path | None = None,
+    mute: list[tuple[float, float]] | tuple[tuple[float, float], ...] = (),
 ) -> list[str]:
-    """Return the FFmpeg command list for generating one vertical Short."""
+    """Return the FFmpeg command list for generating one vertical Short.
+
+    ``mute`` lists the moments (seconds from ``start``) whose audio is silenced.
+    """
     duration = end - start
     video_filter = vertical_filter
     if subtitles_path is not None:
         video_filter += "," + _subtitles_filter(subtitles_path)
+    audio_filter = (
+        "volume=0:enable='" + "+".join(f"between(t,{a},{b})" for a, b in mute) + "'"
+        if mute
+        else None
+    )
     command = ["ffmpeg", "-y"]
     if str(source_path).startswith(("http://", "https://")):
         # Read the Twitch stream at its own pace (a few Mbit/s), not as fast as the
@@ -140,14 +150,18 @@ def _build_short_ffmpeg_command(
     command += ["-ss", str(start), "-i", str(source_path)]
     if hook_path is None:
         command += ["-t", str(duration), "-vf", video_filter]
+        if audio_filter:
+            command += ["-af", audio_filter]
     else:
         # The hook image stays on screen for the whole clip (overlay repeats its only frame).
+        graph = f"[0:v]{video_filter}[base];[base][1:v]overlay=(W-w)/2:{HOOK_TOP}[v]"
+        if audio_filter:
+            graph += f";[0:a]{audio_filter}[a]"
         command += [
             "-i", str(hook_path),
             "-t", str(duration),
-            "-filter_complex",
-            f"[0:v]{video_filter}[base];[base][1:v]overlay=(W-w)/2:{HOOK_TOP}[v]",
-            "-map", "[v]", "-map", "0:a?",
+            "-filter_complex", graph,
+            "-map", "[v]", "-map", "[a]" if audio_filter else "0:a?",
         ]
     return command + [
         "-c:v", "libx264",
@@ -346,6 +360,7 @@ class VODShortsGenerator:
             command = _build_short_ffmpeg_command(
                 source_path, temporary_path, start, end,
                 self._filter_builder(source_path), subtitles_path, hook_path,
+                mute=profane_intervals(segments, start, end),
             )
             self._ffmpeg_runner(command)
             if not _is_valid_output(temporary_path):
@@ -403,7 +418,7 @@ class VODShortsGenerator:
         if not isinstance(hook, str) or not hook.strip():
             return None, None
         try:
-            return render_hook_image(hook, output_path.with_name(f"{output_path.stem}_hook.png")), None
+            return render_hook_image(censor(hook), output_path.with_name(f"{output_path.stem}_hook.png")), None
         except (SubtitleGenerationError, OSError, ValueError) as error:
             return None, f"phrase d'accroche ignoree : {error}"
 
@@ -485,6 +500,9 @@ class VODShortsGenerator:
                     "candidate_end": short.candidate_end,
                     "gemini_score": short.gemini_score,
                     "gemini_justification": short.gemini_justification,
+                    # Rendered with swear words muted and masked: only these are published.
+                    "profanity_filtered": short.status == "generated"
+                    or bool((existing.get(short.key) or {}).get("profanity_filtered")),
                 }
                 errors.pop(short.key, None)
             elif short.error:

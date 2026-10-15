@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 from typing import Any
 
+from .profanity import censor
+
 
 # Gill Sans Ultra Bold (installed with Office), else Impact, else Arial Bold.
 HOOK_FONTS = ("GILSANUB.TTF", "impact.ttf", "arialbd.ttf")
@@ -183,7 +185,7 @@ def generate_ass_subtitles(
         group = words[index : index + max_words]
         start = group[0]["start"]
         end = max(start + 0.05, group[-1]["end"])
-        text = _join_words([_escape_ass_text(word["text"]) for word in group])
+        text = _join_words([_escape_ass_text(censor(word["text"])) for word in group])
         events.append(
             f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Default,,0,0,0,,{text}"
         )

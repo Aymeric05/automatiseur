@@ -302,7 +302,7 @@ class VerticalFilterTests(unittest.TestCase):
     def test_filter_is_centered_slightly_zoomed_out_and_padded(self):
         vertical_filter = _build_vertical_filter_zoomed_out(Path("any.mp4"))
         self.assertIn("scale=-2:1920", vertical_filter)
-        self.assertIn("crop='min(iw,1160)':ih", vertical_filter)  # 1080 + 80 px
+        self.assertIn("crop='min(iw,1220)':ih", vertical_filter)  # 1080 + 140 px
         self.assertIn("pad=1080:1920", vertical_filter)
         self.assertNotIn(":0,scale", vertical_filter)  # no focus-offset crop
 
@@ -327,6 +327,16 @@ class VerticalFilterTests(unittest.TestCase):
         )
         self.assertNotIn("-vf", command)
         self.assertIn("0:a?", command)
+
+    def test_swear_words_are_muted_with_or_without_the_hook(self):
+        mute = [(1.2, 1.6), (3.0, 3.4)]
+        plain = _build_short_ffmpeg_command(Path("in.mp4"), Path("o.mp4"), 0.0, 5.0, "F", mute=mute)
+        self.assertEqual(plain[plain.index("-af") + 1], "volume=0:enable='between(t,1.2,1.6)+between(t,3.0,3.4)'")
+        hooked = _build_short_ffmpeg_command(Path("in.mp4"), Path("o.mp4"), 0.0, 5.0, "F", None, Path("h.png"), mute=mute)
+        self.assertIn(";[0:a]volume=0:enable=", hooked[hooked.index("-filter_complex") + 1])
+        self.assertEqual(hooked[hooked.index("-map", hooked.index("-map") + 1) + 1], "[a]")  # muted audio mapped
+        silent = _build_short_ffmpeg_command(Path("in.mp4"), Path("o.mp4"), 0.0, 5.0, "F")
+        self.assertNotIn("-af", silent)
 
     def test_twitch_stream_is_read_at_its_own_pace(self):
         remote = _build_short_ffmpeg_command("https://example.test/v.m3u8", Path("o.mp4"), 1.0, 2.0, "F")

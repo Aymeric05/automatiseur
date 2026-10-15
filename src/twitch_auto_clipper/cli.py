@@ -232,7 +232,7 @@ TOP_STREAMERS_FILE = Path("top_streamers.txt")
 FAVORED_STREAMERS_FILE = Path("favored_streamers.txt")
 PUBLISH_RETRY_SECONDS = 1800.0  # pause after a failed upload (network, sign-in...)
 DEFAULT_DOWNLOAD_KBPS = 1000  # VOD audio download cap (~8 Mbit/s); DOWNLOAD_MAX_KBPS overrides it
-DEFAULT_DAILY_UPLOADS = 6  # ~10,000 quota units per day at 1,600 units per upload
+DEFAULT_DAILY_UPLOADS = 10  # YouTube refused the 11th upload of the day (default quota)
 DEFAULT_DAILY_GEMINI_REQUESTS = 20  # Gemini API free tier, per model and per day (each model)
 
 

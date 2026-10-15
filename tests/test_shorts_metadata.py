@@ -46,10 +46,17 @@ class ShortsMetadataTests(unittest.TestCase):
         lines = metadata.description.splitlines()
         self.assertEqual(lines[0], "He hits the shot of the year 🎯🔥")
         self.assertIn("🎮 Clip from Streamer's Twitch stream (Grand Theft Auto V).", lines)
-        self.assertEqual(
-            lines[-1],
-            "#shorts #twitch #twitchclips #streamer #GrandTheftAutoV #viral #fyp",
-        )  # the channel tag is not repeated
+        self.assertEqual(lines[-1], "#shorts #twitch #twitchclips #streamer #viral #fyp")  # no niche tag
+
+    def test_swear_words_are_masked_in_title_and_description(self):
+        segments = [{"start": 0.0, "end": 3.0, "text": "what the fuck was that shit bro"}]
+        metadata = build_short_metadata(
+            broadcaster_name="Streamer", broadcaster_login="streamer", vod_id="1",
+            segments=segments, clip_start=0.0, clip_end=3.0, teaser="Holy shit 😱",
+        )
+        self.assertEqual(metadata.title, "Streamer: “what the **** was that **** bro”")
+        self.assertNotIn("fuck", metadata.description)
+        self.assertNotIn("shit", metadata.description)
 
     def test_bare_reaction_title_quotes_the_most_substantial_sentence(self):
         segments = [
