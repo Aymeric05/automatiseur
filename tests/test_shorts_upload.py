@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from twitch_auto_clipper.shorts_metadata import ShortMetadata
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from twitch_auto_clipper.daily_quota import DailyQuota
 from twitch_auto_clipper.shorts_upload import VODShortsUploader, format_short_upload_result
@@ -211,19 +211,6 @@ class PublishNextTests(unittest.TestCase):
             pass
         self.assertEqual(self.uploaded, ["new 50"])
 
-    def test_old_unpublished_shorts_are_dropped(self):
-        import os
-        import time
-
-        self._vod("old", [99])
-        self._vod("new", [50])
-        old_file = next(self.tmp.glob("old_*_short.mp4"))
-        two_days_ago = time.time() - 49 * 3600
-        os.utime(old_file, (two_days_ago, two_days_ago))
-        VODShortsUploader(self.tmp, uploader=self._upload).publish_next()
-        self.assertEqual(self.uploaded, ["new 50"])
-        self.assertFalse(old_file.exists())
-
     def test_a_failed_short_goes_after_the_others(self):
         self._vod("v", [90, 50])
         fail = [True]
@@ -246,30 +233,49 @@ class PublishNextTests(unittest.TestCase):
             clock=lambda: now[0], random_source=rolls, top_streamers=frozenset(top),
         )
 
-    def test_uploads_wait_for_the_last_hour_before_the_reset(self):
+    def test_uploads_start_as_soon_as_youtube_allows_them(self):
         self._vod("v", [90, 80])
-        now = [datetime(2026, 10, 14, 6, 59, tzinfo=timezone.utc)]  # reset at 08:00 UTC
-        uploader = self._clocked(now)
-        self.assertIsNone(uploader.publish_next())
-        now[0] = datetime(2026, 10, 14, 7, 0, tzinfo=timezone.utc)
-        self.assertIsNotNone(uploader.publish_next())
+        batch = datetime(2026, 10, 15, 17, 0, tzinfo=timezone.utc)
+        (self.tmp / "youtube_uploads.json").write_text(json.dumps({  # 10 uploads yesterday at 17:00
+            "uses": [(batch + timedelta(minutes=i)).isoformat() for i in range(10)], "retry_after": None,
+        }), encoding="utf-8")
+        now = [batch + timedelta(hours=23, minutes=59)]
+        uploader = self._clocked(now, limit=10)
+        self.assertIsNone(uploader.publish_next())  # still 10 uploads in the last 24 hours
+        now[0] = batch + timedelta(hours=24)
+        self.assertIsNotNone(uploader.publish_next())  # the first one is 24 hours old
         self.assertEqual(self.uploaded, ["v 90"])
 
     def test_the_hour_spreads_the_day_quota_at_random_moments(self):
         import random
 
         self._vod("v", list(range(50, 75)))  # 25 ready Shorts, 20 allowed
-        now = [datetime(2026, 10, 14, 7, 0, tzinfo=timezone.utc)]
+        now = [datetime(2026, 10, 16, 7, 0, tzinfo=timezone.utc)]
         uploader = self._clocked(now, rolls=random.Random(4).random)
         moments = []
-        while now[0] < datetime(2026, 10, 14, 8, 0, tzinfo=timezone.utc):
+        while now[0] < datetime(2026, 10, 16, 8, 0, tzinfo=timezone.utc):
             if uploader.publish_next():
                 moments.append(now[0])
             now[0] += timedelta(seconds=60)
         self.assertEqual(len(moments), 20)
         self.assertGreater(moments[-1] - moments[0], timedelta(minutes=30))  # not all at once
-        self.assertLess(moments[-1], datetime(2026, 10, 14, 8, 0, tzinfo=timezone.utc))
+        self.assertLess(moments[-1], datetime(2026, 10, 16, 8, 0, tzinfo=timezone.utc))
         self.assertEqual(self.uploaded[0], "v 74")  # best first
+
+    def test_a_refusal_keeps_every_short_for_the_next_day(self):
+        self._vod("v", [90, 80, 70])
+        now = [datetime(2026, 10, 16, 7, 0, tzinfo=timezone.utc)]
+        uploader = self._clocked(now, limit=10)
+        uploader._uploader = lambda *a, **k: (_ for _ in ()).throw(RuntimeError('<HttpError 403 "reason": "uploadLimitExceeded">'))
+        vod_id, result = uploader.publish_next()
+        self.assertEqual(result.status, "deferred")
+        self.assertIn("uploadLimitExceeded", result.error)
+        self.assertEqual(len(list(self.tmp.glob("v_*_short.mp4"))), 3)  # nothing was published: nothing deleted
+        self.assertIsNone(uploader.publish_next())  # paused after the refusal
+        uploader._uploader = self._upload
+        now[0] += timedelta(hours=1)
+        self.assertIsNotNone(uploader.publish_next())  # tried again an hour later
+        self.assertEqual(self.uploaded, ["v 90"])
 
     def _age(self, vod_id, moment):
         import os
@@ -277,22 +283,39 @@ class PublishNextTests(unittest.TestCase):
         for short in self.tmp.glob(f"{vod_id}_*_short.mp4"):
             os.utime(short, (moment.timestamp(), moment.timestamp()))
 
-    def test_a_missed_hour_moves_to_the_next_start_up_and_the_losers_go(self):
-        self._vod("v", [90, 80, 70])
-        self._age("v", datetime(2026, 10, 16, 8, 0, tzinfo=timezone.utc))
-        now = [datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)]
-        uploader = self._clocked(now, limit=1)
-        self.assertIsNone(uploader.publish_next())  # first run: waits for tonight's last hour
-        now[0] = datetime(2026, 10, 16, 9, 0, tzinfo=timezone.utc)  # computer off during it
-        self.assertIsNotNone(uploader.publish_next())  # catch-up at start-up
-        self.assertEqual(list(self.tmp.glob("v_*_short.mp4")), [])  # day's quota used: losers deleted
-        self._vod("w", [60])
-        self._age("w", datetime(2026, 10, 17, 12, 0, tzinfo=timezone.utc))
-        now[0] = datetime(2026, 10, 17, 7, 30, tzinfo=timezone.utc)
-        self.assertIsNone(uploader.publish_next())  # this quota day already had its hour
-        now[0] = datetime(2026, 10, 18, 7, 30, tzinfo=timezone.utc)
-        self.assertIsNotNone(uploader.publish_next())  # back to the normal hour
-        self.assertEqual(self.uploaded, ["v 90", "w 60"])
+    def test_the_reserve_keeps_only_the_best_shorts_for_two_weeks_at_most(self):
+        from twitch_auto_clipper.shorts_upload import RESERVE_SIZE
+
+        self._vod("old", [95])
+        self._age("old", datetime(2026, 10, 3, tzinfo=timezone.utc))  # 13 days old, among the best
+        self._vod("stale", [98])
+        self._age("stale", datetime(2026, 10, 1, 11, 0, tzinfo=timezone.utc))  # 15 days old: deleted
+        self._vod("new", list(range(1, RESERVE_SIZE + 5)))
+        now = [datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)]
+        uploader = self._clocked(now, limit=10, rolls=lambda: 1.0)  # no upload due
+        self.assertIsNone(uploader.publish_next())
+        kept = sorted(self.tmp.glob("*_short.mp4"))
+        self.assertEqual(len(kept), RESERVE_SIZE)
+        self.assertTrue(any(p.name.startswith("old_") for p in kept))
+        self.assertFalse(any(p.name.startswith("stale_") for p in kept))
+        self.assertFalse(any(p.name.startswith("new_0.0-") for p in kept))  # the worst score went
+        self._vod("better", [99])  # a better newcomer pushes the worst kept one out
+        uploader.publish_next()
+        self.assertEqual(len(list(self.tmp.glob("*_short.mp4"))), RESERVE_SIZE)
+        self.assertTrue(any(p.name.startswith("better_") for p in self.tmp.glob("*_short.mp4")))
+
+    def test_a_short_with_muted_swear_words_must_be_clearly_better(self):
+        self._vod("clean", [80])
+        self._vod("swears", [85, 95])
+        manifest = self.tmp / "swears_processing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        for record in data["generated_shorts"].values():
+            record["muted"] = True
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        uploader = VODShortsUploader(self.tmp, uploader=self._upload)
+        while uploader.publish_next():
+            pass
+        self.assertEqual(self.uploaded, ["swears 95", "clean 80", "swears 85"])  # 95-10 > 80 > 85-10
 
     def test_favored_streamers_get_a_score_bonus(self):
         self._vod("listed", [70])
@@ -339,22 +362,51 @@ class PublishNextTests(unittest.TestCase):
         self.assertEqual(self.uploaded, ["listed 60", "star 40"])  # best score of the list
 
 
-class DailyQuotaTests(unittest.TestCase):
-    def test_quota_day_starts_at_08_utc_and_is_persisted(self):
+class RollingQuotaTests(unittest.TestCase):
+    def test_uses_count_over_a_rolling_24_hours_and_survive_a_restart(self):
+        from twitch_auto_clipper.daily_quota import RollingQuota
+
         with tempfile.TemporaryDirectory() as directory:
-            now = [datetime(2026, 10, 12, 7, 59, tzinfo=timezone.utc)]
+            path = Path(directory) / "uploads.json"
+            now = [datetime(2026, 10, 15, 17, 0, tzinfo=timezone.utc)]
+            quota = RollingQuota(path, limit=2, clock=lambda: now[0])
+            quota.record_use()
+            now[0] += timedelta(hours=10)
+            quota.record_use()
+            self.assertFalse(RollingQuota(path, 2, clock=lambda: now[0]).available())
+            self.assertEqual(quota.next_reset(), datetime(2026, 10, 16, 17, 0, tzinfo=timezone.utc))
+            now[0] = datetime(2026, 10, 16, 17, 0, tzinfo=timezone.utc)
+            self.assertEqual(quota.remaining(), 1)  # the first use left the window
+            quota.mark_exhausted()  # YouTube refused anyway
+            self.assertEqual(quota.remaining(), 0)
+            now[0] += timedelta(hours=1)
+            self.assertEqual(quota.remaining(), 1)
+
+
+class DailyQuotaTests(unittest.TestCase):
+    def test_quota_day_follows_midnight_pacific_time_and_is_persisted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            now = [datetime(2026, 10, 16, 6, 59, tzinfo=timezone.utc)]  # 23:59 PDT
             path = Path(directory) / "quota.json"
             quota = DailyQuota(path, daily_limit=2, clock=lambda: now[0])
             quota.record_use()
             quota.record_use()
             self.assertFalse(DailyQuota(path, 2, clock=lambda: now[0]).available())  # survives a restart
-            self.assertEqual(quota.next_reset(), datetime(2026, 10, 12, 8, 0, tzinfo=timezone.utc))
-            now[0] = datetime(2026, 10, 12, 8, 0, tzinfo=timezone.utc)
+            self.assertEqual(quota.next_reset(), datetime(2026, 10, 16, 7, 0, tzinfo=timezone.utc))
+            now[0] = datetime(2026, 10, 16, 7, 0, tzinfo=timezone.utc)
             self.assertTrue(quota.available())  # new YouTube quota day
             quota.mark_exhausted()
             self.assertFalse(quota.available())
-            self.assertEqual(quota.next_reset(), datetime(2026, 10, 13, 8, 0, tzinfo=timezone.utc))
+            self.assertEqual(quota.next_reset(), datetime(2026, 10, 17, 7, 0, tzinfo=timezone.utc))
 
+    def test_winter_reset_is_one_hour_later_in_utc(self):
+        from twitch_auto_clipper.daily_quota import _pacific_midnight
+
+        self.assertEqual(_pacific_midnight(date(2026, 10, 31)), datetime(2026, 10, 31, 7, tzinfo=timezone.utc))
+        self.assertEqual(_pacific_midnight(date(2026, 11, 1)), datetime(2026, 11, 1, 7, tzinfo=timezone.utc))
+        self.assertEqual(_pacific_midnight(date(2026, 11, 2)), datetime(2026, 11, 2, 8, tzinfo=timezone.utc))
+        self.assertEqual(_pacific_midnight(date(2027, 3, 14)), datetime(2027, 3, 14, 8, tzinfo=timezone.utc))
+        self.assertEqual(_pacific_midnight(date(2027, 3, 15)), datetime(2027, 3, 15, 7, tzinfo=timezone.utc))
 
 if __name__ == "__main__":
     unittest.main()

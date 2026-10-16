@@ -113,7 +113,7 @@ demand" to real-size requests: the configured model (`--gemini-model`, default
 `gemini-flash-lite-latest`. The application stays within the free tier: at most
 `GEMINI_MAX_REQUESTS_PER_DAY` requests per model and per quota day (default 20; failed
 requests count). When every model is overloaded the VOD waits 30 minutes; when every model
-has reached its daily limit, it waits for the next quota day (08:00 UTC), the most watched
+has reached its daily limit, it waits for the next quota day (midnight Pacific time, 09:00 in Paris), the most watched
 streams first. Neither counts as a failure.
 
 ### YouTube Upload
@@ -131,14 +131,15 @@ $env:YOUTUBE_PRIVACY               = "private"  # optional: private (default), u
 `YOUTUBE_PRIVACY` sets the visibility of automatic uploads. As long as YouTube has not
 audited the API project, it keeps every upload private whatever this value.
 
-`YOUTUBE_MAX_UPLOADS_PER_DAY` caps automatic uploads per YouTube quota day (the default
-default API quota accepted 10 uploads a day, then refused the 11th). Processed VODs leave their Shorts ready
-on disk; the day's uploads all happen during the last hour before the quota reset (the quota
-day starts at 08:00 UTC, which is after YouTube's midnight Pacific reset all year), each at a
-random moment of that hour, so the best Shorts of the whole day compete. If the computer is
-off during that hour, the publication hour starts at the next start-up instead (once per
-quota day), and the Shorts of both days compete. Unpublished Shorts older than 48 hours are
-deleted. A quota refusal from YouTube closes the day early.
+`YOUTUBE_MAX_UPLOADS_PER_DAY` caps automatic uploads over any 24 hours (default 10): YouTube
+limits a channel's uploads over a rolling 24 hours, not per calendar day (it accepted 10
+uploads, then refused more until the next day's same hour). Processed VODs leave their
+Shorts in a reserve, ranked and kept to the best 30: the top ones are the next to be
+published, the others are backups, ready to go when the computer is turned on before new
+Shorts are rendered; each new Short takes its place in the ranking, and those pushed out of
+the top 30, or older than 14 days, are deleted at once. Uploads are made as soon as YouTube allows them (start-up
+included), spread at random moments over one hour. When YouTube refuses an upload anyway,
+the app tries again an hour later; nothing is deleted after a refusal.
 
 The app stays gentle on the home connection: the VOD audio is downloaded at most at
 `DOWNLOAD_MAX_KBPS` (default 1000 KB/s, about 8 Mbit/s; lower it on a slow connection),
@@ -146,8 +147,9 @@ the chat with a single download thread, and each Short reads its seconds of Twit
 playback speed. On Windows, the FFmpeg and TwitchDownloaderCLI processes it starts stop
 with it, so closing the app frees the connection at once.
 
-Moments that Gemini scores below 60 (out of 100) are neither rendered nor published. Swear words are muted in the audio and masked (`****`) in the subtitles, hook, title
-and description; a moment with a slur is dropped. Shorts rendered before this filter are never
+Moments that Gemini scores below 60 (out of 100) are neither rendered nor published. Swear words are muted in the audio, blurred in the subtitles and masked (`****`) in the
+hook, title and description; such a Short loses 10 points in the ranking, so it is only
+published when clearly better than a clean one. A moment with a slur is dropped. Shorts rendered before this filter are never
 published. The
 transcription runs on an NVIDIA GPU when CUDA works (Whisper `small`, float16, about 23
 times real time on an RTX 3050 laptop GPU; install the CUDA libraries with
@@ -239,10 +241,10 @@ replay collected, highlight candidates detected, the best moments selected by Ge
 within the clip budget, and one vertical Short with dynamic subtitles rendered per
 selected moment (`data/output/<vod>_<start>-<end>_short.mp4`), reading only those
 seconds of video from Twitch. Once a VOD is completed, its audio and chat files are
-deleted. Once none of its Shorts waits for publication any more (published, not chosen by
-the day's sort, or older than 48 hours), every remaining file of that VOD in `data/input`
-and `data/output` is deleted too (transcript, selections, manifest); the Twitch VOD state
-still records it, so it is never processed again.
+deleted. Once none of its Shorts is in the reserve any more (published, or pushed out by
+better ones), every remaining file of that VOD in `data/input` and `data/output` is deleted
+too (manifest included); the Twitch VOD state still records it, so it is never processed
+again.
 
 Nothing is lost when the program stops: tracked streams and their peaks
 (`data/output/twitch_monitor_state.json`) and queued VODs
@@ -264,12 +266,11 @@ as **private** (or as set by `YOUTUBE_PRIVACY`), with a title and description bu
 what is actually said in the clip,
 a teaser hook written by Gemini shown at the top of the video (bold yellow text with color
 emojis), a short Gemini teaser with emojis at the top of the description and popular hashtags,
-best first during the daily publication hour, within the daily upload limit
-(`YOUTUBE_MAX_UPLOADS_PER_DAY`). A local Short is deleted only
-after YouTube confirms the upload with a video ID; on any failure or interruption it is
-kept for a retry. Once the day's quota is used, every Short still waiting is deleted, then
-every remaining file of those VODs: after a publication hour, only the VODs still queued
-or being processed for the next one have files left in `data/input` and `data/output`.
+best first, as soon as YouTube allows, within `YOUTUBE_MAX_UPLOADS_PER_DAY` uploads per
+24 hours. A local Short is deleted only after YouTube confirms the upload with a video ID;
+on any failure or interruption it is kept for a retry. `data/input` and `data/output` only
+hold the reserve (at most 30 Shorts and their manifests) and the VODs still queued or being
+processed.
 
 The console output can be redirected to a log file: it is then written in UTF-8.
 

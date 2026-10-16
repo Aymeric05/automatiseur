@@ -6,7 +6,10 @@ from pathlib import Path
 import re
 from typing import Any
 
-from .profanity import censor
+from .profanity import PROFANITY
+
+# libass override tags: the word is drawn heavily blurred (unreadable), then the style is restored.
+BLURRED_WORD = r"{\bord0\shad0\blur18}%s{\r}"
 
 
 # Gill Sans Ultra Bold (installed with Office), else Impact, else Arial Bold.
@@ -32,6 +35,12 @@ def _ass_time(seconds: float) -> str:
 
 def _escape_ass_text(text: str) -> str:
     return text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}").replace("\n", " ")
+
+
+def _subtitle_word(word: str) -> str:
+    """A subtitle word; a swear word is blurred (it is also muted in the audio)."""
+    escaped = _escape_ass_text(word)
+    return BLURRED_WORD % escaped if PROFANITY.search(word) else escaped
 
 
 def _join_words(words: list[str]) -> str:
@@ -185,7 +194,7 @@ def generate_ass_subtitles(
         group = words[index : index + max_words]
         start = group[0]["start"]
         end = max(start + 0.05, group[-1]["end"])
-        text = _join_words([_escape_ass_text(censor(word["text"])) for word in group])
+        text = _join_words([_subtitle_word(word["text"]) for word in group])
         events.append(
             f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Default,,0,0,0,,{text}"
         )

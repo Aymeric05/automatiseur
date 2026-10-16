@@ -354,9 +354,6 @@ class DueVODWorkerTests(unittest.TestCase):
 
 class CleanupTests(unittest.TestCase):
     def test_only_finished_vods_lose_their_files(self):
-        import os
-        import time
-
         from twitch_auto_clipper.vod_pipeline import cleanup_finished_vods
 
         with tempfile.TemporaryDirectory() as directory:
@@ -366,14 +363,14 @@ class CleanupTests(unittest.TestCase):
             names = {
                 input_dir: ["1_audio.mp4", "2_audio.mp4.part", "3_audio.mp4", "demo.mp4"],
                 output_dir: ["1_transcript.json", "1_processing.json", "2_processing.json",
-                             "3_transcript.json", "4_processing.json", "4_0.0-5.0_short.mp4",
+                             "3_transcript.json", "4_0.0-5.0_short.mp4",
                              "5_processing.json", "5_0.0-5.0_short.mp4", "monitor.log"],
             }
             for folder, files in names.items():
                 for name in files:
                     (folder / name).write_bytes(b"x")
-            old = time.time() - 49 * 3600
-            os.utime(output_dir / "5_0.0-5.0_short.mp4", (old, old))  # never published, expired
+            # 4 is completed: its Short is in the reserve. 5 failed: its Short is never published.
+            (output_dir / "4_processing.json").write_text('{"automation_status": "completed"}', encoding="utf-8")
 
             done = cleanup_finished_vods(input_dir, output_dir, active_vod_ids={"3"})
 
@@ -381,7 +378,7 @@ class CleanupTests(unittest.TestCase):
             remaining = sorted(p.name for p in [*input_dir.iterdir(), *output_dir.iterdir()])
             self.assertEqual(remaining, [
                 "3_audio.mp4", "3_transcript.json",  # job still queued
-                "4_0.0-5.0_short.mp4", "4_processing.json",  # Short waiting for publication
+                "4_0.0-5.0_short.mp4", "4_processing.json",  # Short in the reserve
                 "demo.mp4", "monitor.log",  # not VOD files
             ])
 
