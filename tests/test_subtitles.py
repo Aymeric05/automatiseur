@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from twitch_auto_clipper.subtitles import generate_ass_subtitles
+from twitch_auto_clipper.subtitles import BLURRED_WORD, generate_ass_subtitles
 
 
 class SubtitleTests(unittest.TestCase):
@@ -58,6 +58,19 @@ class SubtitleTests(unittest.TestCase):
         self.assertIn("inside", content)
         self.assertNotIn("before", content)
         self.assertNotIn("after", content)
+
+
+class SwearWordSubtitleTests(unittest.TestCase):
+    def test_swear_words_are_blurred_not_spelled(self) -> None:
+        segments = [{"words": [
+            {"start": 0.0, "end": 0.3, "word": " what"},
+            {"start": 0.3, "end": 0.6, "word": " the"},
+            {"start": 0.6, "end": 0.9, "word": " fuck?"},
+        ]}]
+        with tempfile.TemporaryDirectory() as directory:
+            path = generate_ass_subtitles(segments, Path(directory) / "s.ass")
+            dialogue = path.read_text(encoding="utf-8-sig").splitlines()[-1]
+        self.assertTrue(dialogue.endswith("what the " + BLURRED_WORD % "fuck?"))
 
 
 class SubtitleJoinTests(unittest.TestCase):

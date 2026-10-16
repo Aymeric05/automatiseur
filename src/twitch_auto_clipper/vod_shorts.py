@@ -66,6 +66,7 @@ class VODShortResult:
     warning: str | None = None
     clip_id: str | None = None
     description: str | None = None  # Gemini's teaser for the YouTube description
+    muted: bool = False  # swear words were muted (and blurred in the subtitles)
 
     @property
     def key(self) -> str:
@@ -350,6 +351,7 @@ class VODShortsGenerator:
         if _is_valid_output(output_path):
             return result("already_exists", start, end)
 
+        mute = profane_intervals(segments, start, end)
         subtitles_path, warning = self._write_subtitles(segments, output_path, start, end)
         hook_path, hook_warning = self._write_hook(item.get("gemini_hook"), output_path)
         warning = "; ".join(filter(None, (warning, hook_warning))) or None
@@ -360,7 +362,7 @@ class VODShortsGenerator:
             command = _build_short_ffmpeg_command(
                 source_path, temporary_path, start, end,
                 self._filter_builder(source_path), subtitles_path, hook_path,
-                mute=profane_intervals(segments, start, end),
+                mute=mute,
             )
             self._ffmpeg_runner(command)
             if not _is_valid_output(temporary_path):
@@ -378,7 +380,8 @@ class VODShortsGenerator:
                     self._remove_quietly(path)
 
         return result(
-            "generated", start, end, subtitles=subtitles_path is not None, warning=warning
+            "generated", start, end, subtitles=subtitles_path is not None, warning=warning,
+            muted=bool(mute),
         )
 
     # ------------------------------------------------------------------
@@ -503,6 +506,8 @@ class VODShortsGenerator:
                     # Rendered with swear words muted and masked: only these are published.
                     "profanity_filtered": short.status == "generated"
                     or bool((existing.get(short.key) or {}).get("profanity_filtered")),
+                    "muted": short.muted if short.status == "generated"
+                    else bool((existing.get(short.key) or {}).get("muted")),
                 }
                 errors.pop(short.key, None)
             elif short.error:

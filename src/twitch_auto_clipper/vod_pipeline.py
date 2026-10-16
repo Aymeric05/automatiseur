@@ -15,12 +15,10 @@ from datetime import datetime, timedelta, timezone
 import json
 import re
 from pathlib import Path
-import time
 from typing import Any, Callable
 
 from .profanity import has_slur
 from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata, clip_transcript_text
-from .shorts_upload import READY_MAX_AGE
 from .vod_acquisition import (
     MAX_ATTEMPTS,
     TwitchVODAcquisitionManager,
@@ -313,19 +311,13 @@ class VODAutomationPipeline:
 def cleanup_finished_vods(input_dir: Path, output_dir: Path, active_vod_ids: set[str]) -> list[str]:
     """Delete every file of the VODs that are done; returns their ids.
 
-    A VOD is done when no job is left for it and none of its Shorts waits for
-    publication (Shorts unpublished after ``READY_MAX_AGE`` are deleted first).
-    Its audio, chat, transcript, selections and manifest then go too: the
-    Twitch VOD state still records it, so it is never processed again. Only
-    files named after a VOD id (digits) are touched.
+    A VOD is done when no job is left for it and none of its Shorts is in the
+    reserve (Shorts of a completed VOD; the publisher keeps the reserve to its
+    best ones, so an abandoned or failed VOD's Shorts are never kept). Its
+    audio, chat, transcript, selections and manifest then go too: the Twitch
+    VOD state still records it, so it is never processed again. Only files
+    named after a VOD id (digits) are touched.
     """
-    expired_before = time.time() - READY_MAX_AGE.total_seconds()
-    for short in output_dir.glob("*_short.mp4"):
-        try:
-            if short.stat().st_mtime < expired_before:
-                short.unlink()
-        except OSError:
-            pass
     files: dict[str, list[Path]] = {}
     for directory in (input_dir, output_dir):
         for path in directory.glob("*_*"):
@@ -334,8 +326,15 @@ def cleanup_finished_vods(input_dir: Path, output_dir: Path, active_vod_ids: set
                 files.setdefault(vod_id, []).append(path)
     done = []
     for vod_id, paths in files.items():
-        if vod_id in active_vod_ids or any(path.name.endswith("_short.mp4") for path in paths):
+        if vod_id in active_vod_ids:
             continue
+        if any(path.name.endswith("_short.mp4") for path in paths):
+            try:
+                manifest = json.loads((output_dir / f"{vod_id}_processing.json").read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                manifest = None
+            if isinstance(manifest, dict) and manifest.get("automation_status") == "completed":
+                continue  # its Shorts are in the reserve
         for path in paths:
             try:
                 path.unlink()

@@ -7,10 +7,9 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import random
-import time
 from typing import Any, Callable, NamedTuple
 
-from .daily_quota import DailyQuota
+from .daily_quota import RollingQuota
 from .shorts_metadata import ShortMetadata
 from .vod_shorts import VODShortResult
 from .youtube import upload_video
@@ -18,9 +17,13 @@ from .youtube import upload_video
 UPLOAD_PRIVACY = "private"  # default visibility of automatic uploads
 UPLOAD_PRIVACIES = frozenset({"private", "unlisted", "public"})
 QUOTA_ERROR_REASONS = ("quotaExceeded", "uploadLimitExceeded", "dailyLimitExceeded")
-# An unpublished Short older than this is deleted instead of published: newer
-# moments are preferred, and unpublished Shorts do not fill the disk.
-READY_MAX_AGE = timedelta(hours=48)
+# The reserve keeps the best Shorts only: the next ones to publish (as many as
+# YouTube allows in 24 hours) and backups, ready to go when the computer is
+# turned on before new Shorts are rendered. Worse ones are deleted at once.
+RESERVE_SIZE = 30
+RESERVE_MAX_AGE = timedelta(days=14)  # older Shorts leave the reserve
+# A Short with muted swear words must be clearly better to beat a clean one.
+PROFANITY_PENALTY = 10
 PUBLICATION_HOUR = timedelta(hours=1)
 PUBLICATION_MARGIN = timedelta(minutes=5)
 # A top streamer "stands out" with at least this many times the peak viewers of the next one.
@@ -45,6 +48,7 @@ class _ReadyShort(NamedTuple):
     login: str
     peak_viewers: int
     failed: bool  # its last upload failed
+    muted: bool  # swear words were muted
     short: VODShortResult
     metadata: ShortMetadata
 
@@ -52,7 +56,8 @@ class _ReadyShort(NamedTuple):
 class VODShortsUploader:
     """Upload each generated Short once, then delete the local copy.
 
-    ``publish_next`` picks which Short goes next, among every completed VOD.
+    ``publish_next`` keeps the reserve (the best Shorts of every completed
+    VOD) and picks which Short goes next.
 
     The local video is removed only after YouTube returned a video ID and that
     ID has been saved in the VOD manifest. Any failure, exception or
@@ -83,9 +88,10 @@ class VODShortsUploader:
         # YouTube keeps uploads of an API project it has not audited private anyway.
         self.privacy = privacy
         self._clock = clock or (lambda: datetime.now(timezone.utc))
-        # None: no local limit and no publication hour (YouTube's refusals are still honoured).
+        # Uploads allowed in any 24 hours (YouTube's limit is a rolling window).
+        # None: no local limit and no spreading (YouTube's refusals are still honoured).
         self.quota = (
-            DailyQuota(output_dir / "youtube_quota.json", daily_upload_limit, clock=self._clock)
+            RollingQuota(output_dir / "youtube_uploads.json", daily_upload_limit, clock=self._clock)
             if daily_upload_limit is not None
             else None
         )
@@ -148,13 +154,14 @@ class VODShortsUploader:
                 allow_browser=False,  # unattended: never wait for a sign-in page
             )
         except Exception as error:
-            if any(reason in str(error) for reason in QUOTA_ERROR_REASONS):
-                # Not a failure of this Short: YouTube's daily quota is used up.
+            reason = next((reason for reason in QUOTA_ERROR_REASONS if reason in str(error)), None)
+            if reason:
+                # Not a failure of this Short: YouTube's limit is reached for now.
                 if self.quota is not None:
                     self.quota.mark_exhausted()
                 return ShortUploadResult(
                     short.candidate_id, short.output_path, "deferred", title=metadata.title,
-                    error=f"YouTube refuse l'upload (quota atteint). {self._deferred_message()}",
+                    error=f"YouTube refuse l'upload ({reason}). {self._deferred_message()}",
                 )
             self._record_error(manifest_path, short.key, str(error))
             return ShortUploadResult(
@@ -192,87 +199,68 @@ class VODShortsUploader:
         )
 
     def publish_next(self) -> tuple[str, ShortUploadResult] | None:
-        """Upload the best Short waiting for publication, when an upload is due.
+        """Keep the reserve, and upload its best Short when an upload is due.
 
-        Completed VODs leave their Shorts on disk. With a daily limit, the day's
-        uploads happen during one publication hour (see ``_publication_hour``),
-        each at a random moment of it. Each upload takes the best ready Short
-        (see ``_best``). Returns the VOD id and the upload result, or None when
-        no upload was due or no Short is ready.
+        The reserve is every ready Short of the completed VODs, ranked (see
+        ``_rank_key``): only the best ``RESERVE_SIZE`` are kept, and each new
+        Short takes its place in the ranking. With a limit, uploads are made as
+        soon as YouTube allows them (start-up included), spread over an hour
+        (see ``_publication_window``). Returns the VOD id and the upload
+        result, or None when no upload was due or no Short is ready.
         """
-        hour = None
-        if self.quota is not None:
-            hour = self._publication_hour()
-            if not self._upload_due(hour):
-                return None
         ready = self._ready_shorts()
-        if not ready:
+        ready.sort(key=self._rank_key(ready), reverse=True)
+        for item in ready[RESERVE_SIZE:]:
+            self._delete_local(item.short.output_path)  # pushed out of the reserve by better ones
+        if not ready or (self.quota is not None and not self._upload_due(self._publication_window())):
             return None
-        best = self._best(ready)
-        result = self.upload(best.vod_id, best.short, best.metadata)
-        if hour is not None and self.quota.remaining() == 0:
-            # The day's publications are over: no Short that was waiting is kept,
-            # and the worker then deletes every file of these VODs.
-            for item in ready:
-                if item is not best:
-                    self._delete_local(item.short.output_path)
-        return best.vod_id, result
+        best = ready[0]
+        return best.vod_id, self.upload(best.vod_id, best.short, best.metadata)
 
-    def _publication_hour(self) -> tuple[datetime, datetime] | None:
-        """This quota day's publication hour, or None while it is still to come.
+    def _publication_window(self) -> tuple[datetime, datetime] | None:
+        """The hour over which the uploads YouTube allows are spread.
 
-        It is the last hour before the quota reset, so the best Shorts of the
-        whole day compete. When the previous day's hour was missed (computer
-        off), the hour starts at the next start-up instead; nothing is shifted
-        since Shorts stay ready for 48 hours and both days compete.
+        A window opens as soon as an upload is possible (at start-up too, when
+        the computer was off or asleep) and lasts one hour; another one opens
+        whenever uploads are possible again.
         """
         now = self._clock()
-        reset = self.quota.next_reset()
-        day_start = reset - timedelta(days=1)
-        today, yesterday = day_start.date().isoformat(), (day_start - timedelta(days=1)).date().isoformat()
         try:
             state = json.loads(self.schedule_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            state = None
-        if not isinstance(state, dict):
-            # First run: behave as if yesterday's hour had happened.
-            state = {"day": yesterday}
-            self._write_manifest(self.schedule_path, state)
-        if state.get("day") == today:
-            try:
-                return datetime.fromisoformat(state["start"]), datetime.fromisoformat(state["end"])
-            except (KeyError, TypeError, ValueError):
-                return None
-        last_hour_start = reset - PUBLICATION_HOUR
-        if now >= last_hour_start:
-            start, end = last_hour_start, reset
-        elif str(state.get("day")) < yesterday:  # yesterday's hour was missed
-            start, end = now, min(now + PUBLICATION_HOUR, reset)
-        else:
+            window = datetime.fromisoformat(state["start"]), datetime.fromisoformat(state["end"])
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            window = None
+        if window is not None and window[0] <= now < window[1]:
+            return window
+        if self.quota.remaining() <= 0:
             return None
-        self._write_manifest(self.schedule_path, {"day": today, "start": start.isoformat(), "end": end.isoformat()})
-        return start, end
+        window = now, now + PUBLICATION_HOUR
+        self._write_manifest(self.schedule_path, {"start": window[0].isoformat(), "end": window[1].isoformat()})
+        return window
 
-    def _upload_due(self, hour: tuple[datetime, datetime] | None) -> bool:
-        """Spread the day's uploads at random moments of the publication hour."""
+    def _upload_due(self, window: tuple[datetime, datetime] | None) -> bool:
+        """Spread the allowed uploads at random moments of the window."""
+        if window is None:
+            return False
         remaining = self.quota.remaining()
         now = self._clock()
-        if hour is None or remaining <= 0 or not hour[0] <= now < hour[1]:
+        if remaining <= 0 or not window[0] <= now < window[1]:
             return False
-        # Leave a few minutes at the end so the last uploads still fit in the hour.
-        checks_left = (hour[1] - PUBLICATION_MARGIN - now) / timedelta(seconds=self.check_seconds)
+        # Leave a few minutes at the end so the last uploads still fit in the window.
+        checks_left = (window[1] - PUBLICATION_MARGIN - now) / timedelta(seconds=self.check_seconds)
         return self._random() < remaining / max(checks_left, 1.0)
 
-    def _best(self, ready: list[_ReadyShort]) -> _ReadyShort:
-        """The Short to publish next.
+    def _rank_key(self, ready: list[_ReadyShort]) -> Callable[[_ReadyShort], tuple[Any, ...]]:
+        """Ranking of the reserve, best first with ``reverse=True``.
 
         A streamer of ``top_streamers`` who clearly stands out (the only one of
         the list with Shorts ready, or at least ``STANDOUT_FACTOR`` times the
         peak viewers of the next one) goes first, then the other listed
         streamers, then everyone else; within each group, the best Gemini
-        score (plus ``FAVORED_SCORE_BONUS`` for ``favored_streamers``), then the
-        biggest clip budget. A Short whose last upload failed
-        goes last, so it never blocks the others.
+        score (plus ``FAVORED_SCORE_BONUS`` for ``favored_streamers``, minus
+        ``PROFANITY_PENALTY`` when swear words were muted), then the biggest
+        clip budget. A Short whose last upload failed goes last, so it never
+        blocks the others.
         """
         peaks: dict[str, int] = {}
         for item in ready:
@@ -284,17 +272,18 @@ class VODShortsUploader:
             if ranked and (len(ranked) == 1 or ranked[0][1] >= STANDOUT_FACTOR * ranked[1][1])
             else None
         )
-        return max(ready, key=lambda item: (
+        return lambda item: (
             not item.failed,
             item.login == standout,
             item.login in self.top_streamers,
             (item.short.gemini_score or 0)
-            + (FAVORED_SCORE_BONUS if item.login in self.favored_streamers else 0),
+            + (FAVORED_SCORE_BONUS if item.login in self.favored_streamers else 0)
+            - (PROFANITY_PENALTY if item.muted else 0),
             item.short.clip_budget,
-        ))
+        )
 
     def _ready_shorts(self) -> list[_ReadyShort]:
-        expired_before = time.time() - READY_MAX_AGE.total_seconds()
+        expired_before = (self._clock() - RESERVE_MAX_AGE).timestamp()
         ready = []
         for manifest_path in self.output_dir.glob("*_processing.json"):
             try:
@@ -317,12 +306,11 @@ class VODShortsUploader:
                 meta = metadata.get(key)
                 if key in uploads or not isinstance(record, dict) or not isinstance(meta, dict):
                     continue
-                if not record.get("profanity_filtered"):
-                    continue  # rendered before swear words were muted: never published
                 path = self.output_dir / str(record.get("file", ""))
                 if not path.name.endswith("_short.mp4") or not path.is_file():
                     continue
-                if path.stat().st_mtime < expired_before:
+                if not record.get("profanity_filtered") or path.stat().st_mtime < expired_before:
+                    # Rendered before swear words were muted, or too old: never published.
                     self._delete_local(path)
                     continue
                 try:
@@ -347,6 +335,7 @@ class VODShortsUploader:
                     login=str(manifest.get("broadcaster_login", "")).lower(),
                     peak_viewers=peak_viewers,
                     failed=key in errors,
+                    muted=bool(record.get("muted")),
                     short=short,
                     metadata=ShortMetadata(
                         title=str(meta.get("title", "")), description=str(meta.get("description", "")),
@@ -357,10 +346,10 @@ class VODShortsUploader:
     def _deferred_message(self) -> str:
         if self.quota is None:
             return "Nouvel essai au prochain passage."
-        reset = self.quota.next_reset()
+        retry = self.quota.next_reset()
         return (
-            f"Quota YouTube du jour atteint ({self.quota.daily_limit} uploads) : "
-            f"reprise apres {reset:%Y-%m-%d %H:%M} UTC."
+            f"Limite YouTube atteinte (au plus {self.quota.limit} envois sur 24 h) : "
+            f"nouvel essai apres {retry:%Y-%m-%d %H:%M} UTC."
         )
 
     # ------------------------------------------------------------------
