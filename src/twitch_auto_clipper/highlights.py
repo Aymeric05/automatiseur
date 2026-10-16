@@ -85,6 +85,66 @@ def split_sentences(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sentences
 
 
+LEAD_IN_MAX_SECONDS = 15.0  # at most this much is shown before the moment's first words
+LEAD_IN_SETUP_SECONDS = 4.0  # shown before the excitement starts: what triggers it
+DEFAULT_LEAD_IN_SECONDS = 3.0  # without a clear trigger, a short visual set-up
+EXCITEMENT_DB = 6.0  # louder than the quiet level by this much: something is happening
+EXCITEMENT_GAP_SECONDS = 2  # quieter seconds tolerated inside an exciting stretch
+REACTION_GAP_SECONDS = 2.0  # the reaction goes on while the next sentence follows this fast
+MIN_SHORT_SECONDS = 18.0
+MAX_SHORT_SECONDS = 45.0
+
+
+def expand_moment(
+    start: float,
+    end: float,
+    sentences: list[dict[str, Any]],
+    levels: list[float],
+) -> tuple[float, float]:
+    """Bounds of a Short that shows what triggers the reaction and lets it play out.
+
+    Reactions often follow something only visible (a death, a goal) or a
+    scream Whisper does not transcribe. ``levels`` is the loudness (dB) of
+    each second before ``start``, oldest first: the Short starts
+    ``LEAD_IN_SETUP_SECONDS`` before the loud stretch that leads to the
+    moment (at most ``LEAD_IN_MAX_SECONDS`` earlier), or
+    ``DEFAULT_LEAD_IN_SECONDS`` before when nothing stands out. It then goes
+    on while the streamer keeps talking, from ``MIN_SHORT_SECONDS`` to
+    ``MAX_SHORT_SECONDS`` in all.
+    """
+    lead = DEFAULT_LEAD_IN_SECONDS
+    if levels:
+        quiet = sorted(levels)[len(levels) // 5]
+        onset, gap = len(levels), 0
+        for index in range(len(levels) - 1, -1, -1):
+            if levels[index] >= quiet + EXCITEMENT_DB:
+                onset, gap = index, 0
+            else:
+                gap += 1
+                if gap > EXCITEMENT_GAP_SECONDS:
+                    break
+        if onset < len(levels):
+            lead = max(lead, len(levels) - onset + LEAD_IN_SETUP_SECONDS)
+    new_start = max(0.0, start - min(lead, LEAD_IN_MAX_SECONDS))
+    new_start = max(new_start, end - MAX_SHORT_SECONDS)  # a long moment keeps a shorter lead-in
+    for sentence in sentences:  # never start in the middle of a sentence
+        if sentence["start"] < new_start < sentence["end"] and new_start - sentence["start"] <= 3.0:
+            new_start = sentence["start"]
+
+    new_end = end
+    for sentence in sentences:
+        if sentence["start"] < end - 0.01:
+            continue
+        gap = sentence["start"] - new_end
+        if sentence["end"] - new_start > MAX_SHORT_SECONDS:
+            break
+        if gap > REACTION_GAP_SECONDS and (new_end - new_start >= MIN_SHORT_SECONDS or gap > 6.0):
+            break
+        new_end = sentence["end"]
+    new_end = max(new_end, min(new_start + MIN_SHORT_SECONDS, new_start + MAX_SHORT_SECONDS))
+    return round(new_start, 2), round(new_end, 2)
+
+
 def _score_sentence(text: str, start: float, end: float, typical_rate: float) -> float:
     normalized = text.lower()
     words = _words(text)

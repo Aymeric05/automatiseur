@@ -137,7 +137,11 @@ uploads, then refused more until the next day's same hour). Processed VODs leave
 Shorts in a reserve, ranked and kept to the best 30: the top ones are the next to be
 published, the others are backups, ready to go when the computer is turned on before new
 Shorts are rendered; each new Short takes its place in the ranking, and those pushed out of
-the top 30, or older than 14 days, are deleted at once. Uploads are made as soon as YouTube allows them (start-up
+the top 30, or older than 14 days, are deleted at once. Every Gemini score was given within one live; when the reserve changed (at most every 3 hours),
+Gemini compares its Shorts side by side and gives them comparative scores, used for the
+ranking. A Short goes out only when at least 10 are
+ready, so it is always the best of a real choice (an unused upload slot stays free until
+used), and never when it lasts less than 15 seconds. Uploads are made as soon as YouTube allows them (start-up
 included), spread at random moments over one hour. When YouTube refuses an upload anyway,
 the app tries again an hour later; nothing is deleted after a refusal.
 
@@ -147,7 +151,18 @@ the chat with a single download thread, and each Short reads its seconds of Twit
 playback speed. On Windows, the FFmpeg and TwitchDownloaderCLI processes it starts stop
 with it, so closing the app frees the connection at once.
 
-Moments that Gemini scores below 60 (out of 100) are neither rendered nor published. Swear words are muted in the audio, blurred in the subtitles and masked (`****`) in the
+Besides the transcript, up to a third of the candidates come from chat spikes (10 seconds with
+at least 3 times the messages of the surrounding minutes): they catch visual moments the
+streamer does not comment on. A top streamer's VOD sends 60 candidates to Gemini (30
+otherwise). Moments that Gemini scores below 60 (out of 100) are neither rendered nor published. Each
+Short shows what triggers the reaction: the app reads the loudness of the 20 seconds of audio
+before the moment, finds where the excitement starts (a death, a goal, a scream Whisper does
+not transcribe) and starts 4 seconds before it (at most 15 seconds earlier; 3 seconds when
+nothing stands out). It then lets the reaction play out while the streamer keeps talking:
+18 to 45 seconds in all. Every published Short is recorded in
+`data/output/published_shorts.json` (streamer, score, duration, lead-in), and once a day
+the app reads their views, likes and comments on YouTube, to tune the choices on real
+results. Swear words are muted in the audio, blurred in the subtitles and masked (`****`) in the
 hook, title and description; such a Short loses 10 points in the ranking, so it is only
 published when clearly better than a clean one. A moment with a slur is dropped. Shorts rendered before this filter are never
 published. The

@@ -48,6 +48,13 @@ class ShortsMetadataTests(unittest.TestCase):
         self.assertIn("🎮 Clip from Streamer's Twitch stream (Grand Theft Auto V).", lines)
         self.assertEqual(lines[-1], "#shorts #twitch #twitchclips #streamer #viral #fyp")  # no niche tag
 
+    def test_a_teaser_without_enough_emojis_gets_some(self):
+        from twitch_auto_clipper.shorts_metadata import _lively
+
+        self.assertEqual(_lively("He did it"), "🔥 He did it 👀")
+        self.assertEqual(_lively("He did it 😱🔥"), "He did it 😱🔥")
+        self.assertEqual(_lively(""), "")
+
     def test_swear_words_are_masked_in_title_and_description(self):
         segments = [{"start": 0.0, "end": 3.0, "text": "what the fuck was that shit bro"}]
         metadata = build_short_metadata(

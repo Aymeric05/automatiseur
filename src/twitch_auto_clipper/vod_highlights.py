@@ -6,12 +6,15 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .chat_activity import add_chat_messages, add_chat_signals
+from .chat_activity import add_chat_messages, add_chat_signals, chat_spike_moments
 from .gemini_evaluation import GeminiEvaluationError, select_candidates
-from .highlights import HighlightAnalysisError, analyze_transcription, save_highlights
+from .highlights import HighlightAnalysisError, _overlap_ratio, analyze_transcription, save_highlights
 from .vod_processing import VODProcessingResult
 
 MAX_GEMINI_CANDIDATES = 30  # best heuristic candidates sent to Gemini
+# A top streamer's VOD (budget 20): twice the moments to choose its 20 Shorts from.
+TOP_GEMINI_CANDIDATES = 60
+CHAT_CANDIDATE_SHARE = 3  # at most 1/3 of the candidates come from chat spikes
 
 
 @dataclass(frozen=True)
@@ -51,9 +54,17 @@ class VODHighlightSelector:
 
         try:
             transcript = self._load_json_list(processed_vod.transcript_path)
-            candidates = analyze_transcription(transcript, max_candidates=MAX_GEMINI_CANDIDATES)
+            max_candidates = TOP_GEMINI_CANDIDATES if budget >= 20 else MAX_GEMINI_CANDIDATES
+            candidates = analyze_transcription(transcript, max_candidates=max_candidates)
             chat_messages = self._load_optional_chat(processed_vod.timestamped_chat_path)
             if chat_messages:
+                # Up to a third of the candidates come from chat spikes the transcript missed.
+                spikes = [
+                    moment
+                    for moment in chat_spike_moments(chat_messages, limit=max_candidates // CHAT_CANDIDATE_SHARE)
+                    if all(_overlap_ratio(moment, candidate) <= 0.25 for candidate in candidates)
+                ]
+                candidates = candidates[: max_candidates - len(spikes)] + spikes
                 candidates = add_chat_signals(add_chat_messages(candidates, chat_messages), chat_messages)
             else:
                 candidates = [

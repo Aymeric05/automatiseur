@@ -12,7 +12,7 @@ from typing import Any, Callable, NamedTuple
 from .daily_quota import RollingQuota
 from .shorts_metadata import ShortMetadata
 from .vod_shorts import VODShortResult
-from .youtube import upload_video
+from .youtube import fetch_video_statistics, upload_video
 
 UPLOAD_PRIVACY = "private"  # default visibility of automatic uploads
 UPLOAD_PRIVACIES = frozenset({"private", "unlisted", "public"})
@@ -21,10 +21,18 @@ QUOTA_ERROR_REASONS = ("quotaExceeded", "uploadLimitExceeded", "dailyLimitExceed
 # YouTube allows in 24 hours) and backups, ready to go when the computer is
 # turned on before new Shorts are rendered. Worse ones are deleted at once.
 RESERVE_SIZE = 30
+# Only the best of a real choice goes out: below this many ready Shorts, wait for more
+# (an unused upload slot is not lost: it stays free until used).
+RESERVE_MIN_TO_PUBLISH = 10
+MIN_PUBLISHED_SECONDS = 15.0  # shorter, nobody understands the situation
 RESERVE_MAX_AGE = timedelta(days=14)  # older Shorts leave the reserve
 # A Short with muted swear words must be clearly better to beat a clean one.
 PROFANITY_PENALTY = 10
 PUBLICATION_HOUR = timedelta(hours=1)
+# Gemini compares the reserve's Shorts side by side when it changed, at most this often.
+ARBITRATION_INTERVAL = timedelta(hours=3)
+STATISTICS_INTERVAL = timedelta(hours=24)  # views of the published Shorts, read once a day
+STATISTICS_DAYS = 30  # Shorts followed after their publication
 PUBLICATION_MARGIN = timedelta(minutes=5)
 # A top streamer "stands out" with at least this many times the peak viewers of the next one.
 STANDOUT_FACTOR = 2
@@ -79,8 +87,11 @@ class VODShortsUploader:
         top_streamers: frozenset[str] = frozenset(),
         favored_streamers: frozenset[str] = frozenset(),
         check_seconds: float = 60.0,
+        min_reserve: int = RESERVE_MIN_TO_PUBLISH,
         clock: Callable[[], datetime] | None = None,
         random_source: Callable[[], float] = random.random,
+        statistics_fetcher: Callable[..., dict[str, dict[str, int]]] | None = None,
+        arbiter: Callable[[list[dict[str, Any]]], dict[str, float]] | None = None,
     ) -> None:
         if privacy not in UPLOAD_PRIVACIES:
             raise ValueError(f"privacy must be one of {sorted(UPLOAD_PRIVACIES)}")
@@ -99,7 +110,15 @@ class VODShortsUploader:
         self.top_streamers = frozenset(login.lower() for login in top_streamers)
         self.favored_streamers = frozenset(login.lower() for login in favored_streamers)
         self.check_seconds = check_seconds  # how often publish_next is called
+        self.min_reserve = min_reserve  # with a limit: ready Shorts needed before publishing
         self._random = random_source
+        # Every published Short, with its views: what works best is measured, not guessed.
+        self.history_path = output_dir / "published_shorts.json"
+        self._statistics_fetcher = statistics_fetcher or fetch_video_statistics
+        self._statistics_retry_at: datetime | None = None
+        # Comparative scores of the reserve (see _arbitrate); None: per-live Gemini scores only.
+        self._arbiter = arbiter
+        self.arbitration_path = output_dir / "reserve_ranking.json"
         self._uploader = uploader or upload_video
         self.client_secrets_path = client_secrets_path
         self.token_path = token_path
@@ -178,6 +197,7 @@ class VODShortsUploader:
 
         if self.quota is not None:
             self.quota.record_use()
+        self._record_publication(manifest, short, metadata, video_id, url)
         try:
             self._record_upload(manifest_path, short, metadata, video_id, url)
         except (OSError, ValueError) as error:
@@ -212,7 +232,13 @@ class VODShortsUploader:
         ready.sort(key=self._rank_key(ready), reverse=True)
         for item in ready[RESERVE_SIZE:]:
             self._delete_local(item.short.output_path)  # pushed out of the reserve by better ones
-        if not ready or (self.quota is not None and not self._upload_due(self._publication_window())):
+        ready = ready[:RESERVE_SIZE]
+        if self._arbitrate(ready):
+            ready.sort(key=self._rank_key(ready), reverse=True)
+        if not ready or (
+            self.quota is not None
+            and (len(ready) < self.min_reserve or not self._upload_due(self._publication_window()))
+        ):
             return None
         best = ready[0]
         return best.vod_id, self.upload(best.vod_id, best.short, best.metadata)
@@ -272,15 +298,72 @@ class VODShortsUploader:
             if ranked and (len(ranked) == 1 or ranked[0][1] >= STANDOUT_FACTOR * ranked[1][1])
             else None
         )
+        compared = self._comparative_scores()
         return lambda item: (
             not item.failed,
             item.login == standout,
             item.login in self.top_streamers,
-            (item.short.gemini_score or 0)
+            compared.get(self._reserve_id(item), item.short.gemini_score or 0)
             + (FAVORED_SCORE_BONUS if item.login in self.favored_streamers else 0)
             - (PROFANITY_PENALTY if item.muted else 0),
             item.short.clip_budget,
         )
+
+    @staticmethod
+    def _reserve_id(item: _ReadyShort) -> str:
+        return f"{item.vod_id}:{item.short.key}"
+
+    def _comparative_scores(self) -> dict[str, float]:
+        try:
+            scores = json.loads(self.arbitration_path.read_text(encoding="utf-8")).get("scores")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            return {}
+        return scores if isinstance(scores, dict) else {}
+
+    def _arbitrate(self, ready: list[_ReadyShort]) -> bool:
+        """Have Gemini compare the reserve's Shorts side by side; True when scores changed.
+
+        Each Short's Gemini score was given within its own live: here the
+        reserve is ranked as a whole, at most every ``ARBITRATION_INTERVAL``
+        and only when its content changed. A failure keeps the previous scores.
+        """
+        if self._arbiter is None or len(ready) < 2:
+            return False
+        now = self._clock()
+        try:
+            state = json.loads(self.arbitration_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            state = {}
+        state = state if isinstance(state, dict) else {}
+        ids = sorted(self._reserve_id(item) for item in ready)
+        try:
+            if now - datetime.fromisoformat(state["at"]) < ARBITRATION_INTERVAL:
+                return False
+        except (KeyError, TypeError, ValueError):
+            pass
+        if ids == state.get("ids"):
+            return False
+        described = []
+        for item in ready:
+            described.append({
+                "id": self._reserve_id(item),
+                "streamer": item.login,
+                "peak_viewers": item.peak_viewers,
+                "title": item.metadata.title,
+                "description": item.metadata.description.split("\n\n#")[0][:600],
+                "seconds": round(item.short.end - item.short.start),
+                "live_score": item.short.gemini_score,
+                "why": item.short.gemini_justification,
+            })
+        try:
+            scores = self._arbiter(described)
+        except Exception:
+            scores = None  # Gemini unavailable: retried at the next interval
+        self._write_manifest(self.arbitration_path, {
+            "at": now.isoformat(), "ids": ids,
+            "scores": scores if scores else state.get("scores", {}),
+        })
+        return bool(scores)
 
     def _ready_shorts(self) -> list[_ReadyShort]:
         expired_before = (self._clock() - RESERVE_MAX_AGE).timestamp()
@@ -309,8 +392,12 @@ class VODShortsUploader:
                 path = self.output_dir / str(record.get("file", ""))
                 if not path.name.endswith("_short.mp4") or not path.is_file():
                     continue
-                if not record.get("profanity_filtered") or path.stat().st_mtime < expired_before:
-                    # Rendered before swear words were muted, or too old: never published.
+                try:
+                    too_short = float(record["end"]) - float(record["start"]) < MIN_PUBLISHED_SECONDS
+                except (KeyError, TypeError, ValueError):
+                    too_short = True
+                if not record.get("profanity_filtered") or too_short or path.stat().st_mtime < expired_before:
+                    # Rendered before swear words were muted, too short or too old: never published.
                     self._delete_local(path)
                     continue
                 try:
@@ -326,6 +413,8 @@ class VODShortsUploader:
                         gemini_justification=record.get("gemini_justification"),
                         status="already_exists",
                         clip_id=key,
+                        candidate_start=record.get("candidate_start"),
+                        muted=bool(record.get("muted")),
                     )
                     peak_viewers = int(manifest.get("peak_viewers") or 0)
                 except (TypeError, ValueError):
@@ -342,6 +431,82 @@ class VODShortsUploader:
                     ),
                 ))
         return ready
+
+    def refresh_statistics(self) -> str | None:
+        """Once a day, read the views of the Shorts published in the last 30 days.
+
+        Returns a summary line when they were read (or why they could not be).
+        """
+        now = self._clock()
+        if self._statistics_retry_at is not None and now < self._statistics_retry_at:
+            return None
+        history = self._load_history()
+        last = history.get("fetched_at")
+        try:
+            if last and now - datetime.fromisoformat(last) < STATISTICS_INTERVAL:
+                return None
+        except (TypeError, ValueError):
+            pass
+        followed = []
+        for entry in history["shorts"]:
+            try:
+                if now - datetime.fromisoformat(entry["uploaded_at"]) < timedelta(days=STATISTICS_DAYS):
+                    followed.append(entry)
+            except (KeyError, TypeError, ValueError):
+                continue
+        if not followed:
+            return None
+        try:
+            statistics = self._statistics_fetcher(
+                [entry["video_id"] for entry in followed], self.client_secrets_path, self.token_path
+            )
+        except Exception as error:
+            self._statistics_retry_at = now + timedelta(hours=1)
+            return f"Statistiques YouTube non lues ({error}) : nouvel essai dans une heure."
+        for entry in followed:
+            entry.update(statistics.get(entry["video_id"], {}))
+        history["fetched_at"] = now.isoformat()
+        self._write_manifest(self.history_path, history)
+        total = sum(entry.get("views", 0) for entry in followed)
+        best = max(followed, key=lambda entry: entry.get("views", 0))
+        return (
+            f"Statistiques YouTube : {len(followed)} Shorts sur {STATISTICS_DAYS} jours, {total} vues ; "
+            f"meilleur : {best.get('title', best['video_id'])} ({best.get('views', 0)} vues)"
+        )
+
+    def _load_history(self) -> dict[str, Any]:
+        try:
+            history = json.loads(self.history_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            history = None
+        if not isinstance(history, dict) or not isinstance(history.get("shorts"), list):
+            history = {"fetched_at": None, "shorts": []}
+        return history
+
+    def _record_publication(
+        self, manifest: dict[str, Any], short: VODShortResult, metadata: ShortMetadata,
+        video_id: str, url: str,
+    ) -> None:
+        """Remember the published Short and what it was made of, to compare views later."""
+        history = self._load_history()
+        lead_in = short.candidate_start - short.start if short.candidate_start is not None else None
+        history["shorts"].append({
+            "video_id": video_id,
+            "url": url,
+            "title": metadata.title,
+            "vod_id": short.vod_id,
+            "streamer": str(manifest.get("broadcaster_login", "")),
+            "peak_viewers": manifest.get("peak_viewers"),
+            "gemini_score": short.gemini_score,
+            "seconds": round(short.end - short.start, 1),
+            "lead_in_seconds": round(lead_in, 1) if lead_in is not None else None,
+            "muted": short.muted,
+            "uploaded_at": self._clock().isoformat(timespec="seconds"),
+        })
+        try:
+            self._write_manifest(self.history_path, history)
+        except OSError:
+            pass  # the upload itself is recorded in the VOD manifest
 
     def _deferred_message(self) -> str:
         if self.quota is None:

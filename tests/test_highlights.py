@@ -134,5 +134,44 @@ class HighlightTests(unittest.TestCase):
         )
 
 
+class ExpandMomentTests(unittest.TestCase):
+    def test_lead_in_goes_back_to_where_the_excitement_starts(self) -> None:
+        from twitch_auto_clipper.highlights import expand_moment
+
+        # Real Jynxzi moment: quiet fight, then death and screams 10 s before the first words.
+        levels = [-33, -31, -36, -41, -38, -35, -33, -38, -35, -28, -26, -26, -28, -22, -24, -21, -24, -21, -25, -28]
+        start, end = expand_moment(100.0, 112.9, [], levels)
+        self.assertEqual(start, 85.0)  # 11 s of excitement + 4 s of set-up, capped at 15 s
+        self.assertEqual(end, 112.9)  # 27.9 s: already above the minimum
+
+    def test_without_a_trigger_a_short_set_up_and_the_full_reaction(self) -> None:
+        from twitch_auto_clipper.highlights import expand_moment
+
+        sentences = [
+            {"start": 100.0, "end": 104.0, "text": "No way!"},
+            {"start": 105.0, "end": 109.0, "text": "He did that?"},
+            {"start": 110.5, "end": 114.0, "text": "Unbelievable."},
+            {"start": 125.0, "end": 128.0, "text": "Anyway, back to the game."},
+        ]
+        start, end = expand_moment(100.0, 104.0, sentences, [-40.0] * 20)  # flat: no trigger
+        self.assertEqual(start, 97.0)  # default 3 s set-up
+        self.assertEqual(end, 115.0)  # the reaction goes on, then padded to the 18 s minimum
+
+    def test_never_longer_than_the_maximum(self) -> None:
+        from twitch_auto_clipper.highlights import MAX_SHORT_SECONDS, expand_moment
+
+        sentences = [{"start": 100.0 + 5 * i, "end": 104.0 + 5 * i, "text": "Talking."} for i in range(20)]
+        start, end = expand_moment(100.0, 104.0, sentences, [-40.0] * 20)
+        self.assertLessEqual(end - start, MAX_SHORT_SECONDS)
+
+
+class AudioLevelsTests(unittest.TestCase):
+    def test_ffmpeg_levels_are_parsed_and_silence_is_floored(self) -> None:
+        from twitch_auto_clipper.video import parse_audio_levels
+
+        output = "lavfi.astats.Overall.RMS_level=-23.5\nlavfi.astats.Overall.RMS_level=-inf\n"
+        self.assertEqual(parse_audio_levels(output), [-23.5, -90.0])
+
+
 if __name__ == "__main__":
     unittest.main()
