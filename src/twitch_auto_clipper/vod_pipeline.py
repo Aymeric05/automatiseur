@@ -17,7 +17,9 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
+from .highlights import expand_moment, split_sentences
 from .profanity import has_slur
+from .video import audio_levels
 from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata, clip_transcript_text
 from .vod_acquisition import (
     MAX_ATTEMPTS,
@@ -50,6 +52,7 @@ GEMINI_WAIT = timedelta(minutes=30)
 # Asked for many moments, Gemini calls almost everything "interesting": below
 # this score (0-100) a moment is neither rendered nor published.
 MIN_GEMINI_SCORE = 60
+LEAD_IN_ANALYSIS_SECONDS = 20  # audio examined before a moment to find what triggers it
 GEMINI_UNAVAILABLE_MARKERS = ("429", "resource_exhausted", "exceeded", "quota", "503", "unavailable", "high demand")
 
 
@@ -163,11 +166,31 @@ class VODAutomationPipeline:
             spoken = clip_transcript_text(segments, start - 1.0, end + 2.0)  # with the render margins
             return has_slur(spoken) or has_slur(str(item.get("gemini_hook") or ""))
 
+        sentences = split_sentences(segments)
+
+        def with_context(item: dict[str, Any]) -> dict[str, Any]:
+            """The moment with what triggers it before and the full reaction after."""
+            start, end = float(item.get("start", 0)), float(item.get("end", 0))
+            window = int(min(LEAD_IN_ANALYSIS_SECONDS, start))
+            try:
+                levels = audio_levels(source_path, start - window, window) if window >= 1 else []
+            except Exception:  # unreadable audio: a fixed lead-in is used
+                levels = []
+            new_start, new_end = expand_moment(start, end, sentences, levels)
+            # The highlighted sentence (title quote) stays the original moment.
+            return {
+                **item, "start": new_start, "end": new_end,
+                "highlight_start": item.get("highlight_start", start),
+                "highlight_end": item.get("highlight_end", end),
+            }
+
         selection = replace(selection, selected=tuple(
-            item for item in selection.selected
-            if item.get("gemini_interesting", True) is not False
-            and float(item.get("gemini_score", MIN_GEMINI_SCORE)) >= MIN_GEMINI_SCORE
-            and not has_slurs(item)
+            moment for moment in (
+                with_context(item) for item in selection.selected
+                if item.get("gemini_interesting", True) is not False
+                and float(item.get("gemini_score", MIN_GEMINI_SCORE)) >= MIN_GEMINI_SCORE
+            )
+            if not has_slurs(moment)
         ))
         if not selection.selected:
             return VODAutomationResult(

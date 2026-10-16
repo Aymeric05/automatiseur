@@ -15,6 +15,15 @@ TITLE_MIN_QUOTE_WORDS = 6
 EXCERPT_MAX_LENGTH = 400
 # Only broad, popular tags: niche per-video tags (channel, game) are left out.
 HASHTAGS = "#shorts #twitch #twitchclips #streamer #viral #fyp"
+EMOJI = re.compile("[\U0001F000-\U0001FFFF\u2600-\u27BF\u2B00-\u2BFF]")
+MIN_TEASER_EMOJIS = 2  # the description's first line must catch the eye
+
+
+def _lively(teaser: str) -> str:
+    """The teaser with at least ``MIN_TEASER_EMOJIS`` emojis (Gemini sometimes forgets them)."""
+    if not teaser or len(EMOJI.findall(teaser)) >= MIN_TEASER_EMOJIS:
+        return teaser
+    return f"🔥 {teaser} 👀"
 
 
 class ShortMetadataError(ValueError):
@@ -126,7 +135,7 @@ def build_short_metadata(
         short_quote += "…"
     title = _truncate(f"{name}: “{short_quote}”", TITLE_MAX_LENGTH)
 
-    teaser = censor(_clean(teaser or ""))
+    teaser = _lively(censor(_clean(teaser or "")))
     game = _clean(game_name)
     lines = [teaser, ""] if teaser else []
     lines.extend([f"💬 “{_truncate(excerpt or quote, EXCERPT_MAX_LENGTH)}”", ""])

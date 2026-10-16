@@ -141,5 +141,20 @@ class ChatSignalTests(unittest.TestCase):
         self.assertEqual(chat_signal([], 0, 5)["messages"], 0)
 
 
+class ChatSpikeTests(unittest.TestCase):
+    def test_a_chat_explosion_becomes_a_moment_placed_before_it(self) -> None:
+        from twitch_auto_clipper.chat_activity import chat_spike_moments
+
+        def message(timestamp, text):
+            return {"timestamp": timestamp, "message": {"message": {"body": text}, "commenter": {"_id": str(timestamp)}}}
+
+        calm = [message(300.0 + 5 * i, "nice play") for i in range(120)]  # one message every 5 s
+        burst = [message(600.0 + i * 0.2, "OMEGALUL what") for i in range(40)]  # 40 messages in 8 s
+        moments = chat_spike_moments(calm + burst, limit=5)
+        self.assertEqual(len(moments), 1)
+        self.assertEqual((moments[0]["start"], moments[0]["end"], moments[0]["source"]), (585.0, 608.0, "chat"))
+        self.assertEqual(chat_spike_moments(calm, limit=5), [])  # no explosion, no moment
+
+
 if __name__ == "__main__":
     unittest.main()

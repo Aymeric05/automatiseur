@@ -16,6 +16,7 @@ from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signal
 from .gemini_evaluation import (
     GeminiEvaluationError,
     load_json,
+    rank_reserve,
     select_candidate,
 )
 from .subtitles import generate_ass_subtitles, SubtitleGenerationError
@@ -598,6 +599,9 @@ def main() -> int:
                 top_streamers=top_streamers,
                 favored_streamers=favored_streamers,
                 check_seconds=PUBLISH_IDLE_SECONDS,
+                arbiter=partial(
+                    rank_reserve, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini
+                ),
             )
         automation = VODAutomationPipeline(
             processing_pipeline=VODProcessingPipeline(output_dir),
@@ -624,6 +628,12 @@ def main() -> int:
 
         def publish_next() -> bool:
             """Upload the best ready Short if an upload is due; False after a failure."""
+            try:
+                summary = uploader.refresh_statistics()  # once a day
+            except Exception as error:  # statistics never stop the publications
+                summary = f"Statistiques YouTube non lues : {error!r}"
+            if summary:
+                report(summary)
             try:
                 published = uploader.publish_next()
             except Exception as error:  # keep the publisher alive; Shorts stay on disk

@@ -200,6 +200,61 @@ def _is_noise(text: str, emotes: list[str]) -> bool:
     )
 
 
+CHAT_SPIKE_BIN_SECONDS = 10
+CHAT_SPIKE_RATIO = 3.0  # messages in 10 s compared with the median of the surrounding minutes
+CHAT_SPIKE_MIN_MESSAGES = 12
+CHAT_SPIKE_BEFORE_SECONDS = 15.0  # viewers react after seeing it: the moment comes first
+CHAT_SPIKE_AFTER_SECONDS = 8.0
+
+
+def chat_spike_moments(messages: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    """Moments where the chat explodes compared with the surrounding minutes, best first.
+
+    They catch what the transcript misses: a visual moment, a scream, a play
+    the streamer does not comment on. Viewers react a few seconds after what
+    they see, so each moment ends a little after the spike starts.
+    """
+    counts: dict[int, int] = {}
+    for message in messages:
+        timestamp = message.get("timestamp")
+        if not isinstance(timestamp, (int, float)) or timestamp < STREAM_START_UNRELIABLE_SECONDS:
+            continue
+        if _is_noise(_message_text(message), _emotes(message)):
+            continue
+        index = int(timestamp // CHAT_SPIKE_BIN_SECONDS)
+        counts[index] = counts.get(index, 0) + 1
+    if not counts:
+        return []
+    side = int(LOCAL_BASELINE_SECONDS // CHAT_SPIKE_BIN_SECONDS)
+    spikes: list[dict[str, Any]] = []
+    for index in sorted(counts):
+        around = sorted(
+            counts.get(other, 0)
+            for other in range(index - side, index + side + 1)
+            if abs(other - index) > 1
+        )
+        baseline = max(around[len(around) // 2], 1)
+        ratio = counts[index] / baseline
+        if counts[index] < CHAT_SPIKE_MIN_MESSAGES or ratio < CHAT_SPIKE_RATIO:
+            continue
+        onset = index * CHAT_SPIKE_BIN_SECONDS
+        if spikes and onset - spikes[-1]["onset"] <= 2 * CHAT_SPIKE_BIN_SECONDS:
+            spikes[-1]["score"] = max(spikes[-1]["score"], ratio)  # the same reaction going on
+            continue
+        spikes.append({"onset": onset, "score": ratio})
+    moments = [
+        {
+            "start": max(0.0, spike["onset"] - CHAT_SPIKE_BEFORE_SECONDS),
+            "end": spike["onset"] + CHAT_SPIKE_AFTER_SECONDS,
+            "score": round(spike["score"], 2),
+            "source": "chat",
+        }
+        for spike in spikes
+    ]
+    moments.sort(key=lambda moment: -moment["score"])
+    return moments[:limit]
+
+
 def chat_signal(
     messages: list[dict[str, Any]],
     start: float,

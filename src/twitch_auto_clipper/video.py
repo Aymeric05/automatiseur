@@ -1,9 +1,35 @@
 """FFmpeg helpers for creating vertical clips."""
 
 from pathlib import Path
+import re
 import subprocess
 
 from .framing import build_vertical_filter
+
+
+def audio_levels(input_path: Path, start: float, seconds: int) -> list[float]:
+    """Loudness (RMS, dB) of each second of ``input_path`` from ``start``; silence is -90."""
+    result = subprocess.run(
+        [
+            "ffmpeg", "-v", "info", "-ss", str(max(0.0, start)), "-t", str(seconds),
+            "-i", str(input_path), "-vn",
+            "-af", "aresample=8000,asetnsamples=n=8000,astats=metadata=1:reset=1,"
+                   "ametadata=print:key=lavfi.astats.Overall.RMS_level",
+            "-f", "null", "-",
+        ],
+        capture_output=True, text=True, timeout=120, check=True,
+    )
+    return parse_audio_levels(result.stderr)
+
+
+def parse_audio_levels(ffmpeg_output: str) -> list[float]:
+    levels = []
+    for value in re.findall(r"RMS_level=(\S+)", ffmpeg_output):
+        try:
+            levels.append(max(-90.0, float(value)))
+        except ValueError:  # "-inf": silence
+            levels.append(-90.0)
+    return levels
 
 
 def get_video_duration(input_path: Path) -> float:

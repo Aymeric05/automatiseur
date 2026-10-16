@@ -148,6 +148,33 @@ def verify_expected_channel(youtube_service: Any, expected_channel_id: str | Non
         )
 
 
+def fetch_video_statistics(
+    video_ids: list[str],
+    client_secrets_path: Path = Path("credentials.json"),
+    token_path: Path = Path("youtube-token.json"),
+) -> dict[str, dict[str, int]]:
+    """Views, likes and comments of these videos (1 API quota unit per 50 videos)."""
+    try:
+        service = authenticate_youtube(client_secrets_path, token_path, allow_browser=False)
+        statistics: dict[str, dict[str, int]] = {}
+        for index in range(0, len(video_ids), 50):
+            response = service.videos().list(
+                part="statistics", id=",".join(video_ids[index:index + 50])
+            ).execute()
+            for item in response.get("items", []):
+                values = item.get("statistics", {})
+                statistics[item["id"]] = {
+                    "views": int(values.get("viewCount", 0)),
+                    "likes": int(values.get("likeCount", 0)),
+                    "comments": int(values.get("commentCount", 0)),
+                }
+        return statistics
+    except YouTubeUploadError:
+        raise
+    except Exception as error:
+        raise YouTubeUploadError(f"Statistiques YouTube indisponibles : {error}") from error
+
+
 def upload_video(
     video_path: Path,
     title: str,

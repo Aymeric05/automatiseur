@@ -273,7 +273,7 @@ class VODAutomationPipelineTests(unittest.TestCase):
 
         self._pipeline().run(self._acquisition(budget=1))
         uploader = VODShortsUploader(
-            self.tmp, uploader=refused, daily_upload_limit=6, random_source=lambda: 0.0,
+            self.tmp, uploader=refused, daily_upload_limit=6, random_source=lambda: 0.0, min_reserve=1,
             clock=lambda: datetime(2026, 10, 14, 7, 30, tzinfo=timezone.utc),  # publication hour
         )
 

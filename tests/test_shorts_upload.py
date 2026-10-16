@@ -177,7 +177,7 @@ class PublishNextTests(unittest.TestCase):
             key = f"{index}.0-{index + 5}.0"
             (self.tmp / f"{vod_id}_{key}_short.mp4").write_bytes(b"short")
             generated[key] = {"candidate_id": f"candidate_{index + 1}", "file": f"{vod_id}_{key}_short.mp4",
-                              "start": float(index), "end": index + 5.0, "gemini_score": score,
+                              "start": float(index), "end": index + 20.0, "gemini_score": score,
                               "profanity_filtered": True}
             metadata[key] = {"title": f"{vod_id} {score}", "description": "d"}
         (self.tmp / f"{vod_id}_processing.json").write_text(json.dumps({
@@ -227,10 +227,10 @@ class PublishNextTests(unittest.TestCase):
         uploader.publish_next()
         self.assertEqual(self.uploaded, ["v 50", "v 90"])
 
-    def _clocked(self, now, limit=20, rolls=lambda: 0.0, top=()):
+    def _clocked(self, now, limit=20, rolls=lambda: 0.0, top=(), min_reserve=1):
         return VODShortsUploader(
             self.tmp, uploader=self._upload, daily_upload_limit=limit,
-            clock=lambda: now[0], random_source=rolls, top_streamers=frozenset(top),
+            clock=lambda: now[0], random_source=rolls, top_streamers=frozenset(top), min_reserve=min_reserve,
         )
 
     def test_uploads_start_as_soon_as_youtube_allows_them(self):
@@ -304,6 +304,44 @@ class PublishNextTests(unittest.TestCase):
         self.assertEqual(len(list(self.tmp.glob("*_short.mp4"))), RESERVE_SIZE)
         self.assertTrue(any(p.name.startswith("better_") for p in self.tmp.glob("*_short.mp4")))
 
+    def test_publication_waits_for_enough_choice_and_skips_too_short_shorts(self):
+        self._vod("v", list(range(70, 79)))  # 9 ready Shorts: not enough choice yet
+        now = [datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)]
+        uploader = self._clocked(now, limit=10, min_reserve=10)
+        self.assertIsNone(uploader.publish_next())
+        self._vod("w", [99, 98])
+        manifest = self.tmp / "w_processing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        first = next(iter(data["generated_shorts"].values()))
+        first["end"] = first["start"] + 8.0  # an 8-second Short: never published
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        self.assertIsNotNone(uploader.publish_next())  # 10 ready Shorts now
+        self.assertEqual(self.uploaded, ["w 98"])
+        self.assertEqual(len(list(self.tmp.glob("w_*_short.mp4"))), 0)  # the short one was deleted
+
+    def test_gemini_compares_the_reserve_side_by_side_when_it_changed(self):
+        self._vod("a", [90])
+        self._vod("b", [70])
+        now = [datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)]
+        calls = []
+
+        def arbiter(shorts):
+            calls.append(sorted(short["id"] for short in shorts))
+            return {short["id"]: (95 if short["id"].startswith("b:") else 40) for short in shorts}
+
+        uploader = VODShortsUploader(self.tmp, uploader=self._upload, clock=lambda: now[0], arbiter=arbiter)
+        uploader.publish_next()
+        self.assertEqual(self.uploaded, ["b 70"])  # b won the side-by-side comparison
+        self.assertEqual(len(calls), 1)
+        self._vod("c", [80])
+        uploader.publish_next()
+        self.assertEqual(len(calls), 1)  # changed, but compared less than 3 hours ago
+        self._vod("d", [60])
+        self._vod("e", [50])
+        now[0] += timedelta(hours=3)
+        uploader.publish_next()
+        self.assertEqual(len(calls), 2)  # changed and 3 hours later: compared again
+
     def test_a_short_with_muted_swear_words_must_be_clearly_better(self):
         self._vod("clean", [80])
         self._vod("swears", [85, 95])
@@ -360,6 +398,64 @@ class PublishNextTests(unittest.TestCase):
         while uploader.publish_next():
             pass
         self.assertEqual(self.uploaded, ["listed 60", "star 40"])  # best score of the list
+
+
+class StatisticsTests(unittest.TestCase):
+    def test_published_shorts_are_remembered_and_their_views_read_once_a_day(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            short_path = tmp / "v_1.0-20.0_short.mp4"
+            short_path.write_bytes(b"short")
+            (tmp / "v_processing.json").write_text(json.dumps({"broadcaster_login": "kaicenat"}), encoding="utf-8")
+            now = [datetime(2026, 10, 16, 18, 0, tzinfo=timezone.utc)]
+            calls = []
+
+            def stats(ids, *args):
+                calls.append(ids)
+                return {"yt1": {"views": 1200, "likes": 80, "comments": 5}}
+
+            uploader = VODShortsUploader(
+                tmp, uploader=lambda *a, **k: ("yt1", "https://youtu.be/yt1"),
+                clock=lambda: now[0], statistics_fetcher=stats,
+            )
+            short = VODShortResult(
+                vod_id="v", candidate_id="candidate_1", source_path="", output_path=short_path,
+                start=1.0, end=20.0, clip_budget=20, gemini_score=90.0, gemini_justification=None,
+                status="already_exists", candidate_start=9.0, clip_id="1.0-20.0", muted=True,
+            )
+            uploader.upload("v", short, METADATA)
+            history = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))
+            entry = history["shorts"][0]
+            self.assertEqual((entry["video_id"], entry["streamer"], entry["seconds"], entry["lead_in_seconds"]),
+                             ("yt1", "kaicenat", 19.0, 8.0))
+
+            summary = uploader.refresh_statistics()
+            self.assertIn("1200 vues", summary)
+            self.assertIsNone(uploader.refresh_statistics())  # not again before 24 hours
+            now[0] += timedelta(hours=24)
+            uploader.refresh_statistics()
+            self.assertEqual(calls, [["yt1"], ["yt1"]])
+            saved = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"][0]
+            self.assertEqual((saved["views"], saved["likes"]), (1200, 80))
+
+    def test_a_failed_reading_is_retried_an_hour_later(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            now = [datetime(2026, 10, 16, 18, 0, tzinfo=timezone.utc)]
+            (tmp / "published_shorts.json").write_text(json.dumps({"fetched_at": None, "shorts": [
+                {"video_id": "yt1", "uploaded_at": now[0].isoformat()}]}), encoding="utf-8")
+            attempts = []
+
+            def broken(ids, *args):
+                attempts.append(ids)
+                raise RuntimeError("network down")
+
+            uploader = VODShortsUploader(tmp, clock=lambda: now[0], statistics_fetcher=broken)
+            self.assertIn("non lues", uploader.refresh_statistics())
+            self.assertIsNone(uploader.refresh_statistics())
+            now[0] += timedelta(hours=1)
+            uploader.refresh_statistics()
+            self.assertEqual(len(attempts), 2)
 
 
 class RollingQuotaTests(unittest.TestCase):

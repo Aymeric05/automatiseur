@@ -147,8 +147,8 @@ def _build_prompt(
         "4 a 9 mots et 1 ou 2 emojis simples, elle tease le moment fort sans le devoiler "
         "pour que le spectateur reste jusqu'a la fin, en lien direct avec ce qui se passe "
         "dans le clip ; varie les formulations d'un candidat a l'autre. "
-        "description est une ou deux phrases fun avec des emojis qui decrivent le clip et "
-        "donnent envie de le regarder. Ni hook ni description ne doivent annoncer quelque "
+        "description est une ou deux phrases fun qui decrivent le clip et donnent envie de "
+        "le regarder, avec au moins 3 emojis bien choisis (dont un au debut).Ni hook ni description ne doivent annoncer quelque "
         "chose qui n'arrive pas dans le clip, ni contenir de gros mot ou d'insulte. "
         "transcript est le texte du clip ; context_before et context_after sont ce qui "
         "est dit juste avant et apres : juge si le clip se comprend seul et forme un "
@@ -215,6 +215,127 @@ def _parse_response(response_text: str, candidate_ids: set[str]) -> list[dict[st
     return validated
 
 
+def _generate_json(
+    prompt: str,
+    schema: dict[str, Any],
+    model: str,
+    quota_dir: Path | None,
+    daily_limit: int,
+    fallback_models: tuple[str, ...],
+) -> tuple[str, str]:
+    """Ask Gemini for JSON; returns the response text and the model that answered.
+
+    ``model`` is tried first; when it is overloaded (503) or out of quota, the
+    ``fallback_models`` are tried in turn. With ``quota_dir``, every request
+    is counted per model (``daily_limit`` each, the free-tier limit) and no
+    request is sent to a model whose daily limit is reached.
+    """
+    client = _get_gemini_client()
+    response = used_model = last_error = None
+    next_reset = None
+    for name in dict.fromkeys((model, *fallback_models)):
+        quota = DailyQuota(quota_dir / f"gemini_quota_{name}.json", daily_limit) if quota_dir else None
+        if quota is not None:
+            next_reset = quota.next_reset()
+            if not quota.available():
+                continue
+            quota.record_use()
+        try:
+            # generate_content, not the beta Interactions API: the latter has its own,
+            # much smaller quota and answered HTTP 429 while generate_content worked.
+            response = client.models.generate_content(
+                model=name,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_json_schema": schema,
+                    "automatic_function_calling": {"disable": True},  # no tools: no AFC warning
+                },
+            )
+            used_model = name
+            break
+        except Exception as error:
+            message = str(error).lower()
+            if any(marker in message for marker in QUOTA_ERROR_MARKERS):
+                if quota is not None:
+                    quota.mark_exhausted()  # Google refused: no more requests to this model today
+            elif not any(marker in message for marker in TRANSIENT_MARKERS):
+                raise GeminiEvaluationError(f"Echec de l'appel Gemini : {error}") from error
+            last_error = error  # overloaded or out of quota: try the next model
+    if response is None:
+        if last_error is None:
+            raise GeminiEvaluationError(
+                f"Quota Gemini du jour atteint pour tous les modeles ({daily_limit} requetes chacun).",
+                retry_at=next_reset,
+            )
+        quota_only = any(marker in str(last_error).lower() for marker in QUOTA_ERROR_MARKERS)
+        raise GeminiEvaluationError(
+            f"Echec de l'appel Gemini : {last_error}",
+            retry_at=next_reset if quota_only else None,
+        )
+    response_text = getattr(response, "text", None)
+    if not isinstance(response_text, str) or not response_text.strip():
+        raise GeminiEvaluationError("Gemini a retourne une reponse vide.")
+    return response_text, used_model
+
+
+RANKING_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "scores": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "score": {"type": "number", "minimum": 0, "maximum": 100},
+                },
+                "required": ["id", "score"],
+            },
+        }
+    },
+    "required": ["scores"],
+}
+
+
+def rank_reserve(
+    shorts: list[dict[str, Any]],
+    model: str = "gemini-3.6-flash",
+    quota_dir: Path | None = None,
+    daily_limit: int = 20,
+    fallback_models: tuple[str, ...] = GEMINI_FALLBACK_MODELS,
+) -> dict[str, float]:
+    """Comparative scores (0-100) of Shorts from different lives, seen side by side.
+
+    Each Short was scored by Gemini within its own live only; here they are
+    compared with each other, so that the best of all lives go out first.
+    ``shorts`` items carry an ``id`` and what describes them (streamer, game,
+    title, teaser, spoken excerpt, duration, previous justification).
+    """
+    if not shorts:
+        return {}
+    prompt = (
+        "Voici des YouTube Shorts candidats, tires de lives Twitch differents. Compare-les "
+        "ENTRE EUX et donne a chacun un score de 0 a 100 : potentiel de vues et de retention "
+        "sur YouTube Shorts, situation comprehensible sans connaitre le live, moment fort ou "
+        "drole, notoriete du streamer. Les scores doivent etre comparables entre tous les "
+        "Shorts de la liste (le meilleur proche de 100, le moins bon nettement plus bas). "
+        "Retourne uniquement un JSON valide {\"scores\":[{\"id\":\"s1\",\"score\":0}]} "
+        "avec exactement les id fournis.\n\n" + json.dumps(shorts, ensure_ascii=False)
+    )
+    response_text, _ = _generate_json(prompt, RANKING_SCHEMA, model, quota_dir, daily_limit, fallback_models)
+    try:
+        data = json.loads(response_text)
+    except json.JSONDecodeError as error:
+        raise GeminiEvaluationError("Gemini a retourne un JSON invalide.") from error
+    ids = {str(short["id"]) for short in shorts}
+    scores = {}
+    for item in data.get("scores", []) if isinstance(data, dict) else []:
+        if isinstance(item, dict) and str(item.get("id")) in ids and isinstance(item.get("score"), (int, float)):
+            scores[str(item["id"])] = max(0.0, min(100.0, float(item["score"])))
+    return scores
+
+
 def evaluate_candidates(
     candidates: list[dict[str, Any]],
     transcription: list[dict[str, Any]],
@@ -242,54 +363,10 @@ def evaluate_candidates(
     else:
         expected_count = None
 
-    client = _get_gemini_client()
     prompt = _build_prompt(context, selection_count=expected_count, streamer=streamer)
-    response = used_model = last_error = None
-    next_reset = None
-    for name in dict.fromkeys((model, *fallback_models)):
-        quota = DailyQuota(quota_dir / f"gemini_quota_{name}.json", daily_limit) if quota_dir else None
-        if quota is not None:
-            next_reset = quota.next_reset()
-            if not quota.available():
-                continue
-            quota.record_use()
-        try:
-            # generate_content, not the beta Interactions API: the latter has its own,
-            # much smaller quota and answered HTTP 429 while generate_content worked.
-            response = client.models.generate_content(
-                model=name,
-                contents=prompt,
-                config={
-                    "response_mime_type": EVALUATION_RESPONSE_FORMAT["mime_type"],
-                    "response_json_schema": EVALUATION_RESPONSE_FORMAT["schema"],
-                    "automatic_function_calling": {"disable": True},  # no tools: no AFC warning
-                },
-            )
-            used_model = name
-            break
-        except Exception as error:
-            message = str(error).lower()
-            if any(marker in message for marker in QUOTA_ERROR_MARKERS):
-                if quota is not None:
-                    quota.mark_exhausted()  # Google refused: no more requests to this model today
-            elif not any(marker in message for marker in TRANSIENT_MARKERS):
-                raise GeminiEvaluationError(f"Echec de l'appel Gemini : {error}") from error
-            last_error = error  # overloaded or out of quota: try the next model
-    if response is None:
-        if last_error is None:
-            raise GeminiEvaluationError(
-                f"Quota Gemini du jour atteint pour tous les modeles ({daily_limit} requetes chacun).",
-                retry_at=next_reset,
-            )
-        quota_only = any(marker in str(last_error).lower() for marker in QUOTA_ERROR_MARKERS)
-        raise GeminiEvaluationError(
-            f"Echec de l'appel Gemini : {last_error}",
-            retry_at=next_reset if quota_only else None,
-        )
-
-    response_text = getattr(response, "text", None)
-    if not isinstance(response_text, str) or not response_text.strip():
-        raise GeminiEvaluationError("Gemini a retourne une reponse vide.")
+    response_text, used_model = _generate_json(
+        prompt, EVALUATION_RESPONSE_FORMAT["schema"], model, quota_dir, daily_limit, fallback_models
+    )
     evaluations = _parse_response(
         response_text,
         {item["candidate_id"] for item in context},
