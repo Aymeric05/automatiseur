@@ -15,9 +15,11 @@ from datetime import datetime, timedelta, timezone
 import json
 import re
 from pathlib import Path
+import shutil
+import time
 from typing import Any, Callable
 
-from .highlights import expand_moment, split_sentences
+from .highlights import _overlap_ratio, expand_moment, split_sentences
 from .profanity import has_slur
 from .video import audio_levels
 from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata, clip_transcript_text
@@ -53,6 +55,11 @@ GEMINI_WAIT = timedelta(minutes=30)
 # this score (0-100) a moment is neither rendered nor published.
 MIN_GEMINI_SCORE = 60
 LEAD_IN_ANALYSIS_SECONDS = 20  # audio examined before a moment to find what triggers it
+MAX_SHORT_OVERLAP = 0.3  # widened moments sharing more of the shorter one are near-duplicates
+# A temporary file untouched this long belongs to a run cut short (closed window, sleep,
+# crash): a live download, render or transcription rewrites its files every few minutes.
+STALE_TEMP_SECONDS = 6 * 3600
+TEMP_MARKERS = (".tmp", ".part", ".ytdl", "_hook.png", ".ass")
 GEMINI_UNAVAILABLE_MARKERS = ("429", "resource_exhausted", "exceeded", "quota", "503", "unavailable", "high demand")
 
 
@@ -184,13 +191,13 @@ class VODAutomationPipeline:
                 "highlight_end": item.get("highlight_end", end),
             }
 
+        widened = [
+            with_context(item) for item in selection.selected
+            if item.get("gemini_interesting", True) is not False
+            and float(item.get("gemini_score", MIN_GEMINI_SCORE)) >= MIN_GEMINI_SCORE
+        ]
         selection = replace(selection, selected=tuple(
-            moment for moment in (
-                with_context(item) for item in selection.selected
-                if item.get("gemini_interesting", True) is not False
-                and float(item.get("gemini_score", MIN_GEMINI_SCORE)) >= MIN_GEMINI_SCORE
-            )
-            if not has_slurs(moment)
+            without_near_duplicates([moment for moment in widened if not has_slurs(moment)])
         ))
         if not selection.selected:
             return VODAutomationResult(
@@ -331,8 +338,24 @@ class VODAutomationPipeline:
             pass
 
 
+def without_near_duplicates(moments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Best moments first; one sharing more than MAX_SHORT_OVERLAP with a better one is dropped.
+
+    Widened moments (set-up before, full reaction after) of the same live can
+    cover the same scene: only the best Short of it is kept.
+    """
+    kept: list[dict[str, Any]] = []
+    for moment in sorted(moments, key=lambda item: -float(item.get("gemini_score") or 0)):
+        if all(_overlap_ratio(moment, other) <= MAX_SHORT_OVERLAP for other in kept):
+            kept.append(moment)
+    return kept
+
+
 def cleanup_finished_vods(input_dir: Path, output_dir: Path, active_vod_ids: set[str]) -> list[str]:
-    """Delete every file of the VODs that are done; returns their ids.
+    """Delete every file of the VODs that are done, and stale temporary files; returns the VOD ids.
+
+    Temporary files (partial downloads, cut renders, transcription chunks,
+    chat cache) untouched for ``STALE_TEMP_SECONDS`` are deleted whatever their VOD.
 
     A VOD is done when no job is left for it and none of its Shorts is in the
     reserve (Shorts of a completed VOD; the publisher keeps the reserve to its
@@ -341,6 +364,22 @@ def cleanup_finished_vods(input_dir: Path, output_dir: Path, active_vod_ids: set
     VOD state still records it, so it is never processed again. Only files
     named after a VOD id (digits) are touched.
     """
+    stale_before = time.time() - STALE_TEMP_SECONDS
+    leftovers = [
+        path
+        for directory in (input_dir, output_dir)
+        for path in directory.glob("*")
+        if path.name.split("_", 1)[0].isdigit()  # the app's own files only, never the user's
+        and any(marker in path.name for marker in TEMP_MARKERS)
+    ]
+    leftovers += list((output_dir / "tmp").glob("*"))  # transcription chunks, chat download cache
+    for path in leftovers:
+        try:
+            if path.stat().st_mtime < stale_before:
+                shutil.rmtree(path) if path.is_dir() else path.unlink()
+        except OSError:
+            pass  # in use or already gone: tried again next time
+
     files: dict[str, list[Path]] = {}
     for directory in (input_dir, output_dir):
         for path in directory.glob("*_*"):

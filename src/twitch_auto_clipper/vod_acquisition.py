@@ -24,6 +24,9 @@ MIN_FREE_BYTES = 2 * 1024**3  # never start a download with less free space
 # Unpublished Shorts expire after 48 hours: an older VOD is no longer worth processing.
 MAX_JOB_AGE_SECONDS = 48 * 3600
 TOP_STREAMER_CLIP_BUDGET = 20  # moments asked to Gemini for a streamer of the top list
+# About what the worker processes within MAX_JOB_AGE_SECONDS: worse jobs are dropped.
+MAX_QUEUED_JOBS = 40
+MEMORY_SIZE = 2000  # processed and abandoned streams remembered (never queued twice)
 AUDIO_SUFFIXES = frozenset({".mp4", ".m4a", ".aac", ".ts", ".webm", ".mkv", ".mp3", ".opus"})
 
 
@@ -166,13 +169,10 @@ class TwitchVODAcquisitionManager:
         """
         now = self._clock()
         with self._lock:
+            self._purge_locked(now)
             due = sorted(
-                (
-                    -self._budget(job["stream"]["broadcaster_login"], int(job["clip_budget"])),
-                    -_peak(job),
-                    job["ended_at"],
-                    stream_id,
-                )
+                # A VOD whose audio is already downloaded is finished first: its files never wait.
+                (not self._started(job), *self._priority(stream_id, job))
                 for stream_id, job in self._jobs.items()
                 if _parse(job["next_attempt_at"]) <= now
             )
@@ -299,6 +299,38 @@ class TwitchVODAcquisitionManager:
         job["next_attempt_at"] = _iso(self._clock() + timedelta(seconds=delay))
         return False
 
+    def _priority(self, stream_id: str, job: dict[str, Any]) -> tuple[Any, ...]:
+        """Top streamers first, then the highest peak viewers, then the oldest end."""
+        budget = self._budget(job["stream"]["broadcaster_login"], int(job["clip_budget"]))
+        return -budget, -_peak(job), job["ended_at"], stream_id
+
+    def _started(self, job: dict[str, Any]) -> bool:
+        vod_id = job.get("vod_id")
+        return bool(vod_id) and find_downloaded_audio(self.input_dir, str(vod_id)) is not None
+
+    def _purge_locked(self, now: datetime) -> None:
+        """Drop the jobs no longer worth processing; the worker's cleanup deletes their files.
+
+        Older than MAX_JOB_AGE_SECONDS, their Shorts would be stale; beyond the
+        MAX_QUEUED_JOBS best ones, they would never be reached before that.
+        """
+        ranked = sorted(self._jobs.items(), key=lambda entry: self._priority(*entry))
+        dropped = False
+        for position, (stream_id, job) in enumerate(ranked):
+            too_old = now - _parse(job["ended_at"]) > timedelta(seconds=MAX_JOB_AGE_SECONDS)
+            if too_old or position >= MAX_QUEUED_JOBS:
+                reason = (
+                    "trop ancien : ses Shorts ne seraient plus publies" if too_old
+                    else "file d'attente pleine : des VOD plus prioritaires passent avant"
+                )
+                self._abandon_locked(stream_id, job.get("vod_id"), reason)
+                if job.get("vod_id"):  # its audio and any partial download (the worker cleans the rest)
+                    for path in self.input_dir.glob(f"{job['vod_id']}_*"):
+                        path.unlink(missing_ok=True)
+                dropped = True
+        if dropped:
+            self._save_state()
+
     def _budget(self, login: str, budget: int) -> int:
         # Also applies to jobs queued before the streamer joined the list.
         if budget > 0 and login.lower() in self.top_streamers:
@@ -368,6 +400,15 @@ class TwitchVODAcquisitionManager:
         self._abandoned = dict(abandoned)
 
     def _save_state(self) -> None:
+        # Only recent streams can end again: older memories are dropped, oldest first.
+        for memory in (self._processed_streams, self._abandoned):
+            for stream_id in list(memory)[: max(0, len(memory) - MEMORY_SIZE)]:
+                del memory[stream_id]
+        if len(self._processed_vod_ids) > MEMORY_SIZE:
+            # Numeric ids: the longest, then the largest, are the most recent.
+            self._processed_vod_ids = set(
+                sorted(self._processed_vod_ids, key=lambda vod_id: (len(vod_id), vod_id))[-MEMORY_SIZE:]
+            )
         state = {
             "processed_streams": self._processed_streams,
             "processed_vod_ids": sorted(self._processed_vod_ids),

@@ -80,6 +80,7 @@ class VODProcessingTests(unittest.TestCase):
                 video_path,
                 language="en",
                 device="auto",
+                temp_dir=root / "output" / "tmp",
             )
             chat_downloader.assert_called_once_with(
                 "https://www.twitch.tv/videos/vod-1",

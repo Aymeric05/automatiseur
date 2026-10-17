@@ -112,6 +112,7 @@ def transcribe_video(
     device: str = "cpu",
     compute_type: str = "int8",
     chunk_seconds: float = CHUNK_SECONDS,
+    temp_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Transcribe a video or audio file using CPU/int8 by default.
 
@@ -128,11 +129,11 @@ def transcribe_video(
         if cuda_available():
             try:
                 return transcribe_video(
-                    input_path, GPU_MODEL_SIZE, language, "cuda", "float16", chunk_seconds
+                    input_path, GPU_MODEL_SIZE, language, "cuda", "float16", chunk_seconds, temp_dir
                 )
             except TranscriptionError:
                 pass  # e.g. GPU out of memory: the CPU still works
-        return transcribe_video(input_path, model_size, language, "cpu", "int8", chunk_seconds)
+        return transcribe_video(input_path, model_size, language, "cpu", "int8", chunk_seconds, temp_dir)
 
     try:
         model = _get_whisper_model(model_size, device, compute_type)
@@ -150,7 +151,9 @@ def transcribe_video(
         if duration is None or duration <= chunk_seconds:
             return transcribe(input_path, 0.0)
         segments: list[dict[str, Any]] = []
-        with tempfile.TemporaryDirectory() as directory:
+        if temp_dir is not None:
+            temp_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=temp_dir) as directory:
             chunk_path = Path(directory) / "chunk.wav"
             start = 0.0
             while start < duration:

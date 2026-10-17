@@ -92,6 +92,27 @@ def _message_text(message: dict[str, Any]) -> str:
     return ""
 
 
+def compact_chat(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Messages reduced to what the analysis reads: time, author, text, emotes.
+
+    A long VOD's raw replay weighs hundreds of MB; this keeps the same
+    structure (``load_chat_messages`` reads it back) at a fraction of the size.
+    """
+    return [
+        {
+            "timestamp": message["timestamp"],
+            "message": {
+                "commenter": {"_id": _author(message)},
+                "message": {
+                    "body": _message_text(message),
+                    "fragments": [{"text": emote, "emoticon": True} for emote in _emotes(message)],
+                },
+            },
+        }
+        for message in messages
+    ]
+
+
 def add_chat_messages(
     candidates: list[dict[str, Any]],
     messages: list[dict[str, Any]],
