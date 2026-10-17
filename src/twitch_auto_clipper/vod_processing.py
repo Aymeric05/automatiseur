@@ -26,6 +26,7 @@ class VODProcessingResult:
     chat_status: str
     errors: tuple[str, ...] = ()
     game_name: str = ""
+    emotions_path: Path | None = None  # laughter, screams... found in the audio
 
 
 class VODProcessingPipeline:
@@ -36,10 +37,13 @@ class VODProcessingPipeline:
         output_dir: Path = Path("data/output"),
         transcriber: Callable[..., list[dict[str, Any]]] | None = None,
         chat_downloader: Callable[[str, Path], Path] | None = None,
+        emotion_detector: Callable[[Path], list[dict[str, Any]]] | None = None,
     ) -> None:
         self.output_dir = output_dir
         self.transcriber = transcriber or transcribe_video
         self.chat_downloader = chat_downloader or download_twitch_chat
+        # None: no emotion candidates (the selection relies on the transcript and chat).
+        self.emotion_detector = emotion_detector
 
     def process(self, acquisition: VODAcquisitionResult) -> VODProcessingResult:
         if (
@@ -53,6 +57,7 @@ class VODProcessingPipeline:
         transcript_path = self.output_dir / f"{vod_id}_transcript.json"
         chat_path = self.output_dir / f"{vod_id}_chat.json"
         timestamped_chat_path = self.output_dir / f"{vod_id}_chat_timestamps.json"
+        emotions_path = self.output_dir / f"{vod_id}_emotions.json"
         manifest_path = self.output_dir / f"{vod_id}_processing.json"
         self.output_dir.mkdir(parents=True, exist_ok=True)
         manifest = self._load_manifest(manifest_path)
@@ -98,6 +103,19 @@ class VODProcessingPipeline:
                 errors.append(f"transcription: {error}")
                 self._save_manifest(manifest_path, manifest)
 
+        if (
+            self.emotion_detector is not None
+            and transcription_status != "error"
+            and not self._valid_json_list(emotions_path)
+        ):
+            try:
+                emotions_path.write_text(
+                    json.dumps(self.emotion_detector(acquisition.downloaded_path)), encoding="utf-8"
+                )
+                manifest.pop("emotions_error", None)
+            except Exception as error:  # optional: the VOD goes on without emotion candidates
+                manifest["emotions_error"] = str(error)
+
         if manifest.get("chat_status") == "downloaded" and self._valid_json_list(
             timestamped_chat_path
         ):
@@ -128,6 +146,7 @@ class VODProcessingPipeline:
             chat_status=chat_status,
             errors=tuple(errors),
             game_name=acquisition.game_name,
+            emotions_path=emotions_path if self.emotion_detector is not None else None,
         )
 
     def _process_chat(

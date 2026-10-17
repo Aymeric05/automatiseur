@@ -11,6 +11,7 @@ import subprocess
 import sys
 from threading import Event, Lock, Thread
 
+from .audio_events import detect_emotions
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
 from .gemini_evaluation import (
@@ -483,7 +484,9 @@ def process_vod(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
         else None
     )
     automation = VODAutomationPipeline(
-        processing_pipeline=VODProcessingPipeline(output_dir, chat_downloader=chat_downloader),
+        processing_pipeline=VODProcessingPipeline(
+            output_dir, chat_downloader=chat_downloader, emotion_detector=detect_emotions
+        ),
         highlight_selector=VODHighlightSelector(
             output_dir,
             model=args.gemini_model,
@@ -613,7 +616,7 @@ def main() -> int:
                 ),
             )
         automation = VODAutomationPipeline(
-            processing_pipeline=VODProcessingPipeline(output_dir),
+            processing_pipeline=VODProcessingPipeline(output_dir, emotion_detector=detect_emotions),
             highlight_selector=VODHighlightSelector(
                 output_dir,
                 model=args.gemini_model,

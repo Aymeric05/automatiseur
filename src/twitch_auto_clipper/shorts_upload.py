@@ -31,7 +31,9 @@ PROFANITY_PENALTY = 10
 PUBLICATION_HOUR = timedelta(hours=1)
 # Gemini compares the reserve's Shorts side by side when it changed, at most this often.
 ARBITRATION_INTERVAL = timedelta(hours=3)
-STATISTICS_INTERVAL = timedelta(hours=24)  # views of the published Shorts, read once a day
+STATISTICS_INTERVAL = timedelta(hours=6)  # views of the published Shorts, read 4 times a day
+# Views kept at these ages (days), to compare Shorts published on different days.
+VIEW_SNAPSHOT_DAYS = (1, 3, 7)
 STATISTICS_DAYS = 30  # Shorts followed after their publication
 PUBLICATION_MARGIN = timedelta(minutes=5)
 # A top streamer "stands out" with at least this many times the peak viewers of the next one.
@@ -444,7 +446,9 @@ class VODShortsUploader:
         return ready
 
     def refresh_statistics(self) -> str | None:
-        """Once a day, read the views of the Shorts published in the last 30 days.
+        """Every few hours, read the views of the Shorts published in the last 30 days.
+
+        The views a Short has at 1, 3 and 7 days are kept (``views_1d``...).
 
         Returns a summary line when they were read (or why they could not be).
         """
@@ -476,6 +480,10 @@ class VODShortsUploader:
             return f"Statistiques YouTube non lues ({error}) : nouvel essai dans une heure."
         for entry in followed:
             entry.update(statistics.get(entry["video_id"], {}))
+            age = now - datetime.fromisoformat(entry["uploaded_at"])
+            for days in VIEW_SNAPSHOT_DAYS:
+                if age >= timedelta(days=days) and "views" in entry:
+                    entry.setdefault(f"views_{days}d", entry["views"])
         history["fetched_at"] = now.isoformat()
         self._write_manifest(self.history_path, history)
         total = sum(entry.get("views", 0) for entry in followed)
@@ -501,14 +509,23 @@ class VODShortsUploader:
         """Remember the published Short and what it was made of, to compare views later."""
         history = self._load_history()
         lead_in = short.candidate_start - short.start if short.candidate_start is not None else None
+        generated = manifest.get("generated_shorts")
+        record = generated.get(short.key) if isinstance(generated, dict) else None
+        record = record if isinstance(record, dict) else {}
+        streamer = str(manifest.get("broadcaster_login", ""))
         history["shorts"].append({
             "video_id": video_id,
             "url": url,
             "title": metadata.title,
             "vod_id": short.vod_id,
-            "streamer": str(manifest.get("broadcaster_login", "")),
+            "streamer": streamer,
+            "list_rank": self.streamer_ranks.get(streamer.lower()),  # place in top_streamers.txt
             "peak_viewers": manifest.get("peak_viewers"),
             "gemini_score": short.gemini_score,
+            "compared_score": self._comparative_scores().get(f"{short.vod_id}:{short.key}"),
+            "source": record.get("source"),  # transcript, chat or emotion
+            "emotion": record.get("emotion"),
+            "hook": record.get("hook"),
             "seconds": round(short.end - short.start, 1),
             "lead_in_seconds": round(lead_in, 1) if lead_in is not None else None,
             "muted": short.muted,

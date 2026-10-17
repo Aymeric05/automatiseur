@@ -416,7 +416,7 @@ class PublishNextTests(unittest.TestCase):
 
 
 class StatisticsTests(unittest.TestCase):
-    def test_published_shorts_are_remembered_and_their_views_read_once_a_day(self):
+    def test_published_shorts_are_remembered_and_their_views_read_every_6_hours(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)
             short_path = tmp / "v_1.0-20.0_short.mp4"
@@ -446,12 +446,45 @@ class StatisticsTests(unittest.TestCase):
 
             summary = uploader.refresh_statistics()
             self.assertIn("1200 vues", summary)
-            self.assertIsNone(uploader.refresh_statistics())  # not again before 24 hours
-            now[0] += timedelta(hours=24)
+            self.assertIsNone(uploader.refresh_statistics())  # not again before 6 hours
+            now[0] += timedelta(hours=6)
             uploader.refresh_statistics()
             self.assertEqual(calls, [["yt1"], ["yt1"]])
             saved = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"][0]
             self.assertEqual((saved["views"], saved["likes"]), (1200, 80))
+
+    def test_what_a_short_was_made_of_and_its_views_at_1_3_7_days_are_kept(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            short_path = tmp / "v_1.0-20.0_short.mp4"
+            short_path.write_bytes(b"short")
+            (tmp / "v_processing.json").write_text(json.dumps({
+                "broadcaster_login": "KaiCenat",
+                "generated_shorts": {"1.0-20.0": {"source": "emotion", "emotion": "laughter", "hook": "Wait 😂"}},
+            }), encoding="utf-8")
+            (tmp / "reserve_ranking.json").write_text(json.dumps({"scores": {"v:1.0-20.0": 77}}), encoding="utf-8")
+            now = [datetime(2026, 10, 16, 18, 0, tzinfo=timezone.utc)]
+            views = [100]
+            uploader = VODShortsUploader(
+                tmp, uploader=lambda *a, **k: ("yt1", "https://youtu.be/yt1"), clock=lambda: now[0],
+                statistics_fetcher=lambda ids, *a: {"yt1": {"views": views[0]}}, streamer_ranks={"kaicenat": 3},
+            )
+            uploader.upload("v", VODShortResult(
+                vod_id="v", candidate_id="candidate_1", source_path="", output_path=short_path,
+                start=1.0, end=20.0, clip_budget=20, gemini_score=90.0, gemini_justification=None,
+                status="already_exists", clip_id="1.0-20.0",
+            ), METADATA)
+            for hours, count in ((6, 300), (25, 1000), (73, 5000), (100, 6000)):
+                now[0] = datetime(2026, 10, 16, 18, 0, tzinfo=timezone.utc) + timedelta(hours=hours)
+                views[0] = count
+                uploader.refresh_statistics()
+            entry = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"][0]
+            self.assertEqual(
+                [entry[key] for key in ("source", "emotion", "hook", "compared_score", "list_rank")],
+                ["emotion", "laughter", "Wait 😂", 77, 3],
+            )
+            self.assertEqual((entry["views"], entry["views_1d"], entry["views_3d"]), (6000, 1000, 5000))
+            self.assertNotIn("views_7d", entry)
 
     def test_a_failed_reading_is_retried_an_hour_later(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -273,6 +273,7 @@ class VODAutomationPipeline:
             processing.timestamped_chat_path,
             processing.transcript_path,
             *self.output_dir.glob(f"{vod_id}_highlights.json"),
+            *self.output_dir.glob(f"{vod_id}_emotions.json"),
             *self.output_dir.glob(f"{vod_id}_gemini_selection_*.json"),
         ]
         if "_audio." in source_path.name:  # never a full video the user put there
