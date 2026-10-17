@@ -101,19 +101,25 @@ class VODShortsGenerationResult:
         return sum(1 for short in self.shorts if short.status == "error")
 
 
-def _build_vertical_filter_zoomed_out(input_path: Path | None = None) -> str:
-    """Build a centered 9:16 filter slightly wider than the tight crop.
+def _build_vertical_filter_zoomed_out(input_path: Path | None = None, focus_x: float | None = None) -> str:
+    """Build a 9:16 filter slightly wider than the tight crop.
 
-    The source is scaled to 1920px high, then a centered window
-    ``ZOOM_OUT_EXTRA_WIDTH`` pixels wider than the 1080px Shorts width is kept
-    and scaled back down to fit 1080x1920. Small black bars fill the remaining
-    height. No face/focus detection is used: a gameplay stream's facecam usually
-    sits in a corner, and cropping on it would cut the game off the screen.
+    The source is scaled to 1920px high, then a window ``ZOOM_OUT_EXTRA_WIDTH``
+    pixels wider than the 1080px Shorts width is kept and scaled back down to
+    fit 1080x1920. Small black bars fill the remaining height. The window is
+    centered on ``focus_x`` (0 to 1 of the width, see ``focus.find_focus``),
+    else on the middle. Never on the streamer's face: a gameplay stream's
+    facecam usually sits in a corner, and cropping on it would cut the game off.
     """
     window = 1080 + ZOOM_OUT_EXTRA_WIDTH
+    position = (
+        f":'max(0,min(iw-ow,{min(max(float(focus_x), 0.0), 1.0):.3f}*iw-ow/2))':0"
+        if focus_x is not None
+        else ""
+    )
     return (
         "scale=-2:1920,"
-        f"crop='min(iw,{window})':ih,"
+        f"crop='min(iw,{window})':ih{position},"
         "scale=1080:1920:force_original_aspect_ratio=decrease,"
         "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,"
         "setsar=1"
@@ -204,7 +210,7 @@ class VODShortsGenerator:
         self,
         output_dir: Path = Path("data/output"),
         ffmpeg_runner: Callable[[list[str]], None] | None = None,
-        filter_builder: Callable[[Path], str] | None = None,
+        filter_builder: Callable[[Path, float | None], str] | None = None,
         duration_probe: Callable[[Path], float] | None = None,
         before: float = 0.5,  # candidates are sentence-aligned: keep a short breath only
         after: float = 1.0,
@@ -369,7 +375,7 @@ class VODShortsGenerator:
             source_path = source()
             command = _build_short_ffmpeg_command(
                 source_path, temporary_path, start, end,
-                self._filter_builder(source_path), subtitles_path, hook_path,
+                self._filter_builder(source_path, self._number(item.get("focus_x"))), subtitles_path, hook_path,
                 mute=mute,
             )
             self._ffmpeg_runner(command)

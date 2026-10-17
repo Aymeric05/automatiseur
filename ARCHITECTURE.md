@@ -29,6 +29,7 @@ pipeline. Each section maps to an implemented component in `src/twitch_auto_clip
 | `candidate_clip.py` | Manual command: one vertical clip from a saved highlight candidate |
 | `framing.py` | CPU face detection (OpenCV Haar cascade) for 9:16 crop positioning |
 | `video.py` | FFmpeg command builder and executor for vertical clip output |
+| `focus.py` | Where the important part of a screen-sharing stream is (Gemini, one request per VOD) |
 | `subtitles.py` | Generates ASS subtitle files from word-level timestamps |
 | `youtube.py` | YouTube Data API v3 upload with OAuth 2.0 (Desktop flow) |
 | `cli.py` | Main CLI entry point (`tac` / `python -m twitch_auto_clipper`) |
@@ -138,7 +139,12 @@ A lock file (`data/output/.monitor.lock`) prevents two monitors on the same data
 
 ## Vertical Framing
 
-`framing.py` samples 5 evenly-spaced frames from the source video and runs OpenCV's
+Automated Shorts: `focus.py` grabs one 360p frame per selected moment and asks Gemini
+(`gemini-flash-lite-latest` first, one request per VOD) for the box of what matters on
+screen; the crop window is shifted to its center (`focus_x` in the selection item).
+Camera shots (full-frame webcam, IRL categories) and any failure keep a centered crop.
+
+Manual clip commands: `framing.py` samples 5 evenly-spaced frames from the source video and runs OpenCV's
 Haar cascade face detector on each. If faces are detected, the 9:16 crop window is
 shifted horizontally to center on the largest detected face. If OpenCV is unavailable,
 not installed, or no faces are detected, a centered crop is used as fallback.

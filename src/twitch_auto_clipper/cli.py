@@ -14,6 +14,7 @@ from threading import Event, Lock, Thread
 from .audio_events import detect_emotions
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
+from .focus import find_focus
 from .gemini_evaluation import (
     GeminiEvaluationError,
     load_json,
@@ -626,6 +627,8 @@ def main() -> int:
             output_dir=output_dir,
             video_source=_twitch_video,  # no full VOD video on disk
             delete_sources_on_success=True,  # audio and chat, once the VOD is completed
+            # Screen-sharing streams: each Short centered on what matters, not on the middle.
+            focus_finder=partial(find_focus, quota_dir=output_dir, daily_limit=daily_gemini),
         )
 
         def report(line: str, is_error: bool = False) -> None:

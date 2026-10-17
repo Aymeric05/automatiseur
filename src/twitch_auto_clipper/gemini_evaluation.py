@@ -229,7 +229,7 @@ def _parse_response(response_text: str, candidate_ids: set[str]) -> list[dict[st
 
 
 def _generate_json(
-    prompt: str,
+    prompt: Any,  # text, or a list of text and images
     schema: dict[str, Any],
     model: str,
     quota_dir: Path | None,

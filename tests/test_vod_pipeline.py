@@ -1,5 +1,6 @@
 """Tests for the end-to-end VOD automation pipeline (all externals mocked)."""
 
+from dataclasses import replace
 from pathlib import Path
 import json
 import tempfile
@@ -100,6 +101,43 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertEqual(set(manifest["generated_shorts"]), keys)
         self.assertEqual(set(manifest["shorts_metadata"]), keys)
         self.assertEqual(manifest["automation_status"], "completed")
+
+    def _render_with_focus(self, focus, game_name=""):
+        commands = []
+
+        def ffmpeg(command):
+            commands.append(" ".join(command))
+            fake_ffmpeg(command)
+
+        pipeline = self._pipeline(ffmpeg=ffmpeg)
+        pipeline.focus_finder = focus
+        result = pipeline.run(replace(self._acquisition(budget=2), game_name=game_name))
+        self.assertEqual(result.status, "completed", format_vod_automation_result(result))
+        return commands
+
+    @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
+    def test_screen_shorts_are_centered_on_what_matters(self, gemini):
+        asked = []
+
+        def focus(vod_id, times):
+            asked.append((vod_id, len(times)))
+            return [0.27, None]  # the second one is filmed with a camera
+
+        commands = self._render_with_focus(focus)
+        self.assertEqual(asked, [("vod_1", 2)])
+        self.assertEqual(sum("0.270*iw-ow/2" in command for command in commands), 1)
+
+    @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
+    def test_shorts_stay_centered_when_the_focus_is_unknown_or_the_stream_is_irl(self, gemini):
+        def broken(vod_id, times):
+            raise RuntimeError("Gemini unavailable")
+
+        self.assertFalse(any("iw-ow/2" in command for command in self._render_with_focus(broken)))
+        for path in self.tmp.glob("vod_1_*"):
+            path.unlink()
+        asked = []
+        self._render_with_focus(lambda vod_id, times: asked.append(times) or [0.27] * len(times), "IRL")
+        self.assertEqual(asked, [])
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_completed_vod_shorts_are_published_best_score_first_then_cleaned_up(self, gemini):

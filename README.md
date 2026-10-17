@@ -49,7 +49,7 @@ to select the best candidates for vertical short-form video clips.
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — for transcription
 - `google-genai` Python package — for Gemini evaluation
 - `opencv-python-headless` — optional, face-aware framing for the manual clip commands
-  (`pip install -e .[framing]`); automated Shorts always use a centered frame
+  (`pip install -e .[framing]`); automated Shorts are framed by Gemini instead (see below)
 - Google OAuth Desktop credentials — for YouTube upload
 
 Verify FFmpeg is available:
@@ -173,7 +173,13 @@ views, likes and comments on YouTube, and keeps the views each Short had at 1, 3
 (`views_1d`, `views_3d`, `views_7d`), to tune the choices on real results. Gemini also writes each Short's title (40 to 70 characters, with the streamer's name; the
 description quotes a short sentence of the moment, not the whole clip). In the ranking, the
 first streamers of `top_streamers.txt` get a bonus (+10 points for the first 5, +5 up to the
-15th), so the biggest win at a similar quality. The views of the published Shorts count a
+15th), so the biggest win at a similar quality. When the streamer shows their screen, what
+matters (the video, the chart, the game) is often pushed aside by the chat, a facecam or
+other windows: before rendering a VOD's Shorts, the app grabs one 360p frame of each moment
+(a few MB in all) and asks Gemini, in a single request, where the important element is; each
+Short is then centered on it rather than on the middle (never just on the streamer's face).
+Streams filmed with a camera (webcam in full frame, IRL categories) stay centered, and so
+does every Short when Gemini or Twitch cannot answer. The views of the published Shorts count a
 little too: a streamer whose Shorts get more views than the channel's usual gains up to 3
 points, one below it loses up to 3 (never a streamer of `top_streamers.txt`). Views are
 compared in log scale, at 7, 3 or 1 days, and a streamer's average is pulled towards the
