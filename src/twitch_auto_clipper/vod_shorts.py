@@ -72,6 +72,7 @@ class VODShortResult:
     source: str = "transcript"
     emotion: str | None = None
     hook: str | None = None
+    focus_x: float | None = None  # where the crop is centered (0 to 1), None: the middle
 
     @property
     def key(self) -> str:
@@ -351,6 +352,7 @@ class VODShortsGenerator:
                 source=str(item.get("source") or "transcript"),
                 emotion=item.get("emotion"),
                 hook=item.get("gemini_hook"),
+                focus_x=self._number(item.get("focus_x")),
                 **extra,
             )
 
@@ -525,6 +527,7 @@ class VODShortsGenerator:
                     "source": short.source,
                     "emotion": short.emotion,
                     "hook": short.hook,
+                    "focus_x": short.focus_x,
                 }
                 errors.pop(short.key, None)
             elif short.error:
