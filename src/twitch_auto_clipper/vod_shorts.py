@@ -67,6 +67,11 @@ class VODShortResult:
     clip_id: str | None = None
     description: str | None = None  # Gemini's teaser for the YouTube description
     muted: bool = False  # swear words were muted (and blurred in the subtitles)
+    # Statistics only: where the moment comes from ("transcript", "chat" or "emotion"),
+    # the emotion heard in it and its hook.
+    source: str = "transcript"
+    emotion: str | None = None
+    hook: str | None = None
 
     @property
     def key(self) -> str:
@@ -337,6 +342,9 @@ class VODShortsGenerator:
                 candidate_end=candidate_end,
                 clip_id=key,
                 description=item.get("gemini_description"),
+                source=str(item.get("source") or "transcript"),
+                emotion=item.get("emotion"),
+                hook=item.get("gemini_hook"),
                 **extra,
             )
 
@@ -508,6 +516,9 @@ class VODShortsGenerator:
                     or bool((existing.get(short.key) or {}).get("profanity_filtered")),
                     "muted": short.muted if short.status == "generated"
                     else bool((existing.get(short.key) or {}).get("muted")),
+                    "source": short.source,
+                    "emotion": short.emotion,
+                    "hook": short.hook,
                 }
                 errors.pop(short.key, None)
             elif short.error:

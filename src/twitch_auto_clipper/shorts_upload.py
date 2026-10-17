@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
+import math
 from pathlib import Path
 import random
 from typing import Any, Callable, NamedTuple
@@ -31,7 +32,9 @@ PROFANITY_PENALTY = 10
 PUBLICATION_HOUR = timedelta(hours=1)
 # Gemini compares the reserve's Shorts side by side when it changed, at most this often.
 ARBITRATION_INTERVAL = timedelta(hours=3)
-STATISTICS_INTERVAL = timedelta(hours=24)  # views of the published Shorts, read once a day
+STATISTICS_INTERVAL = timedelta(hours=6)  # views of the published Shorts, read 4 times a day
+# Views kept at these ages (days), to compare Shorts published on different days.
+VIEW_SNAPSHOT_DAYS = (1, 3, 7)
 STATISTICS_DAYS = 30  # Shorts followed after their publication
 PUBLICATION_MARGIN = timedelta(minutes=5)
 # A top streamer "stands out" with at least this many times the peak viewers of the next one.
@@ -39,6 +42,12 @@ STANDOUT_FACTOR = 2
 FAVORED_SCORE_BONUS = 15  # added to the Gemini score (0-100) of favored streamers' Shorts
 # The biggest streamers of the list win at a similar quality: (rank at most, bonus).
 RANK_BONUSES = ((5, 10), (15, 5))
+# Streamers whose Shorts get more views than the channel's usual win a few points, and those
+# below it lose a few (except the listed ones). Shorts views are partly luck: the effect stays
+# small and grows with the number of Shorts measured.
+AUDIENCE_POINTS_PER_DECADE = 4  # 10 times the channel's usual views (in log scale)
+AUDIENCE_PRIOR_SHORTS = 4  # a streamer's average counts for n / (n + 4): 2 Shorts weigh a third
+AUDIENCE_MAX_POINTS = 3
 
 
 @dataclass(frozen=True)
@@ -289,8 +298,9 @@ class VODShortsUploader:
         peak viewers of the next one) goes first, then the other listed
         streamers, then everyone else; within each group, the best Gemini
         score (plus ``FAVORED_SCORE_BONUS`` for ``favored_streamers`` and
-        ``RANK_BONUSES`` for the first ones of the list, minus
-        ``PROFANITY_PENALTY`` when swear words were muted), then the biggest
+        ``RANK_BONUSES`` for the first ones of the list, plus or minus a few
+        ``_audience_points``, minus ``PROFANITY_PENALTY`` when swear words were
+        muted), then the biggest
         clip budget. A Short whose last upload failed goes last, so it never
         blocks the others.
         """
@@ -305,6 +315,7 @@ class VODShortsUploader:
             else None
         )
         compared = self._comparative_scores()
+        audience = self._audience_points()
         return lambda item: (
             not item.failed,
             item.login == standout,
@@ -312,13 +323,49 @@ class VODShortsUploader:
             compared.get(self._reserve_id(item), item.short.gemini_score or 0)
             + (FAVORED_SCORE_BONUS if item.login in self.favored_streamers else 0)
             - (PROFANITY_PENALTY if item.muted else 0)
-            + self._rank_bonus(item.login),
+            + self._rank_bonus(item.login)
+            + audience.get(item.login, 0.0),
             item.short.clip_budget,
         )
 
     def _rank_bonus(self, login: str) -> int:
         rank = self.streamer_ranks.get(login)
         return next((bonus for last, bonus in RANK_BONUSES if rank is not None and rank <= last), 0)
+
+    def _audience_points(self) -> dict[str, float]:
+        """A few points per streamer, from the views of their published Shorts.
+
+        Each Short counts with its most mature views (at 7, 3 or 1 days), in
+        log scale; a streamer's average is compared with the channel's, pulled
+        towards it when few Shorts are measured (``AUDIENCE_PRIOR_SHORTS``) and
+        kept within ``AUDIENCE_MAX_POINTS``. A listed streamer never loses points.
+        """
+        streamers: dict[str, list[float]] = {}
+        everyone: list[float] = []
+        for entry in self._load_history()["shorts"]:
+            views = next(
+                (entry[key] for key in ("views_7d", "views_3d", "views_1d")
+                 if isinstance(entry.get(key), (int, float))),
+                None,
+            )
+            if views is None:
+                continue  # too recent: its views say nothing yet
+            everyone.append(math.log10(views + 1))
+            if entry.get("streamer"):
+                streamers.setdefault(str(entry["streamer"]).lower(), []).append(everyone[-1])
+        if not everyone:
+            return {}
+        usual = sum(everyone) / len(everyone)
+        points = {}
+        for login, values in streamers.items():
+            shift = (
+                AUDIENCE_POINTS_PER_DECADE * (sum(values) / len(values) - usual)
+                * len(values) / (len(values) + AUDIENCE_PRIOR_SHORTS)
+            )
+            if login in self.top_streamers:
+                shift = max(shift, 0.0)
+            points[login] = max(-AUDIENCE_MAX_POINTS, min(AUDIENCE_MAX_POINTS, shift))
+        return points
 
     @staticmethod
     def _reserve_id(item: _ReadyShort) -> str:
@@ -444,7 +491,9 @@ class VODShortsUploader:
         return ready
 
     def refresh_statistics(self) -> str | None:
-        """Once a day, read the views of the Shorts published in the last 30 days.
+        """Every few hours, read the views of the Shorts published in the last 30 days.
+
+        The views a Short has at 1, 3 and 7 days are kept (``views_1d``...).
 
         Returns a summary line when they were read (or why they could not be).
         """
@@ -476,6 +525,10 @@ class VODShortsUploader:
             return f"Statistiques YouTube non lues ({error}) : nouvel essai dans une heure."
         for entry in followed:
             entry.update(statistics.get(entry["video_id"], {}))
+            age = now - datetime.fromisoformat(entry["uploaded_at"])
+            for days in VIEW_SNAPSHOT_DAYS:
+                if age >= timedelta(days=days) and "views" in entry:
+                    entry.setdefault(f"views_{days}d", entry["views"])
         history["fetched_at"] = now.isoformat()
         self._write_manifest(self.history_path, history)
         total = sum(entry.get("views", 0) for entry in followed)
@@ -501,14 +554,23 @@ class VODShortsUploader:
         """Remember the published Short and what it was made of, to compare views later."""
         history = self._load_history()
         lead_in = short.candidate_start - short.start if short.candidate_start is not None else None
+        generated = manifest.get("generated_shorts")
+        record = generated.get(short.key) if isinstance(generated, dict) else None
+        record = record if isinstance(record, dict) else {}
+        streamer = str(manifest.get("broadcaster_login", ""))
         history["shorts"].append({
             "video_id": video_id,
             "url": url,
             "title": metadata.title,
             "vod_id": short.vod_id,
-            "streamer": str(manifest.get("broadcaster_login", "")),
+            "streamer": streamer,
+            "list_rank": self.streamer_ranks.get(streamer.lower()),  # place in top_streamers.txt
             "peak_viewers": manifest.get("peak_viewers"),
             "gemini_score": short.gemini_score,
+            "compared_score": self._comparative_scores().get(f"{short.vod_id}:{short.key}"),
+            "source": record.get("source"),  # transcript, chat or emotion
+            "emotion": record.get("emotion"),
+            "hook": record.get("hook"),
             "seconds": round(short.end - short.start, 1),
             "lead_in_seconds": round(lead_in, 1) if lead_in is not None else None,
             "muted": short.muted,

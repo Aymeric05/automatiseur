@@ -153,19 +153,31 @@ with it, so closing the app frees the connection at once.
 
 Besides the transcript, up to a third of the candidates come from chat spikes (10 seconds with
 at least 3 times the messages of the surrounding minutes): they catch visual moments the
-streamer does not comment on. A top streamer's VOD sends 60 candidates to Gemini (30
-otherwise). Moments that Gemini scores below 60 (out of 100) are neither rendered nor published. Each
+streamer does not comment on. Up to a sixth come from the audio itself: after the
+transcription, the YAMNet sound classifier (16 MB ONNX model, Apache-2.0, downloaded once
+into the Hugging Face cache, about 5 minutes on the CPU for a 12-hour VOD) finds laughter,
+screams, gasps, crying and cheering, which Whisper transcribes poorly or not at all. Gemini
+sees the emotion heard in each candidate (`audio_event`) and checks it against the
+transcript, since a game or a watched video can laugh or scream too. When the model cannot
+be loaded, the VOD simply goes on without these candidates. A top streamer's VOD sends 60
+candidates to Gemini (30 otherwise). Moments that Gemini scores below 60 (out of 100) are neither rendered nor published. Each
 Short shows what triggers the reaction: the app reads the loudness of the 20 seconds of audio
 before the moment, finds where the excitement starts (a death, a goal, a scream Whisper does
 not transcribe) and starts 4 seconds before it (at most 15 seconds earlier; 3 seconds when
 nothing stands out). It then lets the reaction play out while the streamer keeps talking:
 18 to 45 seconds in all. Every published Short is recorded in
-`data/output/published_shorts.json` (streamer, score, duration, lead-in), and once a day
-the app reads their views, likes and comments on YouTube, to tune the choices on real
-results. Gemini also writes each Short's title (40 to 70 characters, with the streamer's name; the
+`data/output/published_shorts.json` (streamer and place in the list, per-live and
+comparative scores, where the moment comes from: transcript, chat or emotion, the emotion
+heard, hook, title, duration, lead-in, publication time). Every 6 hours the app reads their
+views, likes and comments on YouTube, and keeps the views each Short had at 1, 3 and 7 days
+(`views_1d`, `views_3d`, `views_7d`), to tune the choices on real results. Gemini also writes each Short's title (40 to 70 characters, with the streamer's name; the
 description quotes a short sentence of the moment, not the whole clip). In the ranking, the
 first streamers of `top_streamers.txt` get a bonus (+10 points for the first 5, +5 up to the
-15th), so the biggest win at a similar quality. Swear words are muted in the audio, blurred in the subtitles and masked (`****`) in the
+15th), so the biggest win at a similar quality. The views of the published Shorts count a
+little too: a streamer whose Shorts get more views than the channel's usual gains up to 3
+points, one below it loses up to 3 (never a streamer of `top_streamers.txt`). Views are
+compared in log scale, at 7, 3 or 1 days, and a streamer's average is pulled towards the
+channel's when few of their Shorts are measured, since Shorts views are partly luck. Swear words are muted in the audio, blurred in the subtitles and masked (`****`) in the
 hook, title and description; such a Short loses 10 points in the ranking, so it is only
 published when clearly better than a clean one. A moment with a slur is dropped. Shorts rendered before this filter are never
 published. The

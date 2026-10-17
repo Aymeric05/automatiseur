@@ -17,7 +17,8 @@ pipeline. Each section maps to an implemented component in `src/twitch_auto_clip
 | `vod_acquisition.py` | Persistent queue of ended streams: VOD lookup, audio download, retries |
 | `transcription.py` | Transcribes video using faster-whisper (CPU/int8, word timestamps) |
 | `chat_activity.py` | Parses TwitchDownloaderCLI JSON; per-candidate chat summary for Gemini |
-| `vod_processing.py` | Runs transcription + chat download once per acquired VOD |
+| `audio_events.py` | Laughter, screams, gasps found in the VOD audio (YAMNet ONNX) |
+| `vod_processing.py` | Runs transcription, emotion detection and chat download once per VOD |
 | `highlights.py` | Heuristic scoring of transcription segments as highlight candidates |
 | `gemini_evaluation.py` | Sends candidates to Gemini API; parses and validates its JSON response |
 | `vod_highlights.py` | Orchestrates heuristics → chat enrichment → Gemini selection per VOD |
@@ -60,12 +61,16 @@ vod_acquisition.py → VODAcquisitionResult
 vod_processing.py → VODProcessingResult
     │   ├─ transcribe_video() via transcription.py + faster-whisper
     │   │   └─ data/output/<vod_id>_transcript.json
+    │   ├─ detect_emotions() via audio_events.py + onnxruntime (YAMNet)
+    │   │   └─ data/output/<vod_id>_emotions.json
     │   ├─ download_twitch_chat() via twitch_chat.py + TwitchDownloaderCLI
     │   │   └─ data/output/<vod_id>_chat.json
     │   └─ manifest: data/output/<vod_id>_processing.json
     ▼
 vod_highlights.py → VODHighlightSelectionResult
     │   ├─ analyze_transcription() via highlights.py   → heuristic candidates
+    │   ├─ chat_spike_moments() via chat_activity.py   → moments the chat reacts to
+    │   ├─ with_emotions()                             → laughter/scream moments, tags
     │   ├─ add_chat_signals() via chat_activity.py     → chat summary
     │   ├─ select_candidates() via gemini_evaluation.py → Gemini selection
     │   └─ data/output/<vod_id>_gemini_selection_<budget>.json
@@ -121,6 +126,8 @@ JSON state files make every step resumable after a crash or a restart:
   after a refusal.
 - **`data/output/publication_hour.json`** — the current one-hour window the uploads are
   spread over.
+- **`data/output/published_shorts.json`** — every published Short, what it was made of
+  and its views (read every 6 hours, kept at 1, 3 and 7 days).
 
 All files are written atomically (write to `.tmp`, then rename) to prevent corruption.
 Shorts, metadata and uploads are keyed by the moment itself (`<start>-<end>` in seconds),
@@ -189,6 +196,7 @@ Policy URL before any upload proceeds.
 | yt-dlp | Python API (`yt_dlp.YoutubeDL`) |
 | TwitchDownloaderCLI | `subprocess.run()` (must be in `PATH`) |
 | faster-whisper | Python API (`faster_whisper.WhisperModel`) |
+| onnxruntime + YAMNet | `audiomagic/yamnet-onnx` from the Hugging Face cache (optional, graceful fallback) |
 | OpenCV (`opencv-python-headless`) | Python API (optional, graceful fallback) |
 | `google-genai` | Python API (`google.genai.Client`) |
 | Google API Python Client | Python API (YouTube upload) |
