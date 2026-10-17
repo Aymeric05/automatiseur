@@ -223,11 +223,12 @@ class GeminiEvaluationTests(unittest.TestCase):
     def test_hook_and_description_are_kept_and_streamer_is_in_the_prompt(self, get_client) -> None:
         client = FakeGeminiClient(
             '{"evaluations":[{"candidate_id":"candidate_1","interesting":true,"score":80,'
-            '"justification":"Fort.","hook":"  Wait for it 😱 ","description":"He wins 🔥"}]}'
+            '"justification":"Fort.","hook":"  Wait for it 😱 ","title":" Chatterbox wins it all ","description":"He wins 🔥"}]}'
         )
         get_client.return_value = client
         [evaluation] = evaluate_candidates([{"start": 1.0, "end": 4.0}], [], streamer="Chatterbox, GTA V")
         self.assertEqual((evaluation["hook"], evaluation["description"]), ("Wait for it 😱", "He wins 🔥"))
+        self.assertEqual(evaluation["title"], "Chatterbox wins it all")
         self.assertTrue(client.arguments["contents"].startswith("Streamer : Chatterbox, GTA V."))
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})

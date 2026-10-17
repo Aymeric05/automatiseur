@@ -342,6 +342,21 @@ class PublishNextTests(unittest.TestCase):
         uploader.publish_next()
         self.assertEqual(len(calls), 2)  # changed and 3 hours later: compared again
 
+    def test_the_first_streamers_of_the_list_win_at_a_similar_quality(self):
+        self._vod("second", [80])  # list rank 2: +10
+        self._vod("third", [85])  # list rank 20: no bonus
+        for vod_id, login in (("second", "kaicenat"), ("third", "caedrel")):
+            manifest = self.tmp / f"{vod_id}_processing.json"
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            data.update(broadcaster_login=login, peak_viewers=30000)
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+        uploader = VODShortsUploader(
+            self.tmp, uploader=self._upload, top_streamers=frozenset({"kaicenat", "caedrel"}),
+            streamer_ranks={"KaiCenat": 2, "caedrel": 20},
+        )
+        uploader.publish_next()
+        self.assertEqual(self.uploaded, ["second 80"])  # 80 + 10 > 85
+
     def test_a_short_with_muted_swear_words_must_be_clearly_better(self):
         self._vod("clean", [80])
         self._vod("swears", [85, 95])

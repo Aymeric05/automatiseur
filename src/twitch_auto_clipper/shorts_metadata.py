@@ -12,7 +12,6 @@ TITLE_MAX_LENGTH = 100  # YouTube limit
 DESCRIPTION_MAX_LENGTH = 5000  # YouTube limit
 QUOTE_MAX_WORDS = 12
 TITLE_MIN_QUOTE_WORDS = 6
-EXCERPT_MAX_LENGTH = 400
 # Only broad, popular tags: niche per-video tags (channel, game) are left out.
 HASHTAGS = "#shorts #twitch #twitchclips #streamer #viral #fyp"
 EMOJI = re.compile("[\U0001F000-\U0001FFFF\u2600-\u27BF\u2B00-\u2BFF]")
@@ -105,13 +104,14 @@ def build_short_metadata(
     candidate_end: float | None = None,
     game_name: str = "",
     teaser: str | None = None,
+    title: str | None = None,
 ) -> ShortMetadata:
     """Build a title and description from the clip's transcript and source.
 
-    The title quotes what is said at the highlighted moment (the Gemini-selected
-    candidate). The description opens with Gemini's teaser (written from the
-    clip's transcript), then the spoken excerpt of the whole clip, a credit to
-    the Twitch channel and VOD, and hashtags.
+    The title is Gemini's (written from the clip's transcript), or else quotes
+    what is said at the highlighted moment. The description opens with
+    Gemini's teaser, then a short quote of that moment, a credit to the Twitch
+    channel and VOD, and hashtags.
     """
     name = _clean(broadcaster_name) or _clean(broadcaster_login)
     if not name:
@@ -133,12 +133,16 @@ def build_short_metadata(
     short_quote = " ".join(quote_words[:QUOTE_MAX_WORDS])
     if len(quote_words) > QUOTE_MAX_WORDS:
         short_quote += "…"
-    title = _truncate(f"{name}: “{short_quote}”", TITLE_MAX_LENGTH)
+    written = censor(_clean(title or ""))
+    if written and name.lower() not in written.lower():
+        written = f"{name}: {written}"  # the streamer's name always shows
+    title = _truncate(written or f"{name}: “{short_quote}”", TITLE_MAX_LENGTH)
 
     teaser = _lively(censor(_clean(teaser or "")))
     game = _clean(game_name)
     lines = [teaser, ""] if teaser else []
-    lines.extend([f"💬 “{_truncate(excerpt or quote, EXCERPT_MAX_LENGTH)}”", ""])
+    # A short quote of the moment: the whole clip's transcript reads badly (repetitions).
+    lines.extend([f"💬 “{short_quote}”", ""])
     lines.append(f"🎮 Clip from {name}'s Twitch stream" + (f" ({game})." if game else "."))
     if broadcaster_login:
         lines.append(f"📺 Channel: https://www.twitch.tv/{_clean(broadcaster_login)}")

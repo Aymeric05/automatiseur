@@ -244,6 +244,7 @@ class VODHighlightSelector:
                     "gemini_justification": evaluation["justification"],
                     "gemini_model": evaluation.get("model"),
                     "gemini_hook": evaluation.get("hook") or None,
+                    "gemini_title": evaluation.get("title") or None,
                     "gemini_description": evaluation.get("description") or None,
                 }
             )
