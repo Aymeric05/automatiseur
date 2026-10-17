@@ -503,6 +503,38 @@ class StatisticsTests(unittest.TestCase):
             (tmp / "published_shorts.json").write_text(json.dumps({"shorts": many_hits}), encoding="utf-8")
             self.assertEqual(VODShortsUploader(tmp)._audience_points()["star"], 3)  # capped
 
+    def test_retention_is_read_with_the_views_when_authorized(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            now = datetime(2026, 10, 16, 18, 0, tzinfo=timezone.utc)
+            (tmp / "published_shorts.json").write_text(json.dumps({"fetched_at": None, "shorts": [
+                {"video_id": "yt1", "uploaded_at": "2026-10-14T09:00:00+00:00"}]}), encoding="utf-8")
+            asked = []
+
+            def retention(ids, start_date):
+                asked.append((ids, start_date))
+                return {"yt1": {"retention_pct": 87.5, "avg_view_seconds": 21.0, "engaged_views": 900}}
+
+            uploader = VODShortsUploader(
+                tmp, clock=lambda: now, statistics_fetcher=lambda ids, *a: {"yt1": {"views": 1000}},
+                retention_fetcher=retention,
+            )
+            self.assertIn("retention lue pour 1 Shorts", uploader.refresh_statistics())
+            self.assertEqual(asked, [(["yt1"], "2026-10-13")])  # from the day before the first upload
+            entry = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"][0]
+            self.assertEqual((entry["views"], entry["retention_pct"]), (1000, 87.5))
+
+            def not_authorized(ids, start_date):
+                raise RuntimeError("Retention non autorisee")
+
+            uploader = VODShortsUploader(
+                tmp, clock=lambda: now + timedelta(hours=6),
+                statistics_fetcher=lambda ids, *a: {"yt1": {"views": 1100}}, retention_fetcher=not_authorized,
+            )
+            self.assertIn("retention non lue", uploader.refresh_statistics())  # the views are still read
+            entry = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"][0]
+            self.assertEqual((entry["views"], entry["retention_pct"]), (1100, 87.5))
+
     def test_a_failed_reading_is_retried_an_hour_later(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)

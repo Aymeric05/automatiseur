@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 import json
+import random
 import re
 from pathlib import Path
 import shutil
@@ -20,7 +21,7 @@ import time
 from typing import Any, Callable
 
 from .focus import IRL_CATEGORIES
-from .highlights import _overlap_ratio, expand_moment, split_sentences
+from .highlights import EXCITEMENT_DB, MAX_SHORT_SECONDS, _overlap_ratio, expand_moment, split_sentences
 from .profanity import has_slur
 from .video import audio_levels
 from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata, clip_transcript_text
@@ -41,6 +42,7 @@ from .vod_processing import (
     format_vod_processing_result,
 )
 from .vod_shorts import (
+    COLD_OPEN_MIN_START,
     ShortsGenerationError,
     clip_id,
     VODShortsGenerationResult,
@@ -57,6 +59,10 @@ GEMINI_WAIT = timedelta(minutes=30)
 # this score (0-100) a moment is neither rendered nor published.
 MIN_GEMINI_SCORE = 60
 LEAD_IN_ANALYSIS_SECONDS = 20  # audio examined before a moment to find what triggers it
+# Length test: this share of the moments is capped at SHORT_TEST_SECONDS instead of
+# MAX_SHORT_SECONDS; their views and retention tell which length works best.
+SHORT_TEST_SECONDS = 30.0
+SHORT_TEST_SHARE = 0.5
 MAX_SHORT_OVERLAP = 0.3  # widened moments sharing more of the shorter one are near-duplicates
 # A temporary file untouched this long belongs to a run cut short (closed window, sleep,
 # crash): a live download, render or transcription rewrites its files every few minutes.
@@ -188,12 +194,17 @@ class VODAutomationPipeline:
                 levels = audio_levels(source_path, start - window, window) if window >= 1 else []
             except Exception:  # unreadable audio: a fixed lead-in is used
                 levels = []
-            new_start, new_end = expand_moment(start, end, sentences, levels)
+            # The same moment always draws the same length (a re-run renders the same Short).
+            short_test = random.Random(f"{vod_id}:{start}").random() < SHORT_TEST_SHARE
+            max_seconds = SHORT_TEST_SECONDS if short_test else MAX_SHORT_SECONDS
+            new_start, new_end = expand_moment(start, end, sentences, levels, max_seconds)
             # The highlighted sentence (title quote) stays the original moment.
             return {
                 **item, "start": new_start, "end": new_end,
                 "highlight_start": item.get("highlight_start", start),
                 "highlight_end": item.get("highlight_end", end),
+                "max_seconds": max_seconds,
+                "peak": reaction_peak(item, source_path, new_start, new_end),
             }
 
         widened = [
@@ -362,6 +373,25 @@ class VODAutomationPipeline:
             temporary_path.replace(manifest_path)
         except OSError:
             pass
+
+
+def reaction_peak(item: dict[str, Any], source_path: Path, start: float, end: float) -> float | None:
+    """When the strongest reaction is heard (the Short's cold open), None when nothing stands out.
+
+    The laugh or scream found in the audio, else the loudest second, at
+    least ``EXCITEMENT_DB`` above the clip's usual level.
+    """
+    onset = item.get("onset")
+    if isinstance(onset, (int, float)) and start + COLD_OPEN_MIN_START <= onset < end:
+        return float(onset)
+    try:
+        levels = audio_levels(source_path, start, int(end - start))
+    except Exception:
+        return None
+    later = levels[int(COLD_OPEN_MIN_START):]
+    if not later or max(later) < sorted(levels)[len(levels) // 2] + EXCITEMENT_DB:
+        return None
+    return round(start + COLD_OPEN_MIN_START + later.index(max(later)), 2)
 
 
 def without_near_duplicates(moments: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -100,6 +100,7 @@ def expand_moment(
     end: float,
     sentences: list[dict[str, Any]],
     levels: list[float],
+    max_seconds: float = MAX_SHORT_SECONDS,
 ) -> tuple[float, float]:
     """Bounds of a Short that shows what triggers the reaction and lets it play out.
 
@@ -110,7 +111,7 @@ def expand_moment(
     moment (at most ``LEAD_IN_MAX_SECONDS`` earlier), or
     ``DEFAULT_LEAD_IN_SECONDS`` before when nothing stands out. It then goes
     on while the streamer keeps talking, from ``MIN_SHORT_SECONDS`` to
-    ``MAX_SHORT_SECONDS`` in all.
+    ``max_seconds`` in all.
     """
     lead = DEFAULT_LEAD_IN_SECONDS
     if levels:
@@ -126,7 +127,7 @@ def expand_moment(
         if onset < len(levels):
             lead = max(lead, len(levels) - onset + LEAD_IN_SETUP_SECONDS)
     new_start = max(0.0, start - min(lead, LEAD_IN_MAX_SECONDS))
-    new_start = max(new_start, end - MAX_SHORT_SECONDS)  # a long moment keeps a shorter lead-in
+    new_start = max(new_start, end - max_seconds)  # a long moment keeps a shorter lead-in
     for sentence in sentences:  # never start in the middle of a sentence
         if sentence["start"] < new_start < sentence["end"] and new_start - sentence["start"] <= 3.0:
             new_start = sentence["start"]
@@ -136,12 +137,12 @@ def expand_moment(
         if sentence["start"] < end - 0.01:
             continue
         gap = sentence["start"] - new_end
-        if sentence["end"] - new_start > MAX_SHORT_SECONDS:
+        if sentence["end"] - new_start > max_seconds:
             break
         if gap > REACTION_GAP_SECONDS and (new_end - new_start >= MIN_SHORT_SECONDS or gap > 6.0):
             break
         new_end = sentence["end"]
-    new_end = max(new_end, min(new_start + MIN_SHORT_SECONDS, new_start + MAX_SHORT_SECONDS))
+    new_end = max(new_end, min(new_start + MIN_SHORT_SECONDS, new_start + max_seconds))
     return round(new_start, 2), round(new_end, 2)
 
 

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 YOUTUBE_READONLY_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
 YOUTUBE_SCOPES = [YOUTUBE_UPLOAD_SCOPE, YOUTUBE_READONLY_SCOPE]
+# Retention (average share of each Short watched): its own token, so the upload
+# authorization never changes and nothing waits for a new sign-in.
+YOUTUBE_ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly"
+ANALYTICS_TOKEN_NAME = "youtube-analytics-token.json"
 
 
 class YouTubeUploadError(RuntimeError):
@@ -75,47 +80,101 @@ def authenticate_youtube(
     ``allow_browser`` is False: unattended uploads then fail with a clear
     message instead of waiting for someone in front of a browser.
     """
-    Request, Credentials, InstalledAppFlow, build, _, _ = _load_google_dependencies()
-    from google.auth.exceptions import RefreshError
+    _, _, _, build, _, _ = _load_google_dependencies()
     scopes = [YOUTUBE_UPLOAD_SCOPE]
     if expected_channel_id:
         scopes.append(YOUTUBE_READONLY_SCOPE)
-    credentials = None
     try:
-        if token_path.is_file():
-            # No scopes argument: it would replace the scopes the token was granted.
-            credentials = Credentials.from_authorized_user_file(str(token_path))
-            if not credentials.scopes or not set(scopes).issubset(credentials.scopes):
-                credentials = None
-        if credentials is None or not credentials.valid:
-            if credentials is not None and credentials.expired and credentials.refresh_token:
-                try:
-                    credentials.refresh(Request())
-                except RefreshError:
-                    credentials = None  # revoked or expired: a new sign-in is needed
-            if credentials is None or not credentials.valid:
-                if not allow_browser:
-                    raise YouTubeUploadError(
-                        "Autorisation YouTube expiree ou absente : relancez la surveillance avec "
-                        "--auto-upload-youtube (ou un upload manuel) pour vous reconnecter."
-                    )
-                if not client_secrets_path.is_file():
-                    raise YouTubeUploadError(
-                        f"Fichier OAuth introuvable : {client_secrets_path}"
-                    )
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    str(client_secrets_path), scopes
-                )
-                # 127.0.0.1, not "localhost": a browser resolving localhost to IPv6 never
-                # reaches the local server and the sign-in hangs.
-                credentials = flow.run_local_server(host="127.0.0.1", port=0)
-            token_path.parent.mkdir(parents=True, exist_ok=True)
-            token_path.write_text(credentials.to_json(), encoding="utf-8")
+        credentials = _credentials(
+            client_secrets_path, token_path, scopes, allow_browser,
+            "Autorisation YouTube expiree ou absente : relancez la surveillance avec "
+            "--auto-upload-youtube (ou un upload manuel) pour vous reconnecter.",
+        )
         return build("youtube", "v3", credentials=credentials)
     except YouTubeUploadError:
         raise
     except Exception as error:
         raise YouTubeUploadError(f"Echec de l'authentification YouTube : {error}") from error
+
+
+def _credentials(
+    client_secrets_path: Path, token_path: Path, scopes: list[str], allow_browser: bool, missing: str
+):
+    """Saved OAuth credentials with ``scopes``, refreshed, or a new sign-in when allowed."""
+    Request, Credentials, InstalledAppFlow, _, _, _ = _load_google_dependencies()
+    from google.auth.exceptions import RefreshError
+    credentials = None
+    if token_path.is_file():
+        # No scopes argument: it would replace the scopes the token was granted.
+        credentials = Credentials.from_authorized_user_file(str(token_path))
+        if not credentials.scopes or not set(scopes).issubset(credentials.scopes):
+            credentials = None
+    if credentials is None or not credentials.valid:
+        if credentials is not None and credentials.expired and credentials.refresh_token:
+            try:
+                credentials.refresh(Request())
+            except RefreshError:
+                credentials = None  # revoked or expired: a new sign-in is needed
+        if credentials is None or not credentials.valid:
+            if not allow_browser:
+                raise YouTubeUploadError(missing)
+            if not client_secrets_path.is_file():
+                raise YouTubeUploadError(
+                    f"Fichier OAuth introuvable : {client_secrets_path}"
+                )
+            flow = InstalledAppFlow.from_client_secrets_file(
+                str(client_secrets_path), scopes
+            )
+            # 127.0.0.1, not "localhost": a browser resolving localhost to IPv6 never
+            # reaches the local server and the sign-in hangs.
+            credentials = flow.run_local_server(host="127.0.0.1", port=0)
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(credentials.to_json(), encoding="utf-8")
+    return credentials
+
+
+def authorize_youtube_analytics(client_secrets_path: Path, token_path: Path) -> None:
+    """One-time sign-in (browser) allowing the app to read the Shorts' retention."""
+    _credentials(client_secrets_path, token_path, [YOUTUBE_ANALYTICS_SCOPE], True, "")
+
+
+def fetch_video_retention(
+    video_ids: list[str],
+    start_date: str,
+    client_secrets_path: Path = Path("credentials.json"),
+    token_path: Path = Path(ANALYTICS_TOKEN_NAME),
+) -> dict[str, dict[str, float]]:
+    """Share watched, average seconds watched and engaged views of these videos (YouTube Analytics).
+
+    Needs ``authorize_youtube_analytics`` once; never opens a browser.
+    """
+    try:
+        _, _, _, build, _, _ = _load_google_dependencies()
+        credentials = _credentials(
+            client_secrets_path, token_path, [YOUTUBE_ANALYTICS_SCOPE], False,
+            "Retention non autorisee : lancez une fois --authorize-youtube-analytics.",
+        )
+        service = build("youtubeAnalytics", "v2", credentials=credentials)
+        today = date.today().isoformat()
+        retention: dict[str, dict[str, float]] = {}
+        for index in range(0, len(video_ids), 200):  # at most 200 rows per report
+            response = service.reports().query(
+                ids="channel==MINE", startDate=start_date, endDate=today, dimensions="video",
+                metrics="engagedViews,averageViewDuration,averageViewPercentage",
+                filters="video==" + ",".join(video_ids[index:index + 200]),
+                sort="-engagedViews", maxResults=200,
+            ).execute()
+            for video_id, engaged, seconds, percent in response.get("rows", []):
+                retention[video_id] = {
+                    "engaged_views": int(engaged),
+                    "avg_view_seconds": round(float(seconds), 1),
+                    "retention_pct": round(float(percent), 1),
+                }
+        return retention
+    except YouTubeUploadError:
+        raise
+    except Exception as error:
+        raise YouTubeUploadError(f"Retention YouTube indisponible : {error}") from error
 
 
 def get_authenticated_channel_id(youtube_service: Any) -> str:

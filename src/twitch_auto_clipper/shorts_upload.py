@@ -103,6 +103,7 @@ class VODShortsUploader:
         clock: Callable[[], datetime] | None = None,
         random_source: Callable[[], float] = random.random,
         statistics_fetcher: Callable[..., dict[str, dict[str, int]]] | None = None,
+        retention_fetcher: Callable[[list[str], str], dict[str, dict[str, float]]] | None = None,
         arbiter: Callable[[list[dict[str, Any]]], dict[str, float]] | None = None,
     ) -> None:
         if privacy not in UPLOAD_PRIVACIES:
@@ -129,6 +130,8 @@ class VODShortsUploader:
         # Every published Short, with its views: what works best is measured, not guessed.
         self.history_path = output_dir / "published_shorts.json"
         self._statistics_fetcher = statistics_fetcher or fetch_video_statistics
+        # Share of each Short watched (YouTube Analytics); None: views only.
+        self._retention_fetcher = retention_fetcher
         self._statistics_retry_at: datetime | None = None
         # Comparative scores of the reserve (see _arbitrate); None: per-live Gemini scores only.
         self._arbiter = arbiter
@@ -493,7 +496,9 @@ class VODShortsUploader:
     def refresh_statistics(self) -> str | None:
         """Every few hours, read the views of the Shorts published in the last 30 days.
 
-        The views a Short has at 1, 3 and 7 days are kept (``views_1d``...).
+        The views a Short has at 1, 3 and 7 days are kept (``views_1d``...),
+        with its retention when ``retention_fetcher`` is set (``retention_pct``:
+        average share watched, ``avg_view_seconds``, ``engaged_views``).
 
         Returns a summary line when they were read (or why they could not be).
         """
@@ -529,6 +534,18 @@ class VODShortsUploader:
             for days in VIEW_SNAPSHOT_DAYS:
                 if age >= timedelta(days=days) and "views" in entry:
                     entry.setdefault(f"views_{days}d", entry["views"])
+        retention_note = ""
+        if self._retention_fetcher is not None:
+            first_day = min(datetime.fromisoformat(entry["uploaded_at"]) for entry in followed) - timedelta(days=1)
+            try:
+                retention = self._retention_fetcher(
+                    [entry["video_id"] for entry in followed], first_day.date().isoformat()
+                )
+                for entry in followed:
+                    entry.update(retention.get(entry["video_id"], {}))
+                retention_note = f" ; retention lue pour {len(retention)} Shorts"
+            except Exception as error:  # not authorized or unavailable: views only
+                retention_note = f" ; retention non lue ({error})"
         history["fetched_at"] = now.isoformat()
         self._write_manifest(self.history_path, history)
         total = sum(entry.get("views", 0) for entry in followed)
@@ -536,6 +553,7 @@ class VODShortsUploader:
         return (
             f"Statistiques YouTube : {len(followed)} Shorts sur {STATISTICS_DAYS} jours, {total} vues ; "
             f"meilleur : {best.get('title', best['video_id'])} ({best.get('views', 0)} vues)"
+            + retention_note
         )
 
     def _load_history(self) -> dict[str, Any]:
@@ -568,9 +586,8 @@ class VODShortsUploader:
             "peak_viewers": manifest.get("peak_viewers"),
             "gemini_score": short.gemini_score,
             "compared_score": self._comparative_scores().get(f"{short.vod_id}:{short.key}"),
-            "source": record.get("source"),  # transcript, chat or emotion
-            "emotion": record.get("emotion"),
-            "hook": record.get("hook"),
+            # Where the moment comes from (transcript, chat or emotion) and how it was made.
+            **{key: record.get(key) for key in ("source", "emotion", "hook", "focus_x", "max_seconds", "cold_open")},
             "seconds": round(short.end - short.start, 1),
             "lead_in_seconds": round(lead_in, 1) if lead_in is not None else None,
             "muted": short.muted,

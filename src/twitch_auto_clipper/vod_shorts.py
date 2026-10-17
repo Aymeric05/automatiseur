@@ -24,6 +24,10 @@ class ShortsGenerationError(RuntimeError):
 ZOOM_OUT_EXTRA_WIDTH = 140
 # Top of the hook box, below the Shorts player's own top icons.
 HOOK_TOP = 200
+# Cold open: the Short opens on its strongest reaction (``peak``), then starts over.
+COLD_OPEN_SECONDS = 1.5
+COLD_OPEN_BEFORE = 0.5  # the teaser starts just before the peak, so the reaction is seen rising
+COLD_OPEN_MIN_START = 4.0  # a peak in the first seconds is seen right away: no teaser
 # YouTube Shorts accepts videos up to three minutes.
 MAX_SHORT_DURATION = 180.0
 # Reading a few seconds from Twitch and encoding them never takes this long.
@@ -73,6 +77,8 @@ class VODShortResult:
     emotion: str | None = None
     hook: str | None = None
     focus_x: float | None = None  # where the crop is centered (0 to 1), None: the middle
+    max_seconds: float | None = None  # the length cap of this moment (length test)
+    cold_open: bool = False  # opens on its strongest reaction
 
     @property
     def key(self) -> str:
@@ -141,11 +147,20 @@ def _build_short_ffmpeg_command(
     subtitles_path: Path | None = None,
     hook_path: Path | None = None,
     mute: list[tuple[float, float]] | tuple[tuple[float, float], ...] = (),
+    teaser: tuple[float, float] | None = None,
+    teaser_mute: list[tuple[float, float]] | tuple[tuple[float, float], ...] = (),
 ) -> list[str]:
     """Return the FFmpeg command list for generating one vertical Short.
 
     ``mute`` lists the moments (seconds from ``start``) whose audio is silenced.
+    ``teaser`` (start, end) is shown first, without subtitles (its swear words
+    in ``teaser_mute``, seconds from its start), then the Short from ``start``.
     """
+    if teaser is not None:
+        return _build_cold_open_command(
+            source_path, output_path, start, end, vertical_filter, subtitles_path, hook_path,
+            mute, teaser, teaser_mute,
+        )
     duration = end - start
     video_filter = vertical_filter
     if subtitles_path is not None:
@@ -182,6 +197,45 @@ def _build_short_ffmpeg_command(
         "-movflags", "+faststart",
         "-f", "mp4",
         str(output_path),
+    ]
+
+
+def _mute_filter(mute: list[tuple[float, float]] | tuple[tuple[float, float], ...]) -> str:
+    return "volume=0:enable='" + "+".join(f"between(t,{a},{b})" for a, b in mute) + "'" if mute else "anull"
+
+
+def _build_cold_open_command(
+    source_path: Path | str,
+    output_path: Path,
+    start: float,
+    end: float,
+    vertical_filter: str,
+    subtitles_path: Path | None,
+    hook_path: Path | None,
+    mute: list[tuple[float, float]] | tuple[tuple[float, float], ...],
+    teaser: tuple[float, float],
+    teaser_mute: list[tuple[float, float]] | tuple[tuple[float, float], ...],
+) -> list[str]:
+    """The Short preceded by its teaser: the same source read twice, then joined."""
+    reading = ["-readrate", "1"] if str(source_path).startswith(("http://", "https://")) else []
+    command = ["ffmpeg", "-y"]
+    for segment_start, segment_end in (teaser, (start, end)):
+        command += reading + ["-ss", str(segment_start), "-t", str(round(segment_end - segment_start, 3)),
+                              "-i", str(source_path)]
+    main_filter = vertical_filter + ("," + _subtitles_filter(subtitles_path) if subtitles_path else "")
+    graph = (
+        f"[0:v]{vertical_filter}[tv];[0:a]{_mute_filter(teaser_mute)}[ta];"
+        f"[1:v]{main_filter}[mv];[1:a]{_mute_filter(mute)}[ma];"
+        "[tv][ta][mv][ma]concat=n=2:v=1:a=1[cv][a]"
+    )
+    if hook_path is None:
+        graph += ";[cv]null[v]"
+    else:
+        command += ["-i", str(hook_path)]
+        graph += f";[cv][2:v]overlay=(W-w)/2:{HOOK_TOP}[v]"
+    return command + [
+        "-filter_complex", graph, "-map", "[v]", "-map", "[a]",
+        "-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart", "-f", "mp4", str(output_path),
     ]
 
 
@@ -353,6 +407,7 @@ class VODShortsGenerator:
                 emotion=item.get("emotion"),
                 hook=item.get("gemini_hook"),
                 focus_x=self._number(item.get("focus_x")),
+                max_seconds=self._number(item.get("max_seconds")),
                 **extra,
             )
 
@@ -368,6 +423,7 @@ class VODShortsGenerator:
             return result("already_exists", start, end)
 
         mute = profane_intervals(segments, start, end)
+        teaser = self._cold_open(item, start, end)
         subtitles_path, warning = self._write_subtitles(segments, output_path, start, end)
         hook_path, hook_warning = self._write_hook(item.get("gemini_hook"), output_path)
         warning = "; ".join(filter(None, (warning, hook_warning))) or None
@@ -378,7 +434,8 @@ class VODShortsGenerator:
             command = _build_short_ffmpeg_command(
                 source_path, temporary_path, start, end,
                 self._filter_builder(source_path, self._number(item.get("focus_x"))), subtitles_path, hook_path,
-                mute=mute,
+                mute=mute, teaser=teaser,
+                teaser_mute=profane_intervals(segments, *teaser) if teaser else (),
             )
             self._ffmpeg_runner(command)
             if not _is_valid_output(temporary_path):
@@ -397,8 +454,17 @@ class VODShortsGenerator:
 
         return result(
             "generated", start, end, subtitles=subtitles_path is not None, warning=warning,
-            muted=bool(mute),
+            muted=bool(mute), cold_open=teaser is not None,
         )
+
+    @classmethod
+    def _cold_open(cls, item: dict[str, Any], start: float, end: float) -> tuple[float, float] | None:
+        """The teaser shown first: from just before the moment's ``peak``, within the Short."""
+        peak = cls._number(item.get("peak"))
+        if peak is None or not start + COLD_OPEN_MIN_START <= peak < end:
+            return None
+        teaser_start = max(start, min(peak - COLD_OPEN_BEFORE, end - COLD_OPEN_SECONDS))
+        return round(teaser_start, 3), round(teaser_start + COLD_OPEN_SECONDS, 3)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -528,6 +594,9 @@ class VODShortsGenerator:
                     "emotion": short.emotion,
                     "hook": short.hook,
                     "focus_x": short.focus_x,
+                    "max_seconds": short.max_seconds,
+                    "cold_open": short.cold_open if short.status == "generated"
+                    else bool((existing.get(short.key) or {}).get("cold_open")),
                 }
                 errors.pop(short.key, None)
             elif short.error:

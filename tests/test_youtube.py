@@ -192,6 +192,23 @@ class YouTubeTests(unittest.TestCase):
                 )
         self.assertIsNone(fake_service.videos_api.arguments)
 
+    def test_retention_rows_become_per_video_values_without_any_sign_in(self) -> None:
+        from unittest.mock import Mock
+
+        from twitch_auto_clipper.youtube import fetch_video_retention
+
+        service = Mock()
+        service.reports().query().execute.return_value = {"rows": [["yt1", 900, 21.04, 87.51]]}
+        build = Mock(return_value=service)
+        with patch("twitch_auto_clipper.youtube._credentials", return_value="credentials") as credentials,                 patch("twitch_auto_clipper.youtube._load_google_dependencies",
+                      return_value=(None, None, None, build, None, None)):
+            retention = fetch_video_retention(["yt1"], "2026-10-13")
+        self.assertEqual(retention, {"yt1": {"engaged_views": 900, "avg_view_seconds": 21.0, "retention_pct": 87.5}})
+        self.assertFalse(credentials.call_args.args[3])  # allow_browser: never waits for a sign-in
+        build.assert_called_once_with("youtubeAnalytics", "v2", credentials="credentials")
+        query = service.reports().query.call_args.kwargs
+        self.assertEqual((query["filters"], query["dimensions"]), ("video==yt1", "video"))
+
     def test_confirmations_accept_and_reject(self) -> None:
         self.assertTrue(confirm_upload_rights(input_func=lambda _: "oui", output_func=lambda _: None))
         self.assertFalse(confirm_upload_rights(input_func=lambda _: "non", output_func=lambda _: None))

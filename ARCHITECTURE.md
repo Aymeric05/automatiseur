@@ -128,7 +128,9 @@ JSON state files make every step resumable after a crash or a restart:
 - **`data/output/publication_hour.json`** — the current one-hour window the uploads are
   spread over.
 - **`data/output/published_shorts.json`** — every published Short, what it was made of
-  and its views (read every 6 hours, kept at 1, 3 and 7 days).
+  (source, emotion, hook, framing, length cap, cold open) and its views (read every 6
+  hours, kept at 1, 3 and 7 days), with its retention once YouTube Analytics is authorized
+  (`--authorize-youtube-analytics`, separate token `youtube-analytics-token.json`).
 
 All files are written atomically (write to `.tmp`, then rename) to prevent corruption.
 Shorts, metadata and uploads are keyed by the moment itself (`<start>-<end>` in seconds),

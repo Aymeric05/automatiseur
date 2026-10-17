@@ -44,6 +44,9 @@ from .vod_pipeline import (
 )
 from .vod_processing import VODProcessingPipeline
 from .youtube import (
+    ANALYTICS_TOKEN_NAME,
+    authorize_youtube_analytics,
+    fetch_video_retention,
     YouTubeUploadError,
     authenticate_youtube,
     confirm_privacy_policy,
@@ -182,6 +185,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("youtube-token.json"),
         help="Fichier local du token OAuth.",
+    )
+    parser.add_argument(
+        "--authorize-youtube-analytics",
+        action="store_true",
+        help="Autorise une fois la lecture de la retention des Shorts (YouTube Analytics).",
     )
     parser.add_argument(
         "--auto-clip",
@@ -530,6 +538,15 @@ def main() -> int:
     if args.process_vod:
         return process_vod(args, parser)
 
+    if args.authorize_youtube_analytics:
+        try:
+            authorize_youtube_analytics(args.youtube_client_secrets, args.youtube_token.with_name(ANALYTICS_TOKEN_NAME))
+        except Exception as error:
+            print(f"Erreur : {error}", file=sys.stderr)
+            return 1
+        print("Retention YouTube autorisee : elle sera lue avec les vues, toutes les 6 heures.")
+        return 0
+
     if args.monitor_twitch_once or args.monitor_twitch:
         if args.monitor_interval <= 0:
             parser.error("--monitor-interval doit etre positif.")
@@ -612,6 +629,11 @@ def main() -> int:
                     login: rank for rank, login in enumerate(load_streamer_list(TOP_STREAMERS_FILE), start=1)
                 },
                 check_seconds=PUBLISH_IDLE_SECONDS,
+                retention_fetcher=partial(
+                    fetch_video_retention,
+                    client_secrets_path=args.youtube_client_secrets,
+                    token_path=args.youtube_token.with_name(ANALYTICS_TOKEN_NAME),
+                ),
                 arbiter=partial(
                     rank_reserve, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini
                 ),

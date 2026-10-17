@@ -163,6 +163,8 @@ class ExpandMomentTests(unittest.TestCase):
         sentences = [{"start": 100.0 + 5 * i, "end": 104.0 + 5 * i, "text": "Talking."} for i in range(20)]
         start, end = expand_moment(100.0, 104.0, sentences, [-40.0] * 20)
         self.assertLessEqual(end - start, MAX_SHORT_SECONDS)
+        start, end = expand_moment(100.0, 104.0, sentences, [-40.0] * 20, max_seconds=30.0)
+        self.assertTrue(18.0 <= end - start <= 30.0)  # the length test's shorter cap
 
 
 class AudioLevelsTests(unittest.TestCase):

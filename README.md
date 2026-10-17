@@ -165,12 +165,21 @@ Short shows what triggers the reaction: the app reads the loudness of the 20 sec
 before the moment, finds where the excitement starts (a death, a goal, a scream Whisper does
 not transcribe) and starts 4 seconds before it (at most 15 seconds earlier; 3 seconds when
 nothing stands out). It then lets the reaction play out while the streamer keeps talking:
-18 to 45 seconds in all. Every published Short is recorded in
+18 to 45 seconds in all; as a test, half of the moments (drawn at random, always the same for a
+given moment) are capped at 30 seconds, to find out which length gets more views and retention.
+Each Short opens on its strongest reaction (the laugh or scream found in the audio, else the
+loudest second, when it clearly stands out) for 1.5 seconds, then starts over from the
+set-up: the first second decides whether viewers swipe away. Every published Short is recorded in
 `data/output/published_shorts.json` (streamer and place in the list, per-live and
 comparative scores, where the moment comes from: transcript, chat or emotion, the emotion
 heard, hook, title, duration, lead-in, publication time). Every 6 hours the app reads their
 views, likes and comments on YouTube, and keeps the views each Short had at 1, 3 and 7 days
-(`views_1d`, `views_3d`, `views_7d`), to tune the choices on real results. Gemini also writes each Short's title (40 to 70 characters, with the streamer's name; the
+(`views_1d`, `views_3d`, `views_7d`), to tune the choices on real results. With YouTube
+Analytics authorized once (enable the "YouTube Analytics API" in the Google Cloud project, then
+run `python -m twitch_auto_clipper --authorize-youtube-analytics` and accept in the browser),
+the share of each Short watched (`retention_pct`), the average seconds watched and the engaged
+views are read too. This uses its own token (`youtube-analytics-token.json`): the upload
+authorization never changes, and without it the app simply reads the views only. Gemini also writes each Short's title (40 to 70 characters, with the streamer's name; the
 description quotes a short sentence of the moment, not the whole clip). In the ranking, the
 first streamers of `top_streamers.txt` get a bonus (+10 points for the first 5, +5 up to the
 15th), so the biggest win at a similar quality. When the streamer shows their screen, what
