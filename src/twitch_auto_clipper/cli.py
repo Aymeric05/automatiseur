@@ -543,6 +543,8 @@ def main() -> int:
         if instance_lock is None:
             print("Erreur : une autre surveillance Twitch tourne deja sur ces donnees.", file=sys.stderr)
             return 1
+        # Transcription chunks left by a run cut short (closed window, sleep, crash).
+        shutil.rmtree(output_dir / "tmp", ignore_errors=True)
         monitor = TwitchStreamMonitor(
             polling_interval_seconds=args.monitor_interval,
             state_path=output_dir / "twitch_monitor_state.json",

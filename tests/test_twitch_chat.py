@@ -70,6 +70,36 @@ class TwitchChatTests(unittest.TestCase):
                 download_twitch_chat("https://www.twitch.tv/videos/1", Path(directory) / "c.json")
         self.assertIn("timeout", run.call_args.kwargs)
 
+    @patch("twitch_auto_clipper.twitch_chat.time.sleep")
+    @patch("twitch_auto_clipper.twitch_chat.subprocess.run")
+    def test_a_crash_of_the_downloader_is_retried_once_then_explained(self, run, sleep) -> None:
+        import subprocess
+
+        from twitch_auto_clipper.twitch_chat import TwitchChatDownloadError
+
+        crash = subprocess.CalledProcessError(3762504530, "TwitchDownloaderCLI", stderr="Unhandled exception. HttpRequestException")
+
+        calls = []
+
+        def crash_then_work(command, **kwargs):
+            calls.append(command)
+            if len(calls) == 1:
+                raise crash
+            Path(command[-1]).write_text("{}", encoding="utf-8")
+
+        run.side_effect = crash_then_work
+        with tempfile.TemporaryDirectory() as directory:
+            download_twitch_chat("https://www.twitch.tv/videos/1", Path(directory) / "c.json")
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once()
+
+        run.reset_mock()
+        run.side_effect = [crash, crash]
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(TwitchChatDownloadError, "HttpRequestException"):
+                download_twitch_chat("https://www.twitch.tv/videos/1", Path(directory) / "c.json")
+        self.assertEqual(run.call_count, 2)
+
     @patch("twitch_auto_clipper.twitch_chat.subprocess.run")
     def test_leftover_partial_file_never_blocks_on_a_question(self, run) -> None:
         import subprocess

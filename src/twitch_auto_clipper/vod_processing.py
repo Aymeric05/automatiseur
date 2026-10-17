@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from .chat_activity import ChatActivityError, load_chat_messages
+from .chat_activity import ChatActivityError, compact_chat, load_chat_messages
 from .transcription import save_transcription, transcribe_video
 from .twitch_chat import TwitchChatDownloadError, download_twitch_chat
 from .vod_acquisition import VODAcquisitionResult
@@ -86,6 +86,7 @@ class VODProcessingPipeline:
                     acquisition.downloaded_path,
                     language="en",  # only English streams are monitored
                     device="auto",  # NVIDIA GPU when available, else CPU
+                    temp_dir=self.output_dir / "tmp",  # cleared at start-up if a run is cut
                 )
                 save_transcription(segments, transcript_path)
                 manifest["transcription_complete"] = True
@@ -139,17 +140,26 @@ class VODProcessingPipeline:
     ) -> str:
         vod_url = f"https://www.twitch.tv/videos/{vod_id}"
         reused_existing_chat = False
+        downloaded = False
         try:
-            reused_existing_chat = chat_path.is_file() and chat_path.stat().st_size > 0
+            if timestamped_chat_path.is_file() and timestamped_chat_path.stat().st_size > 0:
+                try:
+                    load_chat_messages(timestamped_chat_path)
+                    reused_existing_chat = True
+                except ChatActivityError:
+                    timestamped_chat_path.unlink(missing_ok=True)  # corrupt: rebuilt below
             if not reused_existing_chat:
-                self.chat_downloader(vod_url, chat_path)
-            messages = load_chat_messages(chat_path)
-            timestamped_chat_path.write_text(
-                json.dumps(messages, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+                if not (chat_path.is_file() and chat_path.stat().st_size > 0):
+                    self.chat_downloader(vod_url, chat_path)
+                    downloaded = True
+                messages = load_chat_messages(chat_path)
+                timestamped_chat_path.write_text(
+                    json.dumps(compact_chat(messages), ensure_ascii=False), encoding="utf-8"
+                )
+                # The compact copy is all the analysis reads: the raw replay can weigh GBs.
+                chat_path.unlink(missing_ok=True)
         except (TwitchChatDownloadError, ChatActivityError, OSError, ValueError) as error:
-            if reused_existing_chat and isinstance(error, ChatActivityError):
+            if isinstance(error, ChatActivityError):
                 # Truncated or corrupt replay: drop it so the next run downloads it again.
                 chat_path.unlink(missing_ok=True)
             manifest["chat_attempted"] = True
@@ -161,7 +171,7 @@ class VODProcessingPipeline:
         manifest["chat_attempted"] = True
         manifest["chat_status"] = "downloaded"
         manifest.pop("chat_error", None)
-        return "already_completed" if reused_existing_chat else "downloaded"
+        return "downloaded" if downloaded else "already_completed"
 
     @staticmethod
     def _load_manifest(path: Path) -> dict[str, Any]:

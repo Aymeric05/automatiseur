@@ -285,7 +285,14 @@ best first, as soon as YouTube allows, within `YOUTUBE_MAX_UPLOADS_PER_DAY` uplo
 24 hours. A local Short is deleted only after YouTube confirms the upload with a video ID;
 on any failure or interruption it is kept for a retry. `data/input` and `data/output` only
 hold the reserve (at most 30 Shorts and their manifests) and the VODs still queued or being
-processed.
+processed. The queue keeps the 40 best VODs at most (about what can be processed in 48 hours) and
+drops any VOD whose stream ended more than 48 hours ago, with its files; a VOD whose audio is
+already downloaded is finished first. The chat replay is kept as a compact copy (time, author,
+text, emotes; about 8 times smaller) and the raw one deleted at once; transcription chunks go
+to `data/output/tmp` (with the chat downloader's cache), cleared at start-up. Temporary files
+of a run cut short (partial downloads, cut renders, subtitles, hook images, transcription
+chunks) are deleted once untouched for 6 hours. Widened moments of the same live that share more
+than 30 % of the shorter one are near-duplicates: only the best is rendered.
 
 The console output can be redirected to a log file: it is then written in UTF-8.
 

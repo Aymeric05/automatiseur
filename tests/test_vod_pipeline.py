@@ -352,6 +352,19 @@ class DueVODWorkerTests(unittest.TestCase):
         self.assertTrue(any("nouvel essai" in line for line, error in lines))
 
 
+class NearDuplicateTests(unittest.TestCase):
+    def test_overlapping_moments_keep_only_the_best(self):
+        from twitch_auto_clipper.vod_pipeline import without_near_duplicates
+
+        moments = [
+            {"start": 100.0, "end": 130.0, "gemini_score": 70},
+            {"start": 110.0, "end": 140.0, "gemini_score": 90},  # same scene, better
+            {"start": 300.0, "end": 330.0, "gemini_score": 60},
+        ]
+        kept = without_near_duplicates(moments)
+        self.assertEqual([m["gemini_score"] for m in kept], [90, 60])
+
+
 class CleanupTests(unittest.TestCase):
     def test_only_finished_vods_lose_their_files(self):
         from twitch_auto_clipper.vod_pipeline import cleanup_finished_vods
@@ -381,6 +394,35 @@ class CleanupTests(unittest.TestCase):
                 "4_0.0-5.0_short.mp4", "4_processing.json",  # Short in the reserve
                 "demo.mp4", "monitor.log",  # not VOD files
             ])
+
+
+class StaleTemporaryFilesTests(unittest.TestCase):
+    def test_temporary_files_of_a_cut_run_go_after_six_hours(self):
+        import os
+        import time
+
+        from twitch_auto_clipper.vod_pipeline import cleanup_finished_vods
+
+        with tempfile.TemporaryDirectory() as directory:
+            input_dir, output_dir = Path(directory, "input"), Path(directory, "output")
+            (output_dir / "tmp" / "tmpabc").mkdir(parents=True)
+            input_dir.mkdir()
+            old = [input_dir / "7_audio.mp4.part", input_dir / "7_audio.mp4.ytdl",
+                   output_dir / "7_1.0-20.0_short.tmp.mp4", output_dir / "7_1.0-20.0_short_hook.png"]
+            fresh = input_dir / "8_audio.mp4.part"  # a download in progress
+            mine = input_dir / "my_video.part.mp4"  # a file the user put there: never touched
+            for path in [*old, fresh, mine]:
+                path.write_bytes(b"x")
+            seven_hours_ago = time.time() - 7 * 3600
+            for path in [*old, mine, output_dir / "tmp" / "tmpabc"]:
+                os.utime(path, (seven_hours_ago, seven_hours_ago))
+
+            cleanup_finished_vods(input_dir, output_dir, active_vod_ids={"7", "8"})
+
+            self.assertFalse(any(path.exists() for path in old))
+            self.assertFalse((output_dir / "tmp" / "tmpabc").exists())
+            self.assertTrue(fresh.exists())
+            self.assertTrue(mine.exists())
 
 
 class ManifestStatusTests(unittest.TestCase):

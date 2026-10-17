@@ -141,6 +141,33 @@ class ChatSignalTests(unittest.TestCase):
         self.assertEqual(chat_signal([], 0, 5)["messages"], 0)
 
 
+class CompactChatTests(unittest.TestCase):
+    def test_the_compact_chat_keeps_what_the_analysis_reads(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from twitch_auto_clipper.chat_activity import (
+            _author, _emotes, _message_text, compact_chat, load_chat_messages,
+        )
+
+        raw = [{"timestamp": 12.0, "message": {
+            "_id": "x", "created_at": "2026-10-16T10:00:00Z", "channel_id": "1", "content_offset_seconds": 12,
+            "commenter": {"_id": "42", "display_name": "Viewer", "name": "viewer", "bio": "a long bio" * 20},
+            "message": {"body": "OMEGALUL no way", "fragments": [
+                {"text": "OMEGALUL", "emoticon": {"emoticon_id": "1"}}, {"text": " no way", "emoticon": None}],
+                "user_badges": [{"_id": "sub"}], "user_color": "#FF0000"},
+        }}]
+        compact = compact_chat(raw)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "c.json"
+            path.write_text(json.dumps(compact), encoding="utf-8")
+            [message] = load_chat_messages(path)
+        self.assertEqual((message["timestamp"], _message_text(message), _emotes(message), _author(message)),
+                         (12.0, "OMEGALUL no way", ["OMEGALUL"], "42"))
+        self.assertLess(len(json.dumps(compact)), len(json.dumps(raw)) / 3)
+
+
 class ChatSpikeTests(unittest.TestCase):
     def test_a_chat_explosion_becomes_a_moment_placed_before_it(self) -> None:
         from twitch_auto_clipper.chat_activity import chat_spike_moments

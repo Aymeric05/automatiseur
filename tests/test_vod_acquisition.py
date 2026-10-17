@@ -168,10 +168,22 @@ class VODAcquisitionTests(unittest.TestCase):
         audio = self.root / "input" / "vod-1_audio.mp4"
         self.assertTrue(audio.is_file())
         self.clock.advance(49 * 3600)
-        [result] = list(manager.acquire_due())
-        self.assertEqual(result.status, "abandoned")
+        self.assertEqual(list(manager.acquire_due()), [])  # dropped before any work
         self.assertFalse(audio.exists())
         self.assertEqual(manager.pending_jobs, 0)
+        self.assertIn("trop ancien", self.state()["abandoned"]["stream-1"]["error"])
+
+    def test_the_queue_keeps_only_the_jobs_it_can_process(self) -> None:
+        from twitch_auto_clipper.vod_acquisition import MAX_QUEUED_JOBS
+
+        manager = self.manager()
+        streams = tuple(monitored_stream(f"stream-{i}", budget=2) for i in range(MAX_QUEUED_JOBS + 5))
+        streams = tuple(MonitoredStream(s.stream, 2, peak_viewer_count=20000 + i) for i, s in enumerate(streams))
+        manager.process_cycle(MonitoringCycle(ended_streams=streams))
+        self.client.find_vod_for_stream.return_value = None  # nothing to download: only the purge matters
+        list(manager.acquire_due())
+        self.assertEqual(manager.pending_jobs, MAX_QUEUED_JOBS)
+        self.assertNotIn("stream-0", self.state()["jobs"])  # the smallest peaks were dropped
 
     def test_zero_budget_is_never_queued(self) -> None:
         manager = self.manager()
