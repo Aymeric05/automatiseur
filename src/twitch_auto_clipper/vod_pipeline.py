@@ -41,6 +41,7 @@ from .vod_processing import (
 )
 from .vod_shorts import (
     ShortsGenerationError,
+    clip_id,
     VODShortsGenerationResult,
     VODShortsGenerator,
     format_vod_shorts_result,
@@ -217,7 +218,8 @@ class VODAutomationPipeline:
                 vod_id, "error", processing, selection, message=f"Shorts : {error}"
             )
 
-        # 5. Metadata from the clips' real transcript.
+        # 5. Metadata from the clips' real transcript (titles written by Gemini).
+        titles = {clip_id(item): item.get("gemini_title") for item in selection.selected}
         metadata: list[tuple[str, ShortMetadata]] = []
         metadata_errors: list[str] = []
         for short in shorts.shorts:
@@ -237,6 +239,7 @@ class VODAutomationPipeline:
                         candidate_end=short.candidate_end,
                         game_name=processing.game_name,
                         teaser=short.description,
+                        title=titles.get(short.key),
                     ),
                 ))
             except ShortMetadataError as error:

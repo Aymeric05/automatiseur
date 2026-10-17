@@ -55,6 +55,21 @@ class ShortsMetadataTests(unittest.TestCase):
         self.assertEqual(_lively("He did it 😱🔥"), "He did it 😱🔥")
         self.assertEqual(_lively(""), "")
 
+    def test_gemini_title_is_used_with_the_streamer_name_and_a_short_quote(self):
+        metadata = build_short_metadata(
+            broadcaster_name="Streamer", broadcaster_login="streamer", vod_id="123",
+            segments=SEGMENTS, clip_start=5.0, clip_end=19.0, candidate_start=10.0, candidate_end=14.0,
+            title="Hits the craziest shot of the night 🎯",
+        )
+        self.assertEqual(metadata.title, "Streamer: Hits the craziest shot of the night 🎯")
+        self.assertIn("💬 “no way he hit that shot”", metadata.description)
+        self.assertNotIn("warming up", metadata.description)  # not the whole clip's transcript
+        named = build_short_metadata(
+            broadcaster_name="Streamer", broadcaster_login="streamer", vod_id="123",
+            segments=SEGMENTS, clip_start=5.0, clip_end=19.0, title="Streamer loses it",
+        )
+        self.assertEqual(named.title, "Streamer loses it")  # the name is already there
+
     def test_swear_words_are_masked_in_title_and_description(self):
         segments = [{"start": 0.0, "end": 3.0, "text": "what the fuck was that shit bro"}]
         metadata = build_short_metadata(

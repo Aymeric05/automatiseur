@@ -330,15 +330,19 @@ def kill_children_with_this_process() -> None:
         print("Avertissement : les processus enfants ne s'arreteront pas avec l'application.", file=sys.stderr)
 
 
-def load_top_streamers(path: Path) -> frozenset[str]:
-    """Twitch logins of the top streamers list: one per line, # starts a comment."""
+def load_streamer_list(path: Path) -> list[str]:
+    """Twitch logins of a streamers list, in its order: one per line, # starts a comment."""
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
-        return frozenset()
-    return frozenset(
+        return []
+    return list(dict.fromkeys(
         login for line in lines if (login := line.split("#", 1)[0].strip().lower())
-    )
+    ))
+
+
+def load_top_streamers(path: Path) -> frozenset[str]:
+    return frozenset(load_streamer_list(path))
 
 
 def acquire_instance_lock(path: Path):
@@ -600,6 +604,9 @@ def main() -> int:
                 privacy=upload_privacy,
                 top_streamers=top_streamers,
                 favored_streamers=favored_streamers,
+                streamer_ranks={
+                    login: rank for rank, login in enumerate(load_streamer_list(TOP_STREAMERS_FILE), start=1)
+                },
                 check_seconds=PUBLISH_IDLE_SECONDS,
                 arbiter=partial(
                     rank_reserve, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini

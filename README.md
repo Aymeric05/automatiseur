@@ -162,7 +162,10 @@ nothing stands out). It then lets the reaction play out while the streamer keeps
 18 to 45 seconds in all. Every published Short is recorded in
 `data/output/published_shorts.json` (streamer, score, duration, lead-in), and once a day
 the app reads their views, likes and comments on YouTube, to tune the choices on real
-results. Swear words are muted in the audio, blurred in the subtitles and masked (`****`) in the
+results. Gemini also writes each Short's title (40 to 70 characters, with the streamer's name; the
+description quotes a short sentence of the moment, not the whole clip). In the ranking, the
+first streamers of `top_streamers.txt` get a bonus (+10 points for the first 5, +5 up to the
+15th), so the biggest win at a similar quality. Swear words are muted in the audio, blurred in the subtitles and masked (`****`) in the
 hook, title and description; such a Short loses 10 points in the ranking, so it is only
 published when clearly better than a clean one. A moment with a slur is dropped. Shorts rendered before this filter are never
 published. The

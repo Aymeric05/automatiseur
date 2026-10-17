@@ -37,6 +37,8 @@ PUBLICATION_MARGIN = timedelta(minutes=5)
 # A top streamer "stands out" with at least this many times the peak viewers of the next one.
 STANDOUT_FACTOR = 2
 FAVORED_SCORE_BONUS = 15  # added to the Gemini score (0-100) of favored streamers' Shorts
+# The biggest streamers of the list win at a similar quality: (rank at most, bonus).
+RANK_BONUSES = ((5, 10), (15, 5))
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,7 @@ class VODShortsUploader:
         privacy: str = UPLOAD_PRIVACY,
         top_streamers: frozenset[str] = frozenset(),
         favored_streamers: frozenset[str] = frozenset(),
+        streamer_ranks: dict[str, int] | None = None,
         check_seconds: float = 60.0,
         min_reserve: int = RESERVE_MIN_TO_PUBLISH,
         clock: Callable[[], datetime] | None = None,
@@ -109,6 +112,8 @@ class VODShortsUploader:
         self.schedule_path = output_dir / "publication_hour.json"
         self.top_streamers = frozenset(login.lower() for login in top_streamers)
         self.favored_streamers = frozenset(login.lower() for login in favored_streamers)
+        # Position in top_streamers.txt (1 = first): the higher, the bigger the bonus.
+        self.streamer_ranks = {login.lower(): rank for login, rank in (streamer_ranks or {}).items()}
         self.check_seconds = check_seconds  # how often publish_next is called
         self.min_reserve = min_reserve  # with a limit: ready Shorts needed before publishing
         self._random = random_source
@@ -283,7 +288,8 @@ class VODShortsUploader:
         the list with Shorts ready, or at least ``STANDOUT_FACTOR`` times the
         peak viewers of the next one) goes first, then the other listed
         streamers, then everyone else; within each group, the best Gemini
-        score (plus ``FAVORED_SCORE_BONUS`` for ``favored_streamers``, minus
+        score (plus ``FAVORED_SCORE_BONUS`` for ``favored_streamers`` and
+        ``RANK_BONUSES`` for the first ones of the list, minus
         ``PROFANITY_PENALTY`` when swear words were muted), then the biggest
         clip budget. A Short whose last upload failed goes last, so it never
         blocks the others.
@@ -305,9 +311,14 @@ class VODShortsUploader:
             item.login in self.top_streamers,
             compared.get(self._reserve_id(item), item.short.gemini_score or 0)
             + (FAVORED_SCORE_BONUS if item.login in self.favored_streamers else 0)
-            - (PROFANITY_PENALTY if item.muted else 0),
+            - (PROFANITY_PENALTY if item.muted else 0)
+            + self._rank_bonus(item.login),
             item.short.clip_budget,
         )
+
+    def _rank_bonus(self, login: str) -> int:
+        rank = self.streamer_ranks.get(login)
+        return next((bonus for last, bonus in RANK_BONUSES if rank is not None and rank <= last), 0)
 
     @staticmethod
     def _reserve_id(item: _ReadyShort) -> str:

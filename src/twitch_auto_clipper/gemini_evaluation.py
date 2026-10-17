@@ -18,6 +18,7 @@ GEMINI_TIMEOUT_MS = 300_000
 GEMINI_FALLBACK_MODELS = ("gemini-flash-latest", "gemini-flash-lite-latest")
 TRANSIENT_MARKERS = ("503", "500", "unavailable", "internal", "deadline", "high demand")
 HOOK_MAX_LENGTH = 80
+TITLE_MAX_LENGTH = 90
 DESCRIPTION_MAX_LENGTH = 300
 
 
@@ -48,6 +49,7 @@ EVALUATION_RESPONSE_FORMAT = {
                         "score": {"type": "number", "minimum": 0, "maximum": 100},
                         "justification": {"type": "string"},
                         "hook": {"type": "string"},
+                        "title": {"type": "string"},
                         "description": {"type": "string"},
                     },
                     "required": [
@@ -56,6 +58,7 @@ EVALUATION_RESPONSE_FORMAT = {
                         "score",
                         "justification",
                         "hook",
+                        "title",
                         "description",
                     ],
                     "additionalProperties": False,
@@ -139,16 +142,19 @@ def _build_prompt(
         "salutations, pas de reference), ne t'appuie pas sur le chat. "
         "Retourne uniquement un JSON valide sous la forme "
         '{"evaluations":[{"candidate_id":"candidate_1",'
-        '"interesting":true,"score":0,"justification":"...","hook":"...","description":"..."}]} . '
+        '"interesting":true,"score":0,"justification":"...","hook":"...","title":"...","description":"..."}]} . '
         "Le score Gemini doit etre entre 0 et 100. "
         "La justification doit etre courte et concrete. "
-        "hook et description sont ecrits en anglais (public anglophone). "
+        "hook, title et description sont ecrits en anglais (public anglophone). "
+        "title est le titre YouTube du Short : 40 a 70 caracteres, accrocheur et clair, "
+        "avec le nom du streamer, qui dit ce qui se passe (pas une citation brute de la "
+        "transcription), 1 emoji au plus. "
         "hook est la phrase d'accroche affichee en haut du Short pendant tout le clip : "
         "4 a 9 mots et 1 ou 2 emojis simples, elle tease le moment fort sans le devoiler "
         "pour que le spectateur reste jusqu'a la fin, en lien direct avec ce qui se passe "
         "dans le clip ; varie les formulations d'un candidat a l'autre. "
         "description est une ou deux phrases fun qui decrivent le clip et donnent envie de "
-        "le regarder, avec au moins 3 emojis bien choisis (dont un au debut).Ni hook ni description ne doivent annoncer quelque "
+        "le regarder, avec au moins 3 emojis bien choisis (dont un au debut). Ni hook, ni title, ni description ne doivent annoncer quelque "
         "chose qui n'arrive pas dans le clip, ni contenir de gros mot ou d'insulte. "
         "transcript est le texte du clip ; context_before et context_after sont ce qui "
         "est dit juste avant et apres : juge si le clip se comprend seul et forme un "
@@ -189,6 +195,7 @@ def _parse_response(response_text: str, candidate_ids: set[str]) -> list[dict[st
         score = evaluation.get("score")
         interesting = evaluation.get("interesting")
         hook = evaluation.get("hook")
+        title = evaluation.get("title")
         description = evaluation.get("description")
         if (
             candidate_id not in candidate_ids
@@ -207,6 +214,7 @@ def _parse_response(response_text: str, candidate_ids: set[str]) -> list[dict[st
                 "justification": justification.strip(),
                 # Optional: a missing hook or description only drops the overlay or teaser.
                 "hook": hook.strip()[:HOOK_MAX_LENGTH] if isinstance(hook, str) else "",
+                "title": title.strip()[:TITLE_MAX_LENGTH] if isinstance(title, str) else "",
                 "description": description.strip()[:DESCRIPTION_MAX_LENGTH]
                 if isinstance(description, str)
                 else "",
