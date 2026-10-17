@@ -486,6 +486,23 @@ class StatisticsTests(unittest.TestCase):
             self.assertEqual((entry["views"], entry["views_1d"], entry["views_3d"]), (6000, 1000, 5000))
             self.assertNotIn("views_7d", entry)
 
+    def test_streamers_whose_shorts_are_watched_win_a_few_points(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            shorts = [{"streamer": "two_hits", "views_1d": 100}, {"streamer": "two_hits", "views_3d": 100}]
+            shorts += [{"streamer": "eight_hits", "views_1d": 100}] * 8
+            shorts += [{"streamer": "flop", "views_1d": 2}] * 8 + [{"streamer": "listed", "views_1d": 1}] * 8
+            shorts += [{"views_7d": 10}, {"streamer": "flop", "views": 0}]  # unknown streamer; too recent
+            (tmp / "published_shorts.json").write_text(json.dumps({"shorts": shorts}), encoding="utf-8")
+            points = VODShortsUploader(tmp, top_streamers=frozenset({"listed"}))._audience_points()
+            # The same success counts more when measured on more Shorts, and stays small.
+            self.assertTrue(0 < points["two_hits"] < points["eight_hits"] < 3)
+            self.assertTrue(-3 < points["flop"] < 0)
+            self.assertEqual(points["listed"], 0.0)  # a listed streamer never loses points
+            many_hits = [{"streamer": "star", "views_1d": 10 ** 6}] * 50 + [{"streamer": "x", "views_1d": 0}] * 50
+            (tmp / "published_shorts.json").write_text(json.dumps({"shorts": many_hits}), encoding="utf-8")
+            self.assertEqual(VODShortsUploader(tmp)._audience_points()["star"], 3)  # capped
+
     def test_a_failed_reading_is_retried_an_hour_later(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)

@@ -173,7 +173,11 @@ views, likes and comments on YouTube, and keeps the views each Short had at 1, 3
 (`views_1d`, `views_3d`, `views_7d`), to tune the choices on real results. Gemini also writes each Short's title (40 to 70 characters, with the streamer's name; the
 description quotes a short sentence of the moment, not the whole clip). In the ranking, the
 first streamers of `top_streamers.txt` get a bonus (+10 points for the first 5, +5 up to the
-15th), so the biggest win at a similar quality. Swear words are muted in the audio, blurred in the subtitles and masked (`****`) in the
+15th), so the biggest win at a similar quality. The views of the published Shorts count a
+little too: a streamer whose Shorts get more views than the channel's usual gains up to 3
+points, one below it loses up to 3 (never a streamer of `top_streamers.txt`). Views are
+compared in log scale, at 7, 3 or 1 days, and a streamer's average is pulled towards the
+channel's when few of their Shorts are measured, since Shorts views are partly luck. Swear words are muted in the audio, blurred in the subtitles and masked (`****`) in the
 hook, title and description; such a Short loses 10 points in the ranking, so it is only
 published when clearly better than a clean one. A moment with a slur is dropped. Shorts rendered before this filter are never
 published. The
