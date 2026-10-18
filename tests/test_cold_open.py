@@ -42,6 +42,7 @@ class ColdOpenTests(unittest.TestCase):
         self.assertIn("between(t,0.2,0.4)", graph)
         self.assertIn("concat=n=2:v=1:a=1", graph)
         self.assertIn("[2:v]overlay", graph)  # the hook over both
+        self.assertEqual(command[command.index("-preset") + 1], "veryfast")  # half the CPU of the default
 
 
 if __name__ == "__main__":

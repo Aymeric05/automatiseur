@@ -28,6 +28,9 @@ HOOK_TOP = 200
 COLD_OPEN_SECONDS = 1.5
 COLD_OPEN_BEFORE = 0.5  # the teaser starts just before the peak, so the reaction is seen rising
 COLD_OPEN_MIN_START = 4.0  # a peak in the first seconds is seen right away: no teaser
+# x264 "veryfast": half the processor time of the default preset for the same look
+# (YouTube re-encodes every upload anyway), so a Short costs far less energy.
+VIDEO_ENCODER = ("-c:v", "libx264", "-preset", "veryfast")
 # YouTube Shorts accepts videos up to three minutes.
 MAX_SHORT_DURATION = 180.0
 # Reading a few seconds from Twitch and encoding them never takes this long.
@@ -192,7 +195,7 @@ def _build_short_ffmpeg_command(
             "-map", "[v]", "-map", "[a]" if audio_filter else "0:a?",
         ]
     return command + [
-        "-c:v", "libx264",
+        *VIDEO_ENCODER,
         "-c:a", "aac",
         "-movflags", "+faststart",
         "-f", "mp4",
@@ -235,7 +238,7 @@ def _build_cold_open_command(
         graph += f";[cv][2:v]overlay=(W-w)/2:{HOOK_TOP}[v]"
     return command + [
         "-filter_complex", graph, "-map", "[v]", "-map", "[a]",
-        "-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart", "-f", "mp4", str(output_path),
+        *VIDEO_ENCODER, "-c:a", "aac", "-movflags", "+faststart", "-f", "mp4", str(output_path),
     ]
 
 
