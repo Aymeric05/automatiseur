@@ -447,7 +447,7 @@ class StaleTemporaryFilesTests(unittest.TestCase):
             input_dir, output_dir = Path(directory, "input"), Path(directory, "output")
             (output_dir / "tmp" / "tmpabc").mkdir(parents=True)
             input_dir.mkdir()
-            old = [input_dir / "7_audio.mp4.part", input_dir / "7_audio.mp4.ytdl",
+            old = [input_dir / "7_audio.mp4.part", input_dir / "7_audio.mp4.ytdl", input_dir / "7_audio.temp.mp4",
                    output_dir / "7_1.0-20.0_short.tmp.mp4", output_dir / "7_1.0-20.0_short_hook.png"]
             fresh = input_dir / "8_audio.mp4.part"  # a download in progress
             mine = input_dir / "my_video.part.mp4"  # a file the user put there: never touched

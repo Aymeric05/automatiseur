@@ -67,7 +67,8 @@ MAX_SHORT_OVERLAP = 0.3  # widened moments sharing more of the shorter one are n
 # A temporary file untouched this long belongs to a run cut short (closed window, sleep,
 # crash): a live download, render or transcription rewrites its files every few minutes.
 STALE_TEMP_SECONDS = 6 * 3600
-TEMP_MARKERS = (".tmp", ".part", ".ytdl", "_hook.png", ".ass")
+# ".temp.": the audio conversion yt-dlp leaves behind when the app is closed during it.
+TEMP_MARKERS = (".tmp", ".temp.", ".part", ".ytdl", "_hook.png", ".ass")
 GEMINI_UNAVAILABLE_MARKERS = ("429", "resource_exhausted", "exceeded", "quota", "503", "unavailable", "high demand")
 
 
