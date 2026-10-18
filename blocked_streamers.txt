@@ -1,0 +1,8 @@
+# Blocked Twitch streamers (Twitch logins, one per line): no Short is ever made or
+# published from their streams. Their queued VODs are dropped and their Shorts in the
+# reserve deleted.
+#
+# The app adds a streamer here by itself when one of their published Shorts is
+# removed from YouTube, rejected or blocked (copyright warning, claim). Remove a
+# line to allow a streamer again.
+caedrel  # 2026-10-18: YouTube warnings on Shorts of his streams (esports broadcasts)

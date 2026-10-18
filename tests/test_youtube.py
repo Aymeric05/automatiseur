@@ -209,6 +209,21 @@ class YouTubeTests(unittest.TestCase):
         query = service.reports().query.call_args.kwargs
         self.assertEqual((query["filters"], query["dimensions"]), ("video==yt1", "video"))
 
+    @patch("twitch_auto_clipper.youtube.authenticate_youtube")
+    def test_statistics_report_rejected_and_region_blocked_videos(self, authenticate) -> None:
+        from twitch_auto_clipper.youtube import fetch_video_statistics
+
+        authenticate.return_value.videos().list().execute.return_value = {"items": [
+            {"id": "a", "statistics": {"viewCount": "10"}, "status": {"uploadStatus": "rejected", "rejectionReason": "copyright"}},
+            {"id": "b", "statistics": {"viewCount": "3"}, "status": {"uploadStatus": "processed"},
+             "contentDetails": {"regionRestriction": {"blocked": ["US", "CA"]}}},
+            {"id": "c", "statistics": {"viewCount": "7"}, "status": {"uploadStatus": "rejected", "rejectionReason": "duplicate"}},
+        ]}
+        statistics = fetch_video_statistics(["a", "b", "c"])
+        self.assertEqual(
+            [statistics[key].get("problem") for key in "abc"], ["rejete (copyright)", "bloque dans 2 pays", None]
+        )
+
     def test_confirmations_accept_and_reject(self) -> None:
         self.assertTrue(confirm_upload_rights(input_func=lambda _: "oui", output_func=lambda _: None))
         self.assertFalse(confirm_upload_rights(input_func=lambda _: "non", output_func=lambda _: None))

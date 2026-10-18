@@ -12,6 +12,7 @@ from typing import Any, Callable, NamedTuple
 
 from .daily_quota import RollingQuota
 from .shorts_metadata import ShortMetadata
+from .streamer_lists import add_streamer, load_top_streamers
 from .vod_shorts import VODShortResult
 from .youtube import fetch_video_statistics, upload_video
 
@@ -104,6 +105,7 @@ class VODShortsUploader:
         random_source: Callable[[], float] = random.random,
         statistics_fetcher: Callable[..., dict[str, dict[str, int]]] | None = None,
         retention_fetcher: Callable[[list[str], str], dict[str, dict[str, float]]] | None = None,
+        blocked_streamers_path: Path | None = None,
         arbiter: Callable[[list[dict[str, Any]]], dict[str, float]] | None = None,
     ) -> None:
         if privacy not in UPLOAD_PRIVACIES:
@@ -132,6 +134,9 @@ class VODShortsUploader:
         self._statistics_fetcher = statistics_fetcher or fetch_video_statistics
         # Share of each Short watched (YouTube Analytics); None: views only.
         self._retention_fetcher = retention_fetcher
+        # No Short of these streamers is published; one gets added when YouTube removes,
+        # rejects or blocks one of their Shorts (see refresh_statistics).
+        self.blocked_streamers_path = blocked_streamers_path
         self._statistics_retry_at: datetime | None = None
         # Comparative scores of the reserve (see _arbitrate); None: per-live Gemini scores only.
         self._arbiter = arbiter
@@ -428,6 +433,7 @@ class VODShortsUploader:
 
     def _ready_shorts(self) -> list[_ReadyShort]:
         expired_before = (self._clock() - RESERVE_MAX_AGE).timestamp()
+        blocked = load_top_streamers(self.blocked_streamers_path) if self.blocked_streamers_path else frozenset()
         ready = []
         for manifest_path in self.output_dir.glob("*_processing.json"):
             try:
@@ -457,8 +463,12 @@ class VODShortsUploader:
                     too_short = float(record["end"]) - float(record["start"]) < MIN_PUBLISHED_SECONDS
                 except (KeyError, TypeError, ValueError):
                     too_short = True
-                if not record.get("profanity_filtered") or too_short or path.stat().st_mtime < expired_before:
-                    # Rendered before swear words were muted, too short or too old: never published.
+                if (
+                    not record.get("profanity_filtered") or too_short or path.stat().st_mtime < expired_before
+                    or str(manifest.get("broadcaster_login", "")).lower() in blocked
+                ):
+                    # Rendered before swear words were muted, too short, too old or of a
+                    # blocked streamer: never published.
                     self._delete_local(path)
                     continue
                 try:
@@ -496,6 +506,9 @@ class VODShortsUploader:
     def refresh_statistics(self) -> str | None:
         """Every few hours, read the views of the Shorts published in the last 30 days.
 
+        A Short that YouTube removed (missing at two readings in a row),
+        rejected or blocked puts its streamer on the blocked list.
+
         The views a Short has at 1, 3 and 7 days are kept (``views_1d``...),
         with its retention when ``retention_fetcher`` is set (``retention_pct``:
         average share watched, ``avg_view_seconds``, ``engaged_views``).
@@ -528,8 +541,24 @@ class VODShortsUploader:
         except Exception as error:
             self._statistics_retry_at = now + timedelta(hours=1)
             return f"Statistiques YouTube non lues ({error}) : nouvel essai dans une heure."
+        newly_blocked = []
         for entry in followed:
-            entry.update(statistics.get(entry["video_id"], {}))
+            values = dict(statistics.get(entry["video_id"]) or {})
+            problem = values.pop("problem", None)
+            if not values and not problem:
+                # Missing from YouTube: removed (or deleted in Studio). Confirmed at the next reading.
+                problem = "retire de YouTube" if entry.get("missing_since") else None
+                entry.setdefault("missing_since", now.isoformat(timespec="seconds"))
+            else:
+                entry.pop("missing_since", None)
+            if problem:
+                entry["problem"] = problem
+                if self.blocked_streamers_path and entry.get("streamer") and add_streamer(
+                    self.blocked_streamers_path, entry["streamer"],
+                    f"auto {now:%Y-%m-%d}: Short {entry['video_id']} {problem}",
+                ):
+                    newly_blocked.append(f"{entry['streamer']} ({problem})")
+            entry.update(values)
             age = now - datetime.fromisoformat(entry["uploaded_at"])
             for days in VIEW_SNAPSHOT_DAYS:
                 if age >= timedelta(days=days) and "views" in entry:
@@ -554,6 +583,7 @@ class VODShortsUploader:
             f"Statistiques YouTube : {len(followed)} Shorts sur {STATISTICS_DAYS} jours, {total} vues ; "
             f"meilleur : {best.get('title', best['video_id'])} ({best.get('views', 0)} vues)"
             + retention_note
+            + (f" ; liste noire : {', '.join(newly_blocked)}" if newly_blocked else "")
         )
 
     def _load_history(self) -> dict[str, Any]:

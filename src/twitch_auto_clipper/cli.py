@@ -15,6 +15,7 @@ from .audio_events import detect_emotions
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
 from .focus import find_focus
+from .streamer_lists import load_streamer_list, load_top_streamers
 from .gemini_evaluation import (
     GeminiEvaluationError,
     load_json,
@@ -241,6 +242,8 @@ WORKER_IDLE_SECONDS = 30.0  # pause of the VOD worker when no job is due
 PUBLISH_IDLE_SECONDS = 60.0  # how often the publisher checks for a due upload
 TOP_STREAMERS_FILE = Path("top_streamers.txt")
 FAVORED_STREAMERS_FILE = Path("favored_streamers.txt")
+# No Short is ever made from these streamers (read again at each use: the app adds to it).
+BLOCKED_STREAMERS_FILE = Path("blocked_streamers.txt")
 PUBLISH_RETRY_SECONDS = 1800.0  # pause after a failed upload (network, sign-in...)
 DEFAULT_DOWNLOAD_KBPS = 1000  # VOD audio download cap (~8 Mbit/s); DOWNLOAD_MAX_KBPS overrides it
 DEFAULT_DAILY_UPLOADS = 10  # YouTube refused the 11th upload of the day (default quota)
@@ -338,21 +341,6 @@ def kill_children_with_this_process() -> None:
         job, 9, ctypes.byref(limits), ctypes.sizeof(limits)  # 9: extended limit information
     ) or not kernel32.AssignProcessToJobObject(job, kernel32.GetCurrentProcess()):
         print("Avertissement : les processus enfants ne s'arreteront pas avec l'application.", file=sys.stderr)
-
-
-def load_streamer_list(path: Path) -> list[str]:
-    """Twitch logins of a streamers list, in its order: one per line, # starts a comment."""
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
-    return list(dict.fromkeys(
-        login for line in lines if (login := line.split("#", 1)[0].strip().lower())
-    ))
-
-
-def load_top_streamers(path: Path) -> frozenset[str]:
-    return frozenset(load_streamer_list(path))
 
 
 def acquire_instance_lock(path: Path):
@@ -581,6 +569,7 @@ def main() -> int:
                 state_path=output_dir / "twitch_vod_state.json",
                 top_streamers=top_streamers,
                 rate_limit=download_kbps * 1024,
+                blocked_streamers=partial(load_top_streamers, BLOCKED_STREAMERS_FILE),
             )
         except ValueError as error:
             print(f"Erreur d'etat VOD : {error}", file=sys.stderr)
@@ -629,6 +618,7 @@ def main() -> int:
                     login: rank for rank, login in enumerate(load_streamer_list(TOP_STREAMERS_FILE), start=1)
                 },
                 check_seconds=PUBLISH_IDLE_SECONDS,
+                blocked_streamers_path=BLOCKED_STREAMERS_FILE,
                 retention_fetcher=partial(
                     fetch_video_retention,
                     client_secrets_path=args.youtube_client_secrets,

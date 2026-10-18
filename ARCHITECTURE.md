@@ -29,6 +29,7 @@ pipeline. Each section maps to an implemented component in `src/twitch_auto_clip
 | `candidate_clip.py` | Manual command: one vertical clip from a saved highlight candidate |
 | `framing.py` | CPU face detection (OpenCV Haar cascade) for 9:16 crop positioning |
 | `video.py` | FFmpeg command builder and executor for vertical clip output |
+| `streamer_lists.py` | Top, favored and blocked streamer lists (text files, one login per line) |
 | `focus.py` | Where the important part of a screen-sharing stream is (Gemini, one request per VOD) |
 | `subtitles.py` | Generates ASS subtitle files from word-level timestamps |
 | `youtube.py` | YouTube Data API v3 upload with OAuth 2.0 (Desktop flow) |

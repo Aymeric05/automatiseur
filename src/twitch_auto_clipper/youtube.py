@@ -13,6 +13,8 @@ YOUTUBE_SCOPES = [YOUTUBE_UPLOAD_SCOPE, YOUTUBE_READONLY_SCOPE]
 # authorization never changes and nothing waits for a new sign-in.
 YOUTUBE_ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly"
 ANALYTICS_TOKEN_NAME = "youtube-analytics-token.json"
+# Rejections that mean a rights or rules problem (not "duplicate" or "length").
+WARNING_REASONS = frozenset({"copyright", "legal", "trademark", "termsOfUse", "inappropriate"})
 
 
 class YouTubeUploadError(RuntimeError):
@@ -212,13 +214,17 @@ def fetch_video_statistics(
     client_secrets_path: Path = Path("credentials.json"),
     token_path: Path = Path("youtube-token.json"),
 ) -> dict[str, dict[str, int]]:
-    """Views, likes and comments of these videos (1 API quota unit per 50 videos)."""
+    """Views, likes and comments of these videos (1 API quota unit per 50 videos).
+
+    ``problem`` tells when YouTube rejected a video (copyright, legal...) or
+    blocks it in some countries (a claim); a removed video is simply missing.
+    """
     try:
         service = authenticate_youtube(client_secrets_path, token_path, allow_browser=False)
         statistics: dict[str, dict[str, int]] = {}
         for index in range(0, len(video_ids), 50):
             response = service.videos().list(
-                part="statistics", id=",".join(video_ids[index:index + 50])
+                part="statistics,status,contentDetails", id=",".join(video_ids[index:index + 50])
             ).execute()
             for item in response.get("items", []):
                 values = item.get("statistics", {})
@@ -227,6 +233,12 @@ def fetch_video_statistics(
                     "likes": int(values.get("likeCount", 0)),
                     "comments": int(values.get("commentCount", 0)),
                 }
+                status = item.get("status", {})
+                blocked = (item.get("contentDetails", {}).get("regionRestriction") or {}).get("blocked")
+                if status.get("uploadStatus") == "rejected" and status.get("rejectionReason") in WARNING_REASONS:
+                    statistics[item["id"]]["problem"] = f"rejete ({status['rejectionReason']})"
+                elif blocked:
+                    statistics[item["id"]]["problem"] = f"bloque dans {len(blocked)} pays"
         return statistics
     except YouTubeUploadError:
         raise

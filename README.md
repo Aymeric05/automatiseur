@@ -182,7 +182,12 @@ views are read too. This uses its own token (`youtube-analytics-token.json`): th
 authorization never changes, and without it the app simply reads the views only. Gemini also writes each Short's title (40 to 70 characters, with the streamer's name; the
 description quotes a short sentence of the moment, not the whole clip). In the ranking, the
 first streamers of `top_streamers.txt` get a bonus (+10 points for the first 5, +5 up to the
-15th), so the biggest win at a similar quality. When the streamer shows their screen, what
+15th), so the biggest win at a similar quality. No Short is ever made from a streamer of
+`blocked_streamers.txt`: their ended streams are not queued, their queued VODs are dropped and
+their Shorts in the reserve deleted. The app adds a streamer there by itself when YouTube
+removes one of their published Shorts (missing at two readings in a row, 6 hours apart),
+rejects it (copyright, legal...) or blocks it in some countries (a claim). Deleting a Short in
+YouTube Studio counts as a removal too; remove the line to allow the streamer again. When the streamer shows their screen, what
 matters (the video, the chart, the game) is often pushed aside by the chat, a facecam or
 other windows: before rendering a VOD's Shorts, the app grabs one 360p frame of each moment
 (a few MB in all) and asks Gemini, in a single request, where the important element is; each
