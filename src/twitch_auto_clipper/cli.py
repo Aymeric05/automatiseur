@@ -14,7 +14,7 @@ from threading import Event, Lock, Thread
 from .audio_events import detect_emotions
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
-from .focus import find_focus
+from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus
 from .streamer_lists import load_streamer_list, load_top_streamers
 from .gemini_evaluation import (
     GeminiEvaluationError,
@@ -46,6 +46,7 @@ from .vod_pipeline import (
 from .vod_processing import VODProcessingPipeline
 from .youtube import (
     ANALYTICS_TOKEN_NAME,
+    authorize_channel,
     authorize_youtube_analytics,
     fetch_video_retention,
     YouTubeUploadError,
@@ -188,6 +189,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fichier local du token OAuth.",
     )
     parser.add_argument(
+        "--authorize-irl-channel",
+        action="store_true",
+        help="Autorise une fois la publication sur la 2e chaine (IRL / Just Chatting).",
+    )
+    parser.add_argument(
         "--authorize-youtube-analytics",
         action="store_true",
         help="Autorise une fois la lecture de la retention des Shorts (YouTube Analytics).",
@@ -240,7 +246,11 @@ ENV_FILE = Path(".env")  # optional KEY=value file at the project root, ignored 
 DATA_DIR = Path("data")  # production data; --test-minutes uses DATA_DIR / "test"
 WORKER_IDLE_SECONDS = 30.0  # pause of the VOD worker when no job is due
 PUBLISH_IDLE_SECONDS = 60.0  # how often the publisher checks for a due upload
-TOP_STREAMERS_FILE = Path("top_streamers.txt")
+# One list of top streamers per YouTube channel (video games, and IRL / Just Chatting).
+STREAMER_LISTS = {GAMING_CHANNEL: Path("top_streamers_gaming.txt"), IRL_CHANNEL: Path("top_streamers_irl.txt")}
+# The second channel (IRL / Just Chatting): its own authorization; YOUTUBE_IRL_CHANNEL_ID in .env.
+IRL_TOKEN_NAME = "youtube-token-irl.json"
+IRL_ANALYTICS_TOKEN_NAME = "youtube-analytics-token-irl.json"
 FAVORED_STREAMERS_FILE = Path("favored_streamers.txt")
 # No Short is ever made from these streamers (read again at each use: the app adds to it).
 BLOCKED_STREAMERS_FILE = Path("blocked_streamers.txt")
@@ -526,6 +536,23 @@ def main() -> int:
     if args.process_vod:
         return process_vod(args, parser)
 
+    if args.authorize_irl_channel:
+        try:
+            channel_id, title = authorize_channel(
+                args.youtube_client_secrets,
+                args.youtube_token.with_name(IRL_TOKEN_NAME),
+                args.youtube_token.with_name(IRL_ANALYTICS_TOKEN_NAME),
+                os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID") or None,
+            )
+        except Exception as error:
+            print(f"Erreur : {error}", file=sys.stderr)
+            return 1
+        if os.environ.get("YOUTUBE_IRL_CHANNEL_ID") != channel_id:
+            with ENV_FILE.open("a", encoding="utf-8") as env:
+                env.write(f"\nYOUTUBE_IRL_CHANNEL_ID={channel_id}\n")
+        print(f"Chaine IRL autorisee : {title} ({channel_id}). Elle publiera au prochain demarrage.")
+        return 0
+
     if args.authorize_youtube_analytics:
         try:
             authorize_youtube_analytics(args.youtube_client_secrets, args.youtube_token.with_name(ANALYTICS_TOKEN_NAME))
@@ -549,8 +576,9 @@ def main() -> int:
             parser.error("YOUTUBE_PRIVACY doit valoir private, unlisted ou public.")
         input_dir, output_dir = DATA_DIR / "input", DATA_DIR / "output"
         favored_streamers = load_top_streamers(FAVORED_STREAMERS_FILE)
-        # Favored streamers are handled like the top list, plus a ranking bonus.
-        top_streamers = load_top_streamers(TOP_STREAMERS_FILE) | favored_streamers
+        streamer_lists = {channel: load_streamer_list(path) for channel, path in STREAMER_LISTS.items()}
+        # Favored streamers are handled like the top lists (both channels), plus a ranking bonus.
+        top_streamers = frozenset().union(*streamer_lists.values()) | favored_streamers
         # Two monitors would download, process and publish the same VODs twice.
         instance_lock = acquire_instance_lock(output_dir / ".monitor.lock")
         if instance_lock is None:
@@ -574,7 +602,7 @@ def main() -> int:
         except ValueError as error:
             print(f"Erreur d'etat VOD : {error}", file=sys.stderr)
             return 1
-        uploader = None
+        uploaders: list[VODShortsUploader] = []
         if args.auto_upload_youtube:
             expected_channel_id = os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID", "")
             if not expected_channel_id:
@@ -605,29 +633,60 @@ def main() -> int:
             except YouTubeUploadError as error:
                 print(f"Erreur : {error}", file=sys.stderr)
                 return 1
-            uploader = VODShortsUploader(
-                output_dir=output_dir,
-                client_secrets_path=args.youtube_client_secrets,
-                token_path=args.youtube_token,
-                expected_channel_id=expected_channel_id or None,
-                daily_upload_limit=daily_uploads,
-                privacy=upload_privacy,
-                top_streamers=top_streamers,
-                favored_streamers=favored_streamers,
-                streamer_ranks={
-                    login: rank for rank, login in enumerate(load_streamer_list(TOP_STREAMERS_FILE), start=1)
-                },
-                check_seconds=PUBLISH_IDLE_SECONDS,
-                blocked_streamers_path=BLOCKED_STREAMERS_FILE,
-                retention_fetcher=partial(
-                    fetch_video_retention,
+            def channel_uploader(
+                channel: str, token_path: Path, analytics_token_path: Path, channel_id: str, publishing: bool,
+            ) -> VODShortsUploader:
+                """The same publisher for each channel: its Shorts, its list, its 10 uploads a day.
+
+                Not publishing (channel not authorized yet): its reserve is kept, nothing goes out.
+                """
+                return VODShortsUploader(
+                    output_dir=output_dir,
                     client_secrets_path=args.youtube_client_secrets,
-                    token_path=args.youtube_token.with_name(ANALYTICS_TOKEN_NAME),
-                ),
-                arbiter=partial(
-                    rank_reserve, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini
-                ),
-            )
+                    token_path=token_path,
+                    expected_channel_id=channel_id or None,
+                    daily_upload_limit=daily_uploads,
+                    publishing=publishing,
+                    privacy=upload_privacy,
+                    top_streamers=frozenset(streamer_lists[channel]),
+                    favored_streamers=favored_streamers,
+                    streamer_ranks={login: rank for rank, login in enumerate(streamer_lists[channel], start=1)},
+                    check_seconds=PUBLISH_IDLE_SECONDS,
+                    blocked_streamers_path=BLOCKED_STREAMERS_FILE,
+                    retention_fetcher=partial(
+                        fetch_video_retention,
+                        client_secrets_path=args.youtube_client_secrets,
+                        token_path=analytics_token_path,
+                    ) if publishing else None,
+                    arbiter=partial(
+                        rank_reserve, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini
+                    ) if publishing else None,
+                    channel=channel,
+                )
+
+            uploaders.append(channel_uploader(
+                GAMING_CHANNEL, args.youtube_token, args.youtube_token.with_name(ANALYTICS_TOKEN_NAME),
+                expected_channel_id, True,
+            ))
+            irl_channel_id = os.environ.get("YOUTUBE_IRL_CHANNEL_ID", "")
+            irl_token = args.youtube_token.with_name(IRL_TOKEN_NAME)
+            irl_publishing = False
+            if irl_channel_id and irl_token.is_file():
+                try:
+                    authenticate_youtube(args.youtube_client_secrets, irl_token, irl_channel_id, allow_browser=False)
+                    irl_publishing = True
+                except YouTubeUploadError as error:
+                    print(f"Chaine IRL non publiee pour l'instant : {error}", file=sys.stderr)
+            else:
+                print(
+                    "Chaine IRL pas encore autorisee (--authorize-irl-channel) : "
+                    "ses Shorts sont gardes en reserve.",
+                    file=sys.stderr,
+                )
+            uploaders.append(channel_uploader(
+                IRL_CHANNEL, irl_token, args.youtube_token.with_name(IRL_ANALYTICS_TOKEN_NAME),
+                irl_channel_id, irl_publishing,
+            ))
         automation = VODAutomationPipeline(
             processing_pipeline=VODProcessingPipeline(output_dir, emotion_detector=detect_emotions),
             highlight_selector=VODHighlightSelector(
@@ -654,24 +713,32 @@ def main() -> int:
                 report(format_vod_acquisition_result(acquisition_result), acquisition_result.status == "error")
 
         def publish_next() -> bool:
-            """Upload the best ready Short if an upload is due; False after a failure."""
-            try:
-                summary = uploader.refresh_statistics()  # once a day
-            except Exception as error:  # statistics never stop the publications
-                summary = f"Statistiques YouTube non lues : {error!r}"
-            if summary:
-                report(summary)
-            try:
-                published = uploader.publish_next()
-            except Exception as error:  # keep the publisher alive; Shorts stay on disk
-                report(f"Erreur de publication : {error!r}", True)
-                return False
-            if published is None:
-                return True
-            vod_id, upload = published
-            failed = upload.status == "error"
-            report(f"Publication VOD {vod_id} : {format_short_upload_result(upload).strip()} | {upload.title}", failed)
-            return not failed
+            """Upload each channel's best ready Short when an upload is due; False after a failure."""
+            succeeded = True
+            for uploader in uploaders:
+                label = f"[{uploader.channel}] "
+                try:
+                    summary = uploader.refresh_statistics()  # every few hours
+                except Exception as error:  # statistics never stop the publications
+                    summary = f"Statistiques YouTube non lues : {error!r}"
+                if summary:
+                    report(label + summary)
+                try:
+                    published = uploader.publish_next()
+                except Exception as error:  # keep the publisher alive; Shorts stay on disk
+                    report(f"{label}Erreur de publication : {error!r}", True)
+                    succeeded = False
+                    continue
+                if published is None:
+                    continue
+                vod_id, upload = published
+                failed = upload.status == "error"
+                report(
+                    f"{label}Publication VOD {vod_id} : {format_short_upload_result(upload).strip()} | {upload.title}",
+                    failed,
+                )
+                succeeded = succeeded and not failed
+            return succeeded
 
         stop = Event()
         try:
@@ -683,7 +750,7 @@ def main() -> int:
                     return 1
                 report_cycle(result)
                 process_due_vods(manager, automation, report)  # queued VODs, this one included
-                if uploader is not None:
+                if uploaders:
                     publish_next()
                 return 1 if result.monitoring_cycle.error else 0
 
@@ -705,7 +772,7 @@ def main() -> int:
                     stop.wait(PUBLISH_IDLE_SECONDS if publish_next() else PUBLISH_RETRY_SECONDS)
 
             Thread(target=work, name="vod-worker", daemon=True).start()
-            if uploader is not None:
+            if uploaders:
                 Thread(target=publish, name="shorts-publisher", daemon=True).start()
             manager.run(report_cycle, stop, max_cycles=args.max_cycles)
         except KeyboardInterrupt:

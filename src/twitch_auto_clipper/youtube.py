@@ -140,6 +140,28 @@ def authorize_youtube_analytics(client_secrets_path: Path, token_path: Path) -> 
     _credentials(client_secrets_path, token_path, [YOUTUBE_ANALYTICS_SCOPE], True, "")
 
 
+def authorize_channel(
+    client_secrets_path: Path, token_path: Path, analytics_token_path: Path, other_channel_id: str | None
+) -> tuple[str, str]:
+    """One-time sign-in (browser) allowing the app to publish on a second channel.
+
+    The channel picked in Google's account chooser must not be ``other_channel_id``
+    (the first one). Returns its id and title; one token serves uploads and retention.
+    """
+    _, _, _, build, _, _ = _load_google_dependencies()
+    scopes = [YOUTUBE_UPLOAD_SCOPE, YOUTUBE_READONLY_SCOPE, YOUTUBE_ANALYTICS_SCOPE]
+    credentials = _credentials(client_secrets_path, token_path, scopes, True, "")
+    response = build("youtube", "v3", credentials=credentials).channels().list(part="snippet", mine=True).execute()
+    channel = (response.get("items") or [{}])[0]
+    if not channel.get("id") or channel["id"] == other_channel_id:
+        token_path.unlink(missing_ok=True)
+        raise YouTubeUploadError(
+            "Ce n'est pas la nouvelle chaine : relancez et choisissez-la dans la liste des comptes Google."
+        )
+    analytics_token_path.write_text(token_path.read_text(encoding="utf-8"), encoding="utf-8")
+    return channel["id"], channel.get("snippet", {}).get("title", "")
+
+
 def fetch_video_retention(
     video_ids: list[str],
     start_date: str,

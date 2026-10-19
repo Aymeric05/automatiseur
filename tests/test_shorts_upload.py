@@ -214,6 +214,28 @@ class PublishNextTests(unittest.TestCase):
         self.assertEqual(self.uploaded, ["fine 50"])
         self.assertEqual(list(self.tmp.glob("warned_*_short.mp4")), [])
 
+    def test_each_channel_publishes_only_its_own_shorts_with_its_own_limit(self):
+        self._vod("game", [80, 70])
+        self._vod("chat", [90, 60])
+        manifest = self.tmp / "chat_processing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        for record in data["generated_shorts"].values():
+            record["channel"] = "irl"
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        waiting = VODShortsUploader(self.tmp, uploader=self._upload, channel="irl", publishing=False)
+        self.assertIsNone(waiting.publish_next())  # not authorized yet: kept in reserve
+        self.assertEqual(len(list(self.tmp.glob("chat_*_short.mp4"))), 2)
+        for channel in ("gaming", "irl"):
+            uploader = VODShortsUploader(self.tmp, uploader=self._upload, channel=channel, daily_upload_limit=10, min_reserve=1)
+            uploader._random = lambda: 0.0  # an upload is due right away
+            while uploader.publish_next():
+                pass
+        self.assertEqual(self.uploaded, ["game 80", "game 70", "chat 90", "chat 60"])
+        self.assertTrue((self.tmp / "youtube_uploads.json").is_file())
+        self.assertTrue((self.tmp / "irl_youtube_uploads.json").is_file())  # its own 10 a day
+        history = json.loads((self.tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"]
+        self.assertEqual([entry["channel"] for entry in history], ["gaming", "gaming", "irl", "irl"])
+
     def test_shorts_rendered_without_the_profanity_filter_are_never_published(self):
         self._vod("old", [99])
         manifest = self.tmp / "old_processing.json"

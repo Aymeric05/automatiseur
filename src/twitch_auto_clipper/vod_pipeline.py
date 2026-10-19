@@ -20,7 +20,7 @@ import shutil
 import time
 from typing import Any, Callable
 
-from .focus import IRL_CATEGORIES
+from .focus import IRL_CATEGORIES, short_channel
 from .highlights import EXCITEMENT_DB, MAX_SHORT_SECONDS, _overlap_ratio, expand_moment, split_sentences
 from .profanity import has_slur
 from .video import audio_levels
@@ -115,7 +115,7 @@ class VODAutomationPipeline:
         output_dir: Path = Path("data/output"),
         video_source: Callable[[VODAcquisitionResult], Path | str] | None = None,
         delete_sources_on_success: bool = False,
-        focus_finder: Callable[[str, list[float]], list[float | None]] | None = None,
+        focus_finder: Callable[[str, list[float]], list[dict[str, Any]]] | None = None,
     ) -> None:
         self.output_dir = output_dir
         self.processing_pipeline = processing_pipeline or VODProcessingPipeline(output_dir)
@@ -224,6 +224,11 @@ class VODAutomationPipeline:
 
         if self.focus_finder is not None and processing.game_name.lower() not in IRL_CATEGORIES:
             selection = replace(selection, selected=self._with_focus(vod_id, selection.selected))
+        # Video games go to one YouTube channel, everything else to the other.
+        selection = replace(selection, selected=tuple(
+            {**moment, "channel": short_channel(moment.get("gaming"), processing.game_name)}
+            for moment in selection.selected
+        ))
 
         # 4. Shorts generation.
         video_source = self.video_source
@@ -281,19 +286,17 @@ class VODAutomationPipeline:
     # ------------------------------------------------------------------
 
     def _with_focus(self, vod_id: str, moments: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
-        """The moments with where to center their Short (``focus_x``); unchanged when unknown."""
+        """The moments with where to center their Short (``focus_x``) and whether they show
+        a video game (``gaming``); unchanged when unknown."""
         times = [
             (float(moment.get("highlight_start", moment["start"])) + float(moment.get("highlight_end", moment["end"]))) / 2
             for moment in moments
         ]
         try:
-            centers = self.focus_finder(vod_id, times)
+            found = self.focus_finder(vod_id, times)
         except Exception:  # Twitch or Gemini unavailable: centered Shorts, as before
             return moments
-        return tuple(
-            {**moment, "focus_x": center} if center is not None else moment
-            for moment, center in zip(moments, centers)
-        )
+        return tuple({**moment, **info} for moment, info in zip(moments, found))
 
     def _delete_sources(self, source_path: Path, processing: VODProcessingResult) -> list[str]:
         """Delete everything a completed VOD no longer needs.

@@ -121,13 +121,13 @@ class VODAutomationPipelineTests(unittest.TestCase):
 
         def focus(vod_id, times):
             asked.append((vod_id, len(times)))
-            return [0.27, None]  # the second one is filmed with a camera
+            return [{"focus_x": 0.27, "gaming": True}, {"gaming": False}]  # the second: a camera shot
 
         commands = self._render_with_focus(focus)
         self.assertEqual(asked, [("vod_1", 2)])
         self.assertEqual(sum("0.270*iw-ow/2" in command for command in commands), 1)
-        focus = [short["focus_x"] for short in self._manifest()["generated_shorts"].values()]
-        self.assertEqual(sorted(focus, key=str), [0.27, None])
+        shorts = sorted(self._manifest()["generated_shorts"].values(), key=lambda short: str(short["focus_x"]))
+        self.assertEqual([(short["focus_x"], short["channel"]) for short in shorts], [(0.27, "gaming"), (None, "irl")])
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_shorts_stay_centered_when_the_focus_is_unknown_or_the_stream_is_irl(self, gemini):
@@ -138,7 +138,7 @@ class VODAutomationPipelineTests(unittest.TestCase):
         for path in self.tmp.glob("vod_1_*"):
             path.unlink()
         asked = []
-        self._render_with_focus(lambda vod_id, times: asked.append(times) or [0.27] * len(times), "IRL")
+        self._render_with_focus(lambda vod_id, times: asked.append(times) or [{"focus_x": 0.27}] * len(times), "IRL")
         self.assertEqual(asked, [])
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)

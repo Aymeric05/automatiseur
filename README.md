@@ -181,7 +181,7 @@ the share of each Short watched (`retention_pct`), the average seconds watched a
 views are read too. This uses its own token (`youtube-analytics-token.json`): the upload
 authorization never changes, and without it the app simply reads the views only. Gemini also writes each Short's title (40 to 70 characters, with the streamer's name; the
 description quotes a short sentence of the moment, not the whole clip). In the ranking, the
-first streamers of `top_streamers.txt` get a bonus (+10 points for the first 5, +5 up to the
+first streamers of the channel's list get a bonus (+10 points for the first 5, +5 up to the
 15th), so the biggest win at a similar quality. No Short is ever made from a streamer of
 `blocked_streamers.txt`: their ended streams are not queued, their queued VODs are dropped and
 their Shorts in the reserve deleted. The app adds a streamer there by itself when YouTube
@@ -195,7 +195,7 @@ Short is then centered on it rather than on the middle (never just on the stream
 Streams filmed with a camera (webcam in full frame, IRL categories) stay centered, and so
 does every Short when Gemini or Twitch cannot answer. The views of the published Shorts count a
 little too: a streamer whose Shorts get more views than the channel's usual gains up to 3
-points, one below it loses up to 3 (never a streamer of `top_streamers.txt`). Views are
+points, one below it loses up to 3 (never a streamer of the channel's list). Views are
 compared in log scale, at 7, 3 or 1 days, and a streamer's average is pulled towards the
 channel's when few of their Shorts are measured, since Shorts views are partly luck. Swear words are muted in the audio, blurred in the subtitles and masked (`****`) in the
 hook, title and description; such a Short loses 10 points in the ranking, so it is only
@@ -207,11 +207,23 @@ times real time on an RTX 3050 laptop GPU; install the CUDA libraries with
 (Whisper `base`, int8). When VODs pile up, the top streamers' VODs come first, then the
 highest peak viewers.
 
-`top_streamers.txt` lists the Twitch logins of the top English streamers (editable, one per
-line). Their VODs are processed first with up to 20 moments each. At publication, the
-Shorts of a listed streamer who clearly stands out (the only one of the list with Shorts
-ready, or at least twice the peak viewers of the next one) go first, then the best Gemini
-scores of the list, then the best of the other streamers. `favored_streamers.txt` lists
+The Shorts go to two YouTube channels: video games on LiveActions!, everything else (IRL,
+Just Chatting, reactions, podcasts, roleplay and sketches outside games) on a second
+channel. Each moment's channel is decided by what its frame shows (Gemini already looks at
+it for the framing: a video game played or watched, GTA RP included, or not), else by the
+stream's Twitch category. Each channel works the same way, with its own reserve of 30
+Shorts, its own 10 uploads in any 24 hours, its own ranking and statistics. Authorize the
+second channel once with `python -m twitch_auto_clipper --authorize-irl-channel` (pick the
+new channel in Google's account chooser): its id is written to `.env`
+(`YOUTUBE_IRL_CHANNEL_ID`) and its token to `youtube-token-irl.json`. Until then, its
+Shorts wait in its reserve.
+
+`top_streamers_gaming.txt` and `top_streamers_irl.txt` list the Twitch logins of the top
+English streamers of each channel (editable, one per line; a streamer who does both can be
+in both). Their VODs are processed first with up to 20 moments each. At publication on a
+channel, the Shorts of a streamer of its list who clearly stands out (the only one of the
+list with Shorts ready, or at least twice the peak viewers of the next one) go first, then
+the best Gemini scores of the list, then the best of the other streamers. `favored_streamers.txt` lists
 women streamers to favor: they are handled like the top list, and their Shorts get a bonus
 of 15 points on the Gemini score (0-100) in that ranking. A VOD still waiting 48 hours after
 its stream ended is dropped.

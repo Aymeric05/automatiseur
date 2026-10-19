@@ -106,6 +106,8 @@ class VODShortsUploader:
         statistics_fetcher: Callable[..., dict[str, dict[str, int]]] | None = None,
         retention_fetcher: Callable[[list[str], str], dict[str, dict[str, float]]] | None = None,
         blocked_streamers_path: Path | None = None,
+        channel: str = "gaming",
+        publishing: bool = True,
         arbiter: Callable[[list[dict[str, Any]]], dict[str, float]] | None = None,
     ) -> None:
         if privacy not in UPLOAD_PRIVACIES:
@@ -114,17 +116,23 @@ class VODShortsUploader:
         # YouTube keeps uploads of an API project it has not audited private anyway.
         self.privacy = privacy
         self._clock = clock or (lambda: datetime.now(timezone.utc))
-        # Uploads allowed in any 24 hours (YouTube's limit is a rolling window).
+        # The YouTube channel this publisher fills ("gaming" or "irl"): only its Shorts, with
+        # its own state files (the gaming channel keeps the original names).
+        self.channel = channel
+        # False until the channel is authorized: its reserve is kept up to date, nothing is uploaded.
+        self.publishing = publishing
+        prefix = "" if channel == "gaming" else f"{channel}_"
+        # Uploads allowed in any 24 hours (YouTube's limit is a rolling window, per channel).
         # None: no local limit and no spreading (YouTube's refusals are still honoured).
         self.quota = (
-            RollingQuota(output_dir / "youtube_uploads.json", daily_upload_limit, clock=self._clock)
+            RollingQuota(output_dir / f"{prefix}youtube_uploads.json", daily_upload_limit, clock=self._clock)
             if daily_upload_limit is not None
             else None
         )
-        self.schedule_path = output_dir / "publication_hour.json"
+        self.schedule_path = output_dir / f"{prefix}publication_hour.json"
         self.top_streamers = frozenset(login.lower() for login in top_streamers)
         self.favored_streamers = frozenset(login.lower() for login in favored_streamers)
-        # Position in top_streamers.txt (1 = first): the higher, the bigger the bonus.
+        # Position in this channel's top streamers list (1 = first): the higher, the bigger the bonus.
         self.streamer_ranks = {login.lower(): rank for login, rank in (streamer_ranks or {}).items()}
         self.check_seconds = check_seconds  # how often publish_next is called
         self.min_reserve = min_reserve  # with a limit: ready Shorts needed before publishing
@@ -140,7 +148,7 @@ class VODShortsUploader:
         self._statistics_retry_at: datetime | None = None
         # Comparative scores of the reserve (see _arbitrate); None: per-live Gemini scores only.
         self._arbiter = arbiter
-        self.arbitration_path = output_dir / "reserve_ranking.json"
+        self.arbitration_path = output_dir / f"{prefix}reserve_ranking.json"
         self._uploader = uploader or upload_video
         self.client_secrets_path = client_secrets_path
         self.token_path = token_path
@@ -257,7 +265,7 @@ class VODShortsUploader:
         ready = ready[:RESERVE_SIZE]
         if self._arbitrate(ready):
             ready.sort(key=self._rank_key(ready), reverse=True)
-        if not ready or (
+        if not ready or not self.publishing or (
             self.quota is not None
             and (len(ready) < self.min_reserve or not self._upload_due(self._publication_window()))
         ):
@@ -456,6 +464,8 @@ class VODShortsUploader:
                 meta = metadata.get(key)
                 if key in uploads or not isinstance(record, dict) or not isinstance(meta, dict):
                     continue
+                if (record.get("channel") or "gaming") != self.channel:
+                    continue  # the other channel's publisher takes care of it
                 path = self.output_dir / str(record.get("file", ""))
                 if not path.name.endswith("_short.mp4") or not path.is_file():
                     continue
@@ -527,6 +537,8 @@ class VODShortsUploader:
             pass
         followed = []
         for entry in history["shorts"]:
+            if entry.get("channel", "gaming") != self.channel:
+                continue  # read by the other channel's publisher, with its own authorization
             try:
                 if now - datetime.fromisoformat(entry["uploaded_at"]) < timedelta(days=STATISTICS_DAYS):
                     followed.append(entry)
@@ -608,11 +620,12 @@ class VODShortsUploader:
         streamer = str(manifest.get("broadcaster_login", ""))
         history["shorts"].append({
             "video_id": video_id,
+            "channel": self.channel,
             "url": url,
             "title": metadata.title,
             "vod_id": short.vod_id,
             "streamer": streamer,
-            "list_rank": self.streamer_ranks.get(streamer.lower()),  # place in top_streamers.txt
+            "list_rank": self.streamer_ranks.get(streamer.lower()),  # place in the channel's top streamers list
             "peak_viewers": manifest.get("peak_viewers"),
             "gemini_score": short.gemini_score,
             "compared_score": self._comparative_scores().get(f"{short.vod_id}:{short.key}"),

@@ -87,9 +87,12 @@ vod_pipeline.py → completed: audio and chat files deleted, job closed
     ▼
 cleanup_finished_vods() → once no Short of the VOD waits for publication, all its files go
 
-Publisher thread (shorts_upload.py, publish_next): the reserve (ready Shorts of the
-completed VODs) is ranked and kept to its 30 best: a standout streamer of
-top_streamers.txt first, then the list, then the others, best Gemini score first. As soon
+Publisher thread (shorts_upload.py, publish_next), one publisher per YouTube channel
+("gaming": LiveActions!, "irl": everything else; each Short's channel comes from its frame,
+see focus.py): each reserve (ready Shorts of the completed VODs for that channel) is ranked
+and kept to its 30 best: a standout streamer of the channel's list
+(top_streamers_gaming.txt or top_streamers_irl.txt) first, then the list, then the others,
+best Gemini score first. As soon
 as YouTube allows uploads (at most 10 in any 24 hours), the best ones go out (youtube.py),
 spread at random over one hour; after a refusal, it tries again an hour later.
 ```
