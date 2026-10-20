@@ -17,7 +17,8 @@ pipeline. Each section maps to an implemented component in `src/twitch_auto_clip
 | `vod_acquisition.py` | Persistent queue of ended streams: VOD lookup, audio download, retries |
 | `transcription.py` | Transcribes video using faster-whisper (CPU/int8, word timestamps) |
 | `chat_activity.py` | Parses TwitchDownloaderCLI JSON; per-candidate chat summary for Gemini |
-| `vod_processing.py` | Runs transcription + chat download once per acquired VOD |
+| `audio_events.py` | Laughter, screams, gasps found in the VOD audio (YAMNet ONNX) |
+| `vod_processing.py` | Runs transcription, emotion detection and chat download once per VOD |
 | `highlights.py` | Heuristic scoring of transcription segments as highlight candidates |
 | `gemini_evaluation.py` | Sends candidates to Gemini API; parses and validates its JSON response |
 | `vod_highlights.py` | Orchestrates heuristics → chat enrichment → Gemini selection per VOD |
@@ -28,6 +29,8 @@ pipeline. Each section maps to an implemented component in `src/twitch_auto_clip
 | `candidate_clip.py` | Manual command: one vertical clip from a saved highlight candidate |
 | `framing.py` | CPU face detection (OpenCV Haar cascade) for 9:16 crop positioning |
 | `video.py` | FFmpeg command builder and executor for vertical clip output |
+| `streamer_lists.py` | Top, favored and blocked streamer lists (text files, one login per line) |
+| `focus.py` | Where the important part of a screen-sharing stream is (Gemini, one request per VOD) |
 | `subtitles.py` | Generates ASS subtitle files from word-level timestamps |
 | `youtube.py` | YouTube Data API v3 upload with OAuth 2.0 (Desktop flow) |
 | `cli.py` | Main CLI entry point (`tac` / `python -m twitch_auto_clipper`) |
@@ -60,12 +63,16 @@ vod_acquisition.py → VODAcquisitionResult
 vod_processing.py → VODProcessingResult
     │   ├─ transcribe_video() via transcription.py + faster-whisper
     │   │   └─ data/output/<vod_id>_transcript.json
+    │   ├─ detect_emotions() via audio_events.py + onnxruntime (YAMNet)
+    │   │   └─ data/output/<vod_id>_emotions.json
     │   ├─ download_twitch_chat() via twitch_chat.py + TwitchDownloaderCLI
     │   │   └─ data/output/<vod_id>_chat.json
     │   └─ manifest: data/output/<vod_id>_processing.json
     ▼
 vod_highlights.py → VODHighlightSelectionResult
     │   ├─ analyze_transcription() via highlights.py   → heuristic candidates
+    │   ├─ chat_spike_moments() via chat_activity.py   → moments the chat reacts to
+    │   ├─ with_emotions()                             → laughter/scream moments, tags
     │   ├─ add_chat_signals() via chat_activity.py     → chat summary
     │   ├─ select_candidates() via gemini_evaluation.py → Gemini selection
     │   └─ data/output/<vod_id>_gemini_selection_<budget>.json
@@ -80,9 +87,12 @@ vod_pipeline.py → completed: audio and chat files deleted, job closed
     ▼
 cleanup_finished_vods() → once no Short of the VOD waits for publication, all its files go
 
-Publisher thread (shorts_upload.py, publish_next): the reserve (ready Shorts of the
-completed VODs) is ranked and kept to its 30 best: a standout streamer of
-top_streamers.txt first, then the list, then the others, best Gemini score first. As soon
+Publisher thread (shorts_upload.py, publish_next), one publisher per YouTube channel
+("gaming": LiveActions!, "irl": everything else; each Short's channel comes from its frame,
+see focus.py): each reserve (ready Shorts of the completed VODs for that channel) is ranked
+and kept to its 30 best: a standout streamer of the channel's list
+(top_streamers_gaming.txt or top_streamers_irl.txt) first, then the list, then the others,
+best Gemini score first. As soon
 as YouTube allows uploads (at most 10 in any 24 hours), the best ones go out (youtube.py),
 spread at random over one hour; after a refusal, it tries again an hour later.
 ```
@@ -121,6 +131,10 @@ JSON state files make every step resumable after a crash or a restart:
   after a refusal.
 - **`data/output/publication_hour.json`** — the current one-hour window the uploads are
   spread over.
+- **`data/output/published_shorts.json`** — every published Short, what it was made of
+  (source, emotion, hook, framing, length cap, cold open) and its views (read every 6
+  hours, kept at 1, 3 and 7 days), with its retention once YouTube Analytics is authorized
+  (`--authorize-youtube-analytics`, separate token `youtube-analytics-token.json`).
 
 All files are written atomically (write to `.tmp`, then rename) to prevent corruption.
 Shorts, metadata and uploads are keyed by the moment itself (`<start>-<end>` in seconds),
@@ -131,7 +145,12 @@ A lock file (`data/output/.monitor.lock`) prevents two monitors on the same data
 
 ## Vertical Framing
 
-`framing.py` samples 5 evenly-spaced frames from the source video and runs OpenCV's
+Automated Shorts: `focus.py` grabs one 360p frame per selected moment and asks Gemini
+(`gemini-flash-lite-latest` first, one request per VOD) for the box of what matters on
+screen; the crop window is shifted to its center (`focus_x` in the selection item).
+Camera shots (full-frame webcam, IRL categories) and any failure keep a centered crop.
+
+Manual clip commands: `framing.py` samples 5 evenly-spaced frames from the source video and runs OpenCV's
 Haar cascade face detector on each. If faces are detected, the 9:16 crop window is
 shifted horizontally to center on the largest detected face. If OpenCV is unavailable,
 not installed, or no faces are detected, a centered crop is used as fallback.
@@ -189,6 +208,7 @@ Policy URL before any upload proceeds.
 | yt-dlp | Python API (`yt_dlp.YoutubeDL`) |
 | TwitchDownloaderCLI | `subprocess.run()` (must be in `PATH`) |
 | faster-whisper | Python API (`faster_whisper.WhisperModel`) |
+| onnxruntime + YAMNet | `audiomagic/yamnet-onnx` from the Hugging Face cache (optional, graceful fallback) |
 | OpenCV (`opencv-python-headless`) | Python API (optional, graceful fallback) |
 | `google-genai` | Python API (`google.genai.Client`) |
 | Google API Python Client | Python API (YouTube upload) |

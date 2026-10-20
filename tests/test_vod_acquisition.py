@@ -185,6 +185,24 @@ class VODAcquisitionTests(unittest.TestCase):
         self.assertEqual(manager.pending_jobs, MAX_QUEUED_JOBS)
         self.assertNotIn("stream-0", self.state()["jobs"])  # the smallest peaks were dropped
 
+    def test_a_blocked_streamer_is_never_queued_and_their_queued_vods_are_dropped(self) -> None:
+        blocked = set()
+        manager = TwitchVODAcquisitionManager(
+            api_client=self.client, input_dir=self.root / "input", state_path=self.root / "state" / "vods.json",
+            downloader=self.download, clock=self.clock, blocked_streamers=lambda: frozenset(blocked),
+        )
+        manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream("stream-1"),)))
+        list(manager.acquire_due())
+        manager.record_automation("stream-1", "vod-1", "error", error="boom")
+        audio = self.root / "input" / "vod-1_audio.mp4"
+        blocked.add("login")  # added while the app runs (a YouTube warning)
+        self.assertEqual(list(manager.acquire_due()), [])  # dropped before any work
+        self.assertFalse(audio.exists())
+        self.assertIn("liste noire", self.state()["abandoned"]["stream-1"]["error"])
+        result = manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream("stream-2"),)))
+        self.assertEqual(result[0].status, "skipped_blocked")
+        self.assertEqual(manager.pending_jobs, 0)
+
     def test_zero_budget_is_never_queued(self) -> None:
         manager = self.manager()
         result = manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(budget=0),)))

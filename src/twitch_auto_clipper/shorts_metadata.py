@@ -126,14 +126,15 @@ def build_short_metadata(
         # A bare reaction ("Oh my god.") says little: quote the clip's most
         # substantial sentence instead.
         quote = max(re.split(r"(?<=[.!?])\s+", excerpt), key=lambda s: len(s.split()))
-    if not quote:
+    written = censor(_clean(title or ""))
+    if not quote and not written:
         raise ShortMetadataError("Aucun texte transcrit pour ce clip.")
 
+    # A scream or a laugh without words has no quote: Gemini's title and teaser tell the moment.
     quote_words = quote.split()
     short_quote = " ".join(quote_words[:QUOTE_MAX_WORDS])
     if len(quote_words) > QUOTE_MAX_WORDS:
         short_quote += "…"
-    written = censor(_clean(title or ""))
     if written and name.lower() not in written.lower():
         written = f"{name}: {written}"  # the streamer's name always shows
     title = _truncate(written or f"{name}: “{short_quote}”", TITLE_MAX_LENGTH)
@@ -142,7 +143,8 @@ def build_short_metadata(
     game = _clean(game_name)
     lines = [teaser, ""] if teaser else []
     # A short quote of the moment: the whole clip's transcript reads badly (repetitions).
-    lines.extend([f"💬 “{short_quote}”", ""])
+    if short_quote:
+        lines.extend([f"💬 “{short_quote}”", ""])
     lines.append(f"🎮 Clip from {name}'s Twitch stream" + (f" ({game})." if game else "."))
     if broadcaster_login:
         lines.append(f"📺 Channel: https://www.twitch.tv/{_clean(broadcaster_login)}")

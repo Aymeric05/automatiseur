@@ -134,6 +134,16 @@ class ShortsMetadataTests(unittest.TestCase):
                 segments=SEGMENTS, clip_start=100, clip_end=110,
             )
 
+    def test_a_moment_without_words_uses_geminis_title_and_teaser(self):
+        metadata = build_short_metadata(
+            broadcaster_name="xQc", broadcaster_login="xqc", vod_id="1",
+            segments=SEGMENTS, clip_start=100, clip_end=110,
+            title="xQc Screams at the Slot Machine 🎰", teaser="😱 He could not believe it 🎰🔥",
+        )
+        self.assertEqual(metadata.title, "xQc Screams at the Slot Machine 🎰")
+        self.assertTrue(metadata.description.startswith("😱 He could not believe it"))
+        self.assertNotIn("💬", metadata.description)
+
 
 if __name__ == "__main__":
     unittest.main()

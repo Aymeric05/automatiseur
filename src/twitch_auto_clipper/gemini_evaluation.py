@@ -115,6 +115,8 @@ def _candidate_context(
                 if isinstance(signal, dict)
                 else None,
                 "transcript": spoken(start, end),
+                # Laughter, scream, gasp... heard in the audio (may come from the game).
+                "audio_event": candidate.get("emotion"),
                 # What is said just around the clip, to judge if it stands alone.
                 "context_before": spoken(start - CONTEXT_SECONDS, start),
                 "context_after": spoken(end, end + CONTEXT_SECONDS),
@@ -140,6 +142,9 @@ def _build_prompt(
         "Le chat est un contexte secondaire, pas une preuve : une reaction peut viser un "
         "evenement visuel absent de la transcription. Si reliable est false (debut de stream, "
         "salutations, pas de reference), ne t'appuie pas sur le chat. "
+        "audio_event (null sinon) : un rire, un cri, un haletement ou des pleurs detectes "
+        "dans l'audio du clip ; souvent une vraie reaction du streamer, mais ils peuvent "
+        "venir du jeu ou d'une video regardee : verifie avec la transcription. "
         "Retourne uniquement un JSON valide sous la forme "
         '{"evaluations":[{"candidate_id":"candidate_1",'
         '"interesting":true,"score":0,"justification":"...","hook":"...","title":"...","description":"..."}]} . '
@@ -224,7 +229,7 @@ def _parse_response(response_text: str, candidate_ids: set[str]) -> list[dict[st
 
 
 def _generate_json(
-    prompt: str,
+    prompt: Any,  # text, or a list of text and images
     schema: dict[str, Any],
     model: str,
     quota_dir: Path | None,

@@ -13,13 +13,15 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 import json
+import random
 import re
 from pathlib import Path
 import shutil
 import time
 from typing import Any, Callable
 
-from .highlights import _overlap_ratio, expand_moment, split_sentences
+from .focus import IRL_CATEGORIES, short_channel
+from .highlights import EXCITEMENT_DB, MAX_SHORT_SECONDS, _overlap_ratio, expand_moment, split_sentences
 from .profanity import has_slur
 from .video import audio_levels
 from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata, clip_transcript_text
@@ -40,6 +42,7 @@ from .vod_processing import (
     format_vod_processing_result,
 )
 from .vod_shorts import (
+    COLD_OPEN_MIN_START,
     ShortsGenerationError,
     clip_id,
     VODShortsGenerationResult,
@@ -56,11 +59,16 @@ GEMINI_WAIT = timedelta(minutes=30)
 # this score (0-100) a moment is neither rendered nor published.
 MIN_GEMINI_SCORE = 60
 LEAD_IN_ANALYSIS_SECONDS = 20  # audio examined before a moment to find what triggers it
+# Length test: this share of the moments is capped at SHORT_TEST_SECONDS instead of
+# MAX_SHORT_SECONDS; their views and retention tell which length works best.
+SHORT_TEST_SECONDS = 30.0
+SHORT_TEST_SHARE = 0.5
 MAX_SHORT_OVERLAP = 0.3  # widened moments sharing more of the shorter one are near-duplicates
 # A temporary file untouched this long belongs to a run cut short (closed window, sleep,
 # crash): a live download, render or transcription rewrites its files every few minutes.
 STALE_TEMP_SECONDS = 6 * 3600
-TEMP_MARKERS = (".tmp", ".part", ".ytdl", "_hook.png", ".ass")
+# ".temp.": the audio conversion yt-dlp leaves behind when the app is closed during it.
+TEMP_MARKERS = (".tmp", ".temp.", ".part", ".ytdl", "_hook.png", ".ass")
 GEMINI_UNAVAILABLE_MARKERS = ("429", "resource_exhausted", "exceeded", "quota", "503", "unavailable", "high demand")
 
 
@@ -107,6 +115,7 @@ class VODAutomationPipeline:
         output_dir: Path = Path("data/output"),
         video_source: Callable[[VODAcquisitionResult], Path | str] | None = None,
         delete_sources_on_success: bool = False,
+        focus_finder: Callable[[str, list[float]], list[dict[str, Any]]] | None = None,
     ) -> None:
         self.output_dir = output_dir
         self.processing_pipeline = processing_pipeline or VODProcessingPipeline(output_dir)
@@ -114,6 +123,8 @@ class VODAutomationPipeline:
         self.shorts_generator = shorts_generator or VODShortsGenerator(output_dir)
         self.video_source = video_source
         self.delete_sources_on_success = delete_sources_on_success
+        # Where to center each Short of a screen-sharing stream (see focus.find_focus).
+        self.focus_finder = focus_finder
 
     def run(self, acquisition: VODAcquisitionResult) -> VODAutomationResult:
         result = self._run(acquisition)
@@ -184,12 +195,17 @@ class VODAutomationPipeline:
                 levels = audio_levels(source_path, start - window, window) if window >= 1 else []
             except Exception:  # unreadable audio: a fixed lead-in is used
                 levels = []
-            new_start, new_end = expand_moment(start, end, sentences, levels)
+            # The same moment always draws the same length (a re-run renders the same Short).
+            short_test = random.Random(f"{vod_id}:{start}").random() < SHORT_TEST_SHARE
+            max_seconds = SHORT_TEST_SECONDS if short_test else MAX_SHORT_SECONDS
+            new_start, new_end = expand_moment(start, end, sentences, levels, max_seconds)
             # The highlighted sentence (title quote) stays the original moment.
             return {
                 **item, "start": new_start, "end": new_end,
                 "highlight_start": item.get("highlight_start", start),
                 "highlight_end": item.get("highlight_end", end),
+                "max_seconds": max_seconds,
+                "peak": reaction_peak(item, source_path, new_start, new_end),
             }
 
         widened = [
@@ -205,6 +221,14 @@ class VODAutomationPipeline:
                 vod_id, "completed", processing, selection,
                 message="Aucun moment assez interessant pour un Short.",
             )
+
+        if self.focus_finder is not None and processing.game_name.lower() not in IRL_CATEGORIES:
+            selection = replace(selection, selected=self._with_focus(vod_id, selection.selected))
+        # Video games go to one YouTube channel, everything else to the other.
+        selection = replace(selection, selected=tuple(
+            {**moment, "channel": short_channel(moment.get("gaming"), processing.game_name)}
+            for moment in selection.selected
+        ))
 
         # 4. Shorts generation.
         video_source = self.video_source
@@ -261,6 +285,19 @@ class VODAutomationPipeline:
     # Helpers
     # ------------------------------------------------------------------
 
+    def _with_focus(self, vod_id: str, moments: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
+        """The moments with where to center their Short (``focus_x``) and whether they show
+        a video game (``gaming``); unchanged when unknown."""
+        times = [
+            (float(moment.get("highlight_start", moment["start"])) + float(moment.get("highlight_end", moment["end"]))) / 2
+            for moment in moments
+        ]
+        try:
+            found = self.focus_finder(vod_id, times)
+        except Exception:  # Twitch or Gemini unavailable: centered Shorts, as before
+            return moments
+        return tuple({**moment, **info} for moment, info in zip(moments, found))
+
     def _delete_sources(self, source_path: Path, processing: VODProcessingResult) -> list[str]:
         """Delete everything a completed VOD no longer needs.
 
@@ -273,6 +310,7 @@ class VODAutomationPipeline:
             processing.timestamped_chat_path,
             processing.transcript_path,
             *self.output_dir.glob(f"{vod_id}_highlights.json"),
+            *self.output_dir.glob(f"{vod_id}_emotions.json"),
             *self.output_dir.glob(f"{vod_id}_gemini_selection_*.json"),
         ]
         if "_audio." in source_path.name:  # never a full video the user put there
@@ -339,6 +377,25 @@ class VODAutomationPipeline:
             temporary_path.replace(manifest_path)
         except OSError:
             pass
+
+
+def reaction_peak(item: dict[str, Any], source_path: Path, start: float, end: float) -> float | None:
+    """When the strongest reaction is heard (the Short's cold open), None when nothing stands out.
+
+    The laugh or scream found in the audio, else the loudest second, at
+    least ``EXCITEMENT_DB`` above the clip's usual level.
+    """
+    onset = item.get("onset")
+    if isinstance(onset, (int, float)) and start + COLD_OPEN_MIN_START <= onset < end:
+        return float(onset)
+    try:
+        levels = audio_levels(source_path, start, int(end - start))
+    except Exception:
+        return None
+    later = levels[int(COLD_OPEN_MIN_START):]
+    if not later or max(later) < sorted(levels)[len(levels) // 2] + EXCITEMENT_DB:
+        return None
+    return round(start + COLD_OPEN_MIN_START + later.index(max(later)), 2)
 
 
 def without_near_duplicates(moments: list[dict[str, Any]]) -> list[dict[str, Any]]:

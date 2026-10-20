@@ -1,0 +1,60 @@
+# Top English Twitch streamers of the video games (LiveActions!) channel (Twitch logins, one per line),
+# ranked by average viewers over the last 30 days (TwitchTracker, October 2026). Edit freely.
+#
+# Streamers who mostly play video games (GTA RP included).
+# Each streamer is in one list only (their main content). The list does not decide where a
+# Short goes (its frame does: a video game, or not); it gives priority: their VODs are
+# processed first with a budget of 20 clips, and on this channel their Shorts go
+# first: those of a streamer who clearly stands out that day (alone in the list, or at
+# least twice the peak viewers of the next one), then the best of the list, then the
+# best of the other streamers. The first ones of the list get a bonus.
+caseoh_
+jynxzi
+xqc
+sodapoppin
+buddha
+unboxholics
+xaryu
+s1mple
+joe_bartolozzi
+thebausffs
+moonmoon
+northernlion
+rdcgaming
+jerma985
+lirik
+topson
+clix
+shroud
+k3soju
+summit1g
+pikabooirl
+aussieantics
+supertf
+elajjaz
+hutchmf
+cohhcarnage
+quin69
+payo
+mitchjones
+tenz
+forsen
+markiplier
+emongg
+vinesauce
+gorgc
+loltyler1
+timthetatman
+ninja
+nickmercs
+sypherpk
+tarik
+mongraal
+quackity
+tubbo
+philza
+georgenotfound
+theburntpeanut
+iitztimmy
+ohnepixel
+valkyrae

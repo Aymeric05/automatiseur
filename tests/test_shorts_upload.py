@@ -9,6 +9,7 @@ from twitch_auto_clipper.shorts_metadata import ShortMetadata
 from datetime import date, datetime, timedelta, timezone
 
 from twitch_auto_clipper.daily_quota import DailyQuota
+from twitch_auto_clipper.streamer_lists import load_top_streamers
 from twitch_auto_clipper.shorts_upload import VODShortsUploader, format_short_upload_result
 from twitch_auto_clipper.vod_shorts import VODShortResult
 from twitch_auto_clipper.youtube import YouTubeUploadError
@@ -197,6 +198,43 @@ class PublishNextTests(unittest.TestCase):
         while uploader.publish_next():
             pass
         self.assertEqual(self.uploaded, ["late 95", "early 70", "early 60"])
+
+    def test_a_blocked_streamers_shorts_are_deleted_never_published(self):
+        self._vod("warned", [99])
+        self._vod("fine", [50])
+        manifest = self.tmp / "warned_processing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["broadcaster_login"] = "Caedrel"
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        blocked = self.tmp / "blocked.txt"
+        blocked.write_text("caedrel  # warnings\n", encoding="utf-8")
+        uploader = VODShortsUploader(self.tmp, uploader=self._upload, blocked_streamers_path=blocked)
+        while uploader.publish_next():
+            pass
+        self.assertEqual(self.uploaded, ["fine 50"])
+        self.assertEqual(list(self.tmp.glob("warned_*_short.mp4")), [])
+
+    def test_each_channel_publishes_only_its_own_shorts_with_its_own_limit(self):
+        self._vod("game", [80, 70])
+        self._vod("chat", [90, 60])
+        manifest = self.tmp / "chat_processing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        for record in data["generated_shorts"].values():
+            record["channel"] = "irl"
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        waiting = VODShortsUploader(self.tmp, uploader=self._upload, channel="irl", publishing=False)
+        self.assertIsNone(waiting.publish_next())  # not authorized yet: kept in reserve
+        self.assertEqual(len(list(self.tmp.glob("chat_*_short.mp4"))), 2)
+        for channel in ("gaming", "irl"):
+            uploader = VODShortsUploader(self.tmp, uploader=self._upload, channel=channel, daily_upload_limit=10, min_reserve=1)
+            uploader._random = lambda: 0.0  # an upload is due right away
+            while uploader.publish_next():
+                pass
+        self.assertEqual(self.uploaded, ["game 80", "game 70", "chat 90", "chat 60"])
+        self.assertTrue((self.tmp / "youtube_uploads.json").is_file())
+        self.assertTrue((self.tmp / "irl_youtube_uploads.json").is_file())  # its own 10 a day
+        history = json.loads((self.tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"]
+        self.assertEqual([entry["channel"] for entry in history], ["gaming", "gaming", "irl", "irl"])
 
     def test_shorts_rendered_without_the_profanity_filter_are_never_published(self):
         self._vod("old", [99])
@@ -416,7 +454,7 @@ class PublishNextTests(unittest.TestCase):
 
 
 class StatisticsTests(unittest.TestCase):
-    def test_published_shorts_are_remembered_and_their_views_read_once_a_day(self):
+    def test_published_shorts_are_remembered_and_their_views_read_every_6_hours(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)
             short_path = tmp / "v_1.0-20.0_short.mp4"
@@ -446,12 +484,117 @@ class StatisticsTests(unittest.TestCase):
 
             summary = uploader.refresh_statistics()
             self.assertIn("1200 vues", summary)
-            self.assertIsNone(uploader.refresh_statistics())  # not again before 24 hours
-            now[0] += timedelta(hours=24)
+            self.assertIsNone(uploader.refresh_statistics())  # not again before 6 hours
+            now[0] += timedelta(hours=6)
             uploader.refresh_statistics()
             self.assertEqual(calls, [["yt1"], ["yt1"]])
             saved = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"][0]
             self.assertEqual((saved["views"], saved["likes"]), (1200, 80))
+
+    def test_what_a_short_was_made_of_and_its_views_at_1_3_7_days_are_kept(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            short_path = tmp / "v_1.0-20.0_short.mp4"
+            short_path.write_bytes(b"short")
+            (tmp / "v_processing.json").write_text(json.dumps({
+                "broadcaster_login": "KaiCenat",
+                "generated_shorts": {"1.0-20.0": {"source": "emotion", "emotion": "laughter", "hook": "Wait 😂"}},
+            }), encoding="utf-8")
+            (tmp / "reserve_ranking.json").write_text(json.dumps({"scores": {"v:1.0-20.0": 77}}), encoding="utf-8")
+            now = [datetime(2026, 10, 16, 18, 0, tzinfo=timezone.utc)]
+            views = [100]
+            uploader = VODShortsUploader(
+                tmp, uploader=lambda *a, **k: ("yt1", "https://youtu.be/yt1"), clock=lambda: now[0],
+                statistics_fetcher=lambda ids, *a: {"yt1": {"views": views[0]}}, streamer_ranks={"kaicenat": 3},
+            )
+            uploader.upload("v", VODShortResult(
+                vod_id="v", candidate_id="candidate_1", source_path="", output_path=short_path,
+                start=1.0, end=20.0, clip_budget=20, gemini_score=90.0, gemini_justification=None,
+                status="already_exists", clip_id="1.0-20.0",
+            ), METADATA)
+            for hours, count in ((6, 300), (25, 1000), (73, 5000), (100, 6000)):
+                now[0] = datetime(2026, 10, 16, 18, 0, tzinfo=timezone.utc) + timedelta(hours=hours)
+                views[0] = count
+                uploader.refresh_statistics()
+            entry = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"][0]
+            self.assertEqual(
+                [entry[key] for key in ("source", "emotion", "hook", "compared_score", "list_rank")],
+                ["emotion", "laughter", "Wait 😂", 77, 3],
+            )
+            self.assertEqual((entry["views"], entry["views_1d"], entry["views_3d"]), (6000, 1000, 5000))
+            self.assertNotIn("views_7d", entry)
+
+    def test_streamers_whose_shorts_are_watched_win_a_few_points(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            shorts = [{"streamer": "two_hits", "views_1d": 100}, {"streamer": "two_hits", "views_3d": 100}]
+            shorts += [{"streamer": "eight_hits", "views_1d": 100}] * 8
+            shorts += [{"streamer": "flop", "views_1d": 2}] * 8 + [{"streamer": "listed", "views_1d": 1}] * 8
+            shorts += [{"views_7d": 10}, {"streamer": "flop", "views": 0}]  # unknown streamer; too recent
+            (tmp / "published_shorts.json").write_text(json.dumps({"shorts": shorts}), encoding="utf-8")
+            points = VODShortsUploader(tmp, top_streamers=frozenset({"listed"}))._audience_points()
+            # The same success counts more when measured on more Shorts, and stays small.
+            self.assertTrue(0 < points["two_hits"] < points["eight_hits"] < 3)
+            self.assertTrue(-3 < points["flop"] < 0)
+            self.assertEqual(points["listed"], 0.0)  # a listed streamer never loses points
+            many_hits = [{"streamer": "star", "views_1d": 10 ** 6}] * 50 + [{"streamer": "x", "views_1d": 0}] * 50
+            (tmp / "published_shorts.json").write_text(json.dumps({"shorts": many_hits}), encoding="utf-8")
+            self.assertEqual(VODShortsUploader(tmp)._audience_points()["star"], 3)  # capped
+
+    def test_retention_is_read_with_the_views_when_authorized(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            now = datetime(2026, 10, 16, 18, 0, tzinfo=timezone.utc)
+            (tmp / "published_shorts.json").write_text(json.dumps({"fetched_at": None, "shorts": [
+                {"video_id": "yt1", "uploaded_at": "2026-10-14T09:00:00+00:00"}]}), encoding="utf-8")
+            asked = []
+
+            def retention(ids, start_date):
+                asked.append((ids, start_date))
+                return {"yt1": {"retention_pct": 87.5, "avg_view_seconds": 21.0, "engaged_views": 900}}
+
+            uploader = VODShortsUploader(
+                tmp, clock=lambda: now, statistics_fetcher=lambda ids, *a: {"yt1": {"views": 1000}},
+                retention_fetcher=retention,
+            )
+            self.assertIn("retention lue pour 1 Shorts", uploader.refresh_statistics())
+            self.assertEqual(asked, [(["yt1"], "2026-10-13")])  # from the day before the first upload
+            entry = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"][0]
+            self.assertEqual((entry["views"], entry["retention_pct"]), (1000, 87.5))
+
+            def not_authorized(ids, start_date):
+                raise RuntimeError("Retention non autorisee")
+
+            uploader = VODShortsUploader(
+                tmp, clock=lambda: now + timedelta(hours=6),
+                statistics_fetcher=lambda ids, *a: {"yt1": {"views": 1100}}, retention_fetcher=not_authorized,
+            )
+            self.assertIn("retention non lue", uploader.refresh_statistics())  # the views are still read
+            entry = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"][0]
+            self.assertEqual((entry["views"], entry["retention_pct"]), (1100, 87.5))
+
+    def test_a_short_removed_rejected_or_blocked_by_youtube_blocks_its_streamer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            now = [datetime(2026, 10, 18, 12, 0, tzinfo=timezone.utc)]
+            (tmp / "published_shorts.json").write_text(json.dumps({"fetched_at": None, "shorts": [
+                {"video_id": "gone", "streamer": "caedrel", "uploaded_at": "2026-10-16T09:00:00+00:00"},
+                {"video_id": "claimed", "streamer": "esports", "uploaded_at": "2026-10-16T09:00:00+00:00"},
+                {"video_id": "fine", "streamer": "kaicenat", "uploaded_at": "2026-10-16T09:00:00+00:00"},
+            ]}), encoding="utf-8")
+            blocked = tmp / "blocked.txt"
+            stats = {"claimed": {"views": 5, "problem": "bloque dans 3 pays"}, "fine": {"views": 900}}
+            uploader = VODShortsUploader(
+                tmp, clock=lambda: now[0], statistics_fetcher=lambda ids, *a: stats, blocked_streamers_path=blocked,
+            )
+            self.assertIn("liste noire : esports (bloque dans 3 pays)", uploader.refresh_statistics())
+            self.assertEqual(load_top_streamers(blocked), frozenset({"esports"}))  # "gone": confirmed next time
+            now[0] += timedelta(hours=6)
+            self.assertIn("liste noire : caedrel (retire de YouTube)", uploader.refresh_statistics())
+            self.assertEqual(load_top_streamers(blocked), frozenset({"esports", "caedrel"}))
+            entries = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"]
+            self.assertEqual([entry.get("problem") for entry in entries],
+                             ["retire de YouTube", "bloque dans 3 pays", None])
 
     def test_a_failed_reading_is_retried_an_hour_later(self):
         with tempfile.TemporaryDirectory() as directory:

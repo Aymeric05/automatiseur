@@ -192,6 +192,64 @@ class YouTubeTests(unittest.TestCase):
                 )
         self.assertIsNone(fake_service.videos_api.arguments)
 
+    def test_retention_rows_become_per_video_values_without_any_sign_in(self) -> None:
+        from unittest.mock import Mock
+
+        from twitch_auto_clipper.youtube import fetch_video_retention
+
+        service = Mock()
+        service.reports().query().execute.return_value = {"rows": [["yt1", 900, 21.04, 87.51]]}
+        build = Mock(return_value=service)
+        with patch("twitch_auto_clipper.youtube._credentials", return_value="credentials") as credentials,                 patch("twitch_auto_clipper.youtube._load_google_dependencies",
+                      return_value=(None, None, None, build, None, None)):
+            retention = fetch_video_retention(["yt1"], "2026-10-13")
+        self.assertEqual(retention, {"yt1": {"engaged_views": 900, "avg_view_seconds": 21.0, "retention_pct": 87.5}})
+        self.assertFalse(credentials.call_args.args[3])  # allow_browser: never waits for a sign-in
+        build.assert_called_once_with("youtubeAnalytics", "v2", credentials="credentials")
+        query = service.reports().query.call_args.kwargs
+        self.assertEqual((query["filters"], query["dimensions"]), ("video==yt1", "video"))
+
+    @patch("twitch_auto_clipper.youtube.authenticate_youtube")
+    def test_statistics_report_rejected_and_region_blocked_videos(self, authenticate) -> None:
+        from twitch_auto_clipper.youtube import fetch_video_statistics
+
+        authenticate.return_value.videos().list().execute.return_value = {"items": [
+            {"id": "a", "statistics": {"viewCount": "10"}, "status": {"uploadStatus": "rejected", "rejectionReason": "copyright"}},
+            {"id": "b", "statistics": {"viewCount": "3"}, "status": {"uploadStatus": "processed"},
+             "contentDetails": {"regionRestriction": {"blocked": ["US", "CA"]}}},
+            {"id": "c", "statistics": {"viewCount": "7"}, "status": {"uploadStatus": "rejected", "rejectionReason": "duplicate"}},
+        ]}
+        statistics = fetch_video_statistics(["a", "b", "c"])
+        self.assertEqual(
+            [statistics[key].get("problem") for key in "abc"], ["rejete (copyright)", "bloque dans 2 pays", None]
+        )
+
+    def test_the_second_channel_must_not_be_the_first_one(self) -> None:
+        from unittest.mock import Mock
+
+        from twitch_auto_clipper.youtube import YouTubeUploadError, authorize_channel
+
+        with tempfile.TemporaryDirectory() as directory:
+            token, analytics = Path(directory, "irl.json"), Path(directory, "irl-analytics.json")
+
+            def sign_in(secrets, path, scopes, allow_browser, missing):
+                path.write_text("{}", encoding="utf-8")
+                return "credentials"
+
+            for channel_id, title in (("UCgaming", "LiveActions!"), ("UCirl", "LiveActions IRL")):
+                service = Mock()
+                service.channels().list().execute.return_value = {"items": [{"id": channel_id, "snippet": {"title": title}}]}
+                with patch("twitch_auto_clipper.youtube._credentials", side_effect=sign_in),                         patch("twitch_auto_clipper.youtube._load_google_dependencies",
+                              return_value=(None, None, None, Mock(return_value=service), None, None)):
+                    if channel_id == "UCgaming":
+                        with self.assertRaises(YouTubeUploadError):
+                            authorize_channel(Path("c.json"), token, analytics, "UCgaming")
+                        self.assertFalse(token.exists())  # the wrong channel's token is not kept
+                    else:
+                        self.assertEqual(authorize_channel(Path("c.json"), token, analytics, "UCgaming"),
+                                         ("UCirl", "LiveActions IRL"))
+                        self.assertTrue(analytics.exists())  # the same sign-in also reads its retention
+
     def test_confirmations_accept_and_reject(self) -> None:
         self.assertTrue(confirm_upload_rights(input_func=lambda _: "oui", output_func=lambda _: None))
         self.assertFalse(confirm_upload_rights(input_func=lambda _: "non", output_func=lambda _: None))

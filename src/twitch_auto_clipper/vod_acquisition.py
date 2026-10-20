@@ -86,6 +86,7 @@ class TwitchVODAcquisitionManager:
         clock: Callable[[], datetime] | None = None,
         top_streamers: frozenset[str] = frozenset(),
         rate_limit: int | None = None,
+        blocked_streamers: Callable[[], frozenset[str]] = frozenset,
     ) -> None:
         self.monitor = monitor or TwitchStreamMonitor()
         self.api_client = api_client or self.monitor.client
@@ -99,6 +100,8 @@ class TwitchVODAcquisitionManager:
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         # Logins whose VODs get TOP_STREAMER_CLIP_BUDGET moments (hence go first).
         self.top_streamers = frozenset(login.lower() for login in top_streamers)
+        # Logins never processed (read at each use: the list grows while the app runs).
+        self.blocked_streamers = blocked_streamers
         self._lock = Lock()  # the monitoring thread queues, the worker thread acquires
         self._processed_streams: dict[str, str] = {}
         self._processed_vod_ids: set[str] = set()
@@ -125,11 +128,14 @@ class TwitchVODAcquisitionManager:
             return ()
         results = []
         now = _iso(self._clock())
+        blocked = self.blocked_streamers() if cycle.ended_streams else frozenset()
         with self._lock:
             for monitored in cycle.ended_streams:
                 stream = monitored.stream
                 budget = self._budget(stream.broadcaster_login, monitored.clip_budget)
-                if budget <= 0:
+                if stream.broadcaster_login.lower() in blocked:
+                    results.append(_result(stream, 0, "skipped_blocked"))
+                elif budget <= 0:
                     results.append(_result(stream, budget, "skipped_zero_budget"))
                 elif stream.stream_id in self._processed_streams:
                     vod_id = self._processed_streams[stream.stream_id] or None
@@ -312,15 +318,19 @@ class TwitchVODAcquisitionManager:
         """Drop the jobs no longer worth processing; the worker's cleanup deletes their files.
 
         Older than MAX_JOB_AGE_SECONDS, their Shorts would be stale; beyond the
-        MAX_QUEUED_JOBS best ones, they would never be reached before that.
+        MAX_QUEUED_JOBS best ones, they would never be reached before that; a
+        blocked streamer's never make a Short.
         """
         ranked = sorted(self._jobs.items(), key=lambda entry: self._priority(*entry))
+        blocked = self.blocked_streamers() if ranked else frozenset()
         dropped = False
         for position, (stream_id, job) in enumerate(ranked):
             too_old = now - _parse(job["ended_at"]) > timedelta(seconds=MAX_JOB_AGE_SECONDS)
-            if too_old or position >= MAX_QUEUED_JOBS:
+            is_blocked = job["stream"]["broadcaster_login"].lower() in blocked
+            if too_old or is_blocked or position >= MAX_QUEUED_JOBS:
                 reason = (
-                    "trop ancien : ses Shorts ne seraient plus publies" if too_old
+                    "streamer en liste noire (blocked_streamers.txt)" if is_blocked
+                    else "trop ancien : ses Shorts ne seraient plus publies" if too_old
                     else "file d'attente pleine : des VOD plus prioritaires passent avant"
                 )
                 self._abandon_locked(stream_id, job.get("vod_id"), reason)
@@ -464,6 +474,8 @@ def format_vod_acquisition_result(result: VODAcquisitionResult) -> str:
         return f"Audio de la VOD {result.vod_id} telecharge : {result.downloaded_path}"
     if result.status == "vod_not_available":
         return f"VOD pas encore disponible pour {name}; nouvel essai dans quelques minutes."
+    if result.status == "skipped_blocked":
+        return f"Stream de {name} ignore : streamer en liste noire."
     if result.status == "skipped_zero_budget":
         return f"Stream {result.stream_id} ignore : budget de clips nul."
     if result.status == "already_downloaded":

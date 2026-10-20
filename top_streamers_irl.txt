@@ -1,0 +1,60 @@
+# Top English Twitch streamers of the IRL / Just Chatting channel (Twitch logins, one per line),
+# ranked by average viewers over the last 30 days (TwitchTracker, October 2026). Edit freely.
+#
+# Streamers who mostly stream IRL, Just Chatting, reactions, podcasts, roleplay and
+# sketches outside games.
+# Each streamer is in one list only (their main content). The list does not decide where a
+# Short goes (its frame does: a video game, or not); it gives priority: their VODs are
+# processed first with a budget of 20 clips, and on this channel their Shorts go
+# first: those of a streamer who clearly stands out that day (alone in the list, or at
+# least twice the peak viewers of the next one), then the best of the list, then the
+# best of the other streamers. The first ones of the list get a bonus.
+kaicenat
+stableronaldo
+hasanabi
+zackrawrr
+brucedropemoff
+emiru
+ironmouse
+yourragegaming
+silky
+fanum
+ludwig
+berleezy
+maya
+ishowspeed
+pokimane
+amouranth
+moistcr1tikal
+lacy
+agent00
+plaqueboymax
+jasontheween
+mizkif
+tylil
+schlatt
+sweet_anita
+sneakylol
+austinshow
+esfandtv
+cinna
+fuslie
+gmhikaru
+botezlive
+qtcinderella
+kitboga
+nmplol
+jinnytty
+pokelawls
+nyanners
+extraemily
+jakenbakelive
+cyr
+willneff
+erobb221
+atrioc
+lacari
+sydeon
+angelskimi
+robcdee
+zoil

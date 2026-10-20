@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
+import math
 from pathlib import Path
 import random
 from typing import Any, Callable, NamedTuple
 
 from .daily_quota import RollingQuota
 from .shorts_metadata import ShortMetadata
+from .streamer_lists import add_streamer, load_top_streamers
 from .vod_shorts import VODShortResult
 from .youtube import fetch_video_statistics, upload_video
 
@@ -31,7 +33,9 @@ PROFANITY_PENALTY = 10
 PUBLICATION_HOUR = timedelta(hours=1)
 # Gemini compares the reserve's Shorts side by side when it changed, at most this often.
 ARBITRATION_INTERVAL = timedelta(hours=3)
-STATISTICS_INTERVAL = timedelta(hours=24)  # views of the published Shorts, read once a day
+STATISTICS_INTERVAL = timedelta(hours=6)  # views of the published Shorts, read 4 times a day
+# Views kept at these ages (days), to compare Shorts published on different days.
+VIEW_SNAPSHOT_DAYS = (1, 3, 7)
 STATISTICS_DAYS = 30  # Shorts followed after their publication
 PUBLICATION_MARGIN = timedelta(minutes=5)
 # A top streamer "stands out" with at least this many times the peak viewers of the next one.
@@ -39,6 +43,12 @@ STANDOUT_FACTOR = 2
 FAVORED_SCORE_BONUS = 15  # added to the Gemini score (0-100) of favored streamers' Shorts
 # The biggest streamers of the list win at a similar quality: (rank at most, bonus).
 RANK_BONUSES = ((5, 10), (15, 5))
+# Streamers whose Shorts get more views than the channel's usual win a few points, and those
+# below it lose a few (except the listed ones). Shorts views are partly luck: the effect stays
+# small and grows with the number of Shorts measured.
+AUDIENCE_POINTS_PER_DECADE = 4  # 10 times the channel's usual views (in log scale)
+AUDIENCE_PRIOR_SHORTS = 4  # a streamer's average counts for n / (n + 4): 2 Shorts weigh a third
+AUDIENCE_MAX_POINTS = 3
 
 
 @dataclass(frozen=True)
@@ -94,6 +104,10 @@ class VODShortsUploader:
         clock: Callable[[], datetime] | None = None,
         random_source: Callable[[], float] = random.random,
         statistics_fetcher: Callable[..., dict[str, dict[str, int]]] | None = None,
+        retention_fetcher: Callable[[list[str], str], dict[str, dict[str, float]]] | None = None,
+        blocked_streamers_path: Path | None = None,
+        channel: str = "gaming",
+        publishing: bool = True,
         arbiter: Callable[[list[dict[str, Any]]], dict[str, float]] | None = None,
     ) -> None:
         if privacy not in UPLOAD_PRIVACIES:
@@ -102,17 +116,23 @@ class VODShortsUploader:
         # YouTube keeps uploads of an API project it has not audited private anyway.
         self.privacy = privacy
         self._clock = clock or (lambda: datetime.now(timezone.utc))
-        # Uploads allowed in any 24 hours (YouTube's limit is a rolling window).
+        # The YouTube channel this publisher fills ("gaming" or "irl"): only its Shorts, with
+        # its own state files (the gaming channel keeps the original names).
+        self.channel = channel
+        # False until the channel is authorized: its reserve is kept up to date, nothing is uploaded.
+        self.publishing = publishing
+        prefix = "" if channel == "gaming" else f"{channel}_"
+        # Uploads allowed in any 24 hours (YouTube's limit is a rolling window, per channel).
         # None: no local limit and no spreading (YouTube's refusals are still honoured).
         self.quota = (
-            RollingQuota(output_dir / "youtube_uploads.json", daily_upload_limit, clock=self._clock)
+            RollingQuota(output_dir / f"{prefix}youtube_uploads.json", daily_upload_limit, clock=self._clock)
             if daily_upload_limit is not None
             else None
         )
-        self.schedule_path = output_dir / "publication_hour.json"
+        self.schedule_path = output_dir / f"{prefix}publication_hour.json"
         self.top_streamers = frozenset(login.lower() for login in top_streamers)
         self.favored_streamers = frozenset(login.lower() for login in favored_streamers)
-        # Position in top_streamers.txt (1 = first): the higher, the bigger the bonus.
+        # Position in this channel's top streamers list (1 = first): the higher, the bigger the bonus.
         self.streamer_ranks = {login.lower(): rank for login, rank in (streamer_ranks or {}).items()}
         self.check_seconds = check_seconds  # how often publish_next is called
         self.min_reserve = min_reserve  # with a limit: ready Shorts needed before publishing
@@ -120,10 +140,15 @@ class VODShortsUploader:
         # Every published Short, with its views: what works best is measured, not guessed.
         self.history_path = output_dir / "published_shorts.json"
         self._statistics_fetcher = statistics_fetcher or fetch_video_statistics
+        # Share of each Short watched (YouTube Analytics); None: views only.
+        self._retention_fetcher = retention_fetcher
+        # No Short of these streamers is published; one gets added when YouTube removes,
+        # rejects or blocks one of their Shorts (see refresh_statistics).
+        self.blocked_streamers_path = blocked_streamers_path
         self._statistics_retry_at: datetime | None = None
         # Comparative scores of the reserve (see _arbitrate); None: per-live Gemini scores only.
         self._arbiter = arbiter
-        self.arbitration_path = output_dir / "reserve_ranking.json"
+        self.arbitration_path = output_dir / f"{prefix}reserve_ranking.json"
         self._uploader = uploader or upload_video
         self.client_secrets_path = client_secrets_path
         self.token_path = token_path
@@ -240,7 +265,7 @@ class VODShortsUploader:
         ready = ready[:RESERVE_SIZE]
         if self._arbitrate(ready):
             ready.sort(key=self._rank_key(ready), reverse=True)
-        if not ready or (
+        if not ready or not self.publishing or (
             self.quota is not None
             and (len(ready) < self.min_reserve or not self._upload_due(self._publication_window()))
         ):
@@ -289,8 +314,9 @@ class VODShortsUploader:
         peak viewers of the next one) goes first, then the other listed
         streamers, then everyone else; within each group, the best Gemini
         score (plus ``FAVORED_SCORE_BONUS`` for ``favored_streamers`` and
-        ``RANK_BONUSES`` for the first ones of the list, minus
-        ``PROFANITY_PENALTY`` when swear words were muted), then the biggest
+        ``RANK_BONUSES`` for the first ones of the list, plus or minus a few
+        ``_audience_points``, minus ``PROFANITY_PENALTY`` when swear words were
+        muted), then the biggest
         clip budget. A Short whose last upload failed goes last, so it never
         blocks the others.
         """
@@ -305,6 +331,7 @@ class VODShortsUploader:
             else None
         )
         compared = self._comparative_scores()
+        audience = self._audience_points()
         return lambda item: (
             not item.failed,
             item.login == standout,
@@ -312,13 +339,49 @@ class VODShortsUploader:
             compared.get(self._reserve_id(item), item.short.gemini_score or 0)
             + (FAVORED_SCORE_BONUS if item.login in self.favored_streamers else 0)
             - (PROFANITY_PENALTY if item.muted else 0)
-            + self._rank_bonus(item.login),
+            + self._rank_bonus(item.login)
+            + audience.get(item.login, 0.0),
             item.short.clip_budget,
         )
 
     def _rank_bonus(self, login: str) -> int:
         rank = self.streamer_ranks.get(login)
         return next((bonus for last, bonus in RANK_BONUSES if rank is not None and rank <= last), 0)
+
+    def _audience_points(self) -> dict[str, float]:
+        """A few points per streamer, from the views of their published Shorts.
+
+        Each Short counts with its most mature views (at 7, 3 or 1 days), in
+        log scale; a streamer's average is compared with the channel's, pulled
+        towards it when few Shorts are measured (``AUDIENCE_PRIOR_SHORTS``) and
+        kept within ``AUDIENCE_MAX_POINTS``. A listed streamer never loses points.
+        """
+        streamers: dict[str, list[float]] = {}
+        everyone: list[float] = []
+        for entry in self._load_history()["shorts"]:
+            views = next(
+                (entry[key] for key in ("views_7d", "views_3d", "views_1d")
+                 if isinstance(entry.get(key), (int, float))),
+                None,
+            )
+            if views is None:
+                continue  # too recent: its views say nothing yet
+            everyone.append(math.log10(views + 1))
+            if entry.get("streamer"):
+                streamers.setdefault(str(entry["streamer"]).lower(), []).append(everyone[-1])
+        if not everyone:
+            return {}
+        usual = sum(everyone) / len(everyone)
+        points = {}
+        for login, values in streamers.items():
+            shift = (
+                AUDIENCE_POINTS_PER_DECADE * (sum(values) / len(values) - usual)
+                * len(values) / (len(values) + AUDIENCE_PRIOR_SHORTS)
+            )
+            if login in self.top_streamers:
+                shift = max(shift, 0.0)
+            points[login] = max(-AUDIENCE_MAX_POINTS, min(AUDIENCE_MAX_POINTS, shift))
+        return points
 
     @staticmethod
     def _reserve_id(item: _ReadyShort) -> str:
@@ -378,6 +441,7 @@ class VODShortsUploader:
 
     def _ready_shorts(self) -> list[_ReadyShort]:
         expired_before = (self._clock() - RESERVE_MAX_AGE).timestamp()
+        blocked = load_top_streamers(self.blocked_streamers_path) if self.blocked_streamers_path else frozenset()
         ready = []
         for manifest_path in self.output_dir.glob("*_processing.json"):
             try:
@@ -400,6 +464,8 @@ class VODShortsUploader:
                 meta = metadata.get(key)
                 if key in uploads or not isinstance(record, dict) or not isinstance(meta, dict):
                     continue
+                if (record.get("channel") or "gaming") != self.channel:
+                    continue  # the other channel's publisher takes care of it
                 path = self.output_dir / str(record.get("file", ""))
                 if not path.name.endswith("_short.mp4") or not path.is_file():
                     continue
@@ -407,8 +473,12 @@ class VODShortsUploader:
                     too_short = float(record["end"]) - float(record["start"]) < MIN_PUBLISHED_SECONDS
                 except (KeyError, TypeError, ValueError):
                     too_short = True
-                if not record.get("profanity_filtered") or too_short or path.stat().st_mtime < expired_before:
-                    # Rendered before swear words were muted, too short or too old: never published.
+                if (
+                    not record.get("profanity_filtered") or too_short or path.stat().st_mtime < expired_before
+                    or str(manifest.get("broadcaster_login", "")).lower() in blocked
+                ):
+                    # Rendered before swear words were muted, too short, too old or of a
+                    # blocked streamer: never published.
                     self._delete_local(path)
                     continue
                 try:
@@ -444,7 +514,14 @@ class VODShortsUploader:
         return ready
 
     def refresh_statistics(self) -> str | None:
-        """Once a day, read the views of the Shorts published in the last 30 days.
+        """Every few hours, read the views of the Shorts published in the last 30 days.
+
+        A Short that YouTube removed (missing at two readings in a row),
+        rejected or blocked puts its streamer on the blocked list.
+
+        The views a Short has at 1, 3 and 7 days are kept (``views_1d``...),
+        with its retention when ``retention_fetcher`` is set (``retention_pct``:
+        average share watched, ``avg_view_seconds``, ``engaged_views``).
 
         Returns a summary line when they were read (or why they could not be).
         """
@@ -460,6 +537,8 @@ class VODShortsUploader:
             pass
         followed = []
         for entry in history["shorts"]:
+            if entry.get("channel", "gaming") != self.channel:
+                continue  # read by the other channel's publisher, with its own authorization
             try:
                 if now - datetime.fromisoformat(entry["uploaded_at"]) < timedelta(days=STATISTICS_DAYS):
                     followed.append(entry)
@@ -474,8 +553,40 @@ class VODShortsUploader:
         except Exception as error:
             self._statistics_retry_at = now + timedelta(hours=1)
             return f"Statistiques YouTube non lues ({error}) : nouvel essai dans une heure."
+        newly_blocked = []
         for entry in followed:
-            entry.update(statistics.get(entry["video_id"], {}))
+            values = dict(statistics.get(entry["video_id"]) or {})
+            problem = values.pop("problem", None)
+            if not values and not problem:
+                # Missing from YouTube: removed (or deleted in Studio). Confirmed at the next reading.
+                problem = "retire de YouTube" if entry.get("missing_since") else None
+                entry.setdefault("missing_since", now.isoformat(timespec="seconds"))
+            else:
+                entry.pop("missing_since", None)
+            if problem:
+                entry["problem"] = problem
+                if self.blocked_streamers_path and entry.get("streamer") and add_streamer(
+                    self.blocked_streamers_path, entry["streamer"],
+                    f"auto {now:%Y-%m-%d}: Short {entry['video_id']} {problem}",
+                ):
+                    newly_blocked.append(f"{entry['streamer']} ({problem})")
+            entry.update(values)
+            age = now - datetime.fromisoformat(entry["uploaded_at"])
+            for days in VIEW_SNAPSHOT_DAYS:
+                if age >= timedelta(days=days) and "views" in entry:
+                    entry.setdefault(f"views_{days}d", entry["views"])
+        retention_note = ""
+        if self._retention_fetcher is not None:
+            first_day = min(datetime.fromisoformat(entry["uploaded_at"]) for entry in followed) - timedelta(days=1)
+            try:
+                retention = self._retention_fetcher(
+                    [entry["video_id"] for entry in followed], first_day.date().isoformat()
+                )
+                for entry in followed:
+                    entry.update(retention.get(entry["video_id"], {}))
+                retention_note = f" ; retention lue pour {len(retention)} Shorts"
+            except Exception as error:  # not authorized or unavailable: views only
+                retention_note = f" ; retention non lue ({error})"
         history["fetched_at"] = now.isoformat()
         self._write_manifest(self.history_path, history)
         total = sum(entry.get("views", 0) for entry in followed)
@@ -483,6 +594,8 @@ class VODShortsUploader:
         return (
             f"Statistiques YouTube : {len(followed)} Shorts sur {STATISTICS_DAYS} jours, {total} vues ; "
             f"meilleur : {best.get('title', best['video_id'])} ({best.get('views', 0)} vues)"
+            + retention_note
+            + (f" ; liste noire : {', '.join(newly_blocked)}" if newly_blocked else "")
         )
 
     def _load_history(self) -> dict[str, Any]:
@@ -501,14 +614,23 @@ class VODShortsUploader:
         """Remember the published Short and what it was made of, to compare views later."""
         history = self._load_history()
         lead_in = short.candidate_start - short.start if short.candidate_start is not None else None
+        generated = manifest.get("generated_shorts")
+        record = generated.get(short.key) if isinstance(generated, dict) else None
+        record = record if isinstance(record, dict) else {}
+        streamer = str(manifest.get("broadcaster_login", ""))
         history["shorts"].append({
             "video_id": video_id,
+            "channel": self.channel,
             "url": url,
             "title": metadata.title,
             "vod_id": short.vod_id,
-            "streamer": str(manifest.get("broadcaster_login", "")),
+            "streamer": streamer,
+            "list_rank": self.streamer_ranks.get(streamer.lower()),  # place in the channel's top streamers list
             "peak_viewers": manifest.get("peak_viewers"),
             "gemini_score": short.gemini_score,
+            "compared_score": self._comparative_scores().get(f"{short.vod_id}:{short.key}"),
+            # Where the moment comes from (transcript, chat or emotion) and how it was made.
+            **{key: record.get(key) for key in ("source", "emotion", "hook", "focus_x", "max_seconds", "cold_open")},
             "seconds": round(short.end - short.start, 1),
             "lead_in_seconds": round(lead_in, 1) if lead_in is not None else None,
             "muted": short.muted,

@@ -15,6 +15,8 @@ MAX_GEMINI_CANDIDATES = 30  # best heuristic candidates sent to Gemini
 # A top streamer's VOD (budget 20): twice the moments to choose its 20 Shorts from.
 TOP_GEMINI_CANDIDATES = 60
 CHAT_CANDIDATE_SHARE = 3  # at most 1/3 of the candidates come from chat spikes
+EMOTION_CANDIDATE_SHARE = 6  # at most 1/6 from laughter, screams... found in the audio
+MAX_CANDIDATE_OVERLAP = 0.25  # an added moment must be new, not one already listed
 
 
 @dataclass(frozen=True)
@@ -56,15 +58,19 @@ class VODHighlightSelector:
             transcript = self._load_json_list(processed_vod.transcript_path)
             max_candidates = TOP_GEMINI_CANDIDATES if budget >= 20 else MAX_GEMINI_CANDIDATES
             candidates = analyze_transcription(transcript, max_candidates=max_candidates)
-            chat_messages = self._load_optional_chat(processed_vod.timestamped_chat_path)
+            chat_messages = self._load_optional_list(processed_vod.timestamped_chat_path)
+            emotions = [
+                moment for moment in self._load_optional_list(processed_vod.emotions_path)
+                if isinstance(moment, dict) and isinstance(moment.get("emotion"), str)
+                and all(isinstance(moment.get(key), (int, float)) for key in ("start", "end"))
+            ]
+            # Moments the transcript missed, in place of its last candidates: up to a
+            # third from chat spikes, up to a sixth from laughter, screams... in the audio.
+            limit = max_candidates // CHAT_CANDIDATE_SHARE
+            added = new_moments(chat_spike_moments(chat_messages, limit=limit), candidates, limit)
+            added += new_moments(emotions, candidates + added, max_candidates // EMOTION_CANDIDATE_SHARE)
+            candidates = tag_emotions(candidates[: max_candidates - len(added)] + added, emotions)
             if chat_messages:
-                # Up to a third of the candidates come from chat spikes the transcript missed.
-                spikes = [
-                    moment
-                    for moment in chat_spike_moments(chat_messages, limit=max_candidates // CHAT_CANDIDATE_SHARE)
-                    if all(_overlap_ratio(moment, candidate) <= 0.25 for candidate in candidates)
-                ]
-                candidates = candidates[: max_candidates - len(spikes)] + spikes
                 candidates = add_chat_signals(add_chat_messages(candidates, chat_messages), chat_messages)
             else:
                 candidates = [
@@ -168,10 +174,10 @@ class VODHighlightSelector:
         return data
 
     @staticmethod
-    def _load_optional_chat(path: Path) -> list[dict[str, Any]]:
+    def _load_optional_list(path: Path | None) -> list[dict[str, Any]]:
         try:
             messages = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (AttributeError, OSError, json.JSONDecodeError):  # AttributeError: no path
             return []
         return messages if isinstance(messages, list) else []
 
@@ -310,6 +316,34 @@ class VODHighlightSelector:
             error=error,
             retry_at=retry_at,
         )
+
+
+def new_moments(
+    moments: list[dict[str, Any]], listed: list[dict[str, Any]], limit: int
+) -> list[dict[str, Any]]:
+    """Up to ``limit`` of ``moments`` (best first) that no listed or taken moment covers."""
+    taken: list[dict[str, Any]] = []
+    for moment in moments:
+        if len(taken) >= limit:
+            break
+        if all(_overlap_ratio(moment, other) <= MAX_CANDIDATE_OVERLAP for other in listed + taken):
+            taken.append(moment)
+    return taken
+
+
+def tag_emotions(candidates: list[dict[str, Any]], emotions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each candidate with the emotion heard during it (``emotion``), for Gemini."""
+    tagged = []
+    for candidate in candidates:
+        found = next(
+            (
+                moment["emotion"] for moment in emotions
+                if candidate["start"] <= moment.get("onset", moment["start"]) <= candidate["end"] + 2
+            ),
+            None,
+        )
+        tagged.append({**candidate, "emotion": found} if found and "emotion" not in candidate else candidate)
+    return tagged
 
 
 def format_vod_highlight_selection(result: VODHighlightSelectionResult) -> str:
