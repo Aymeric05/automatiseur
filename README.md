@@ -219,8 +219,8 @@ new channel in Google's account chooser): its id is written to `.env`
 Shorts wait in its reserve.
 
 `top_streamers_gaming.txt` and `top_streamers_irl.txt` list the Twitch logins of the top
-English streamers of each channel (editable, one per line; a streamer who does both can be
-in both). Their VODs are processed first with up to 20 moments each. At publication on a
+English streamers of each channel (editable, one per line; each streamer in the list of
+their main content only, about 50 each). Their VODs are processed first with up to 20 moments each. At publication on a
 channel, the Shorts of a streamer of its list who clearly stands out (the only one of the
 list with Shorts ready, or at least twice the peak viewers of the next one) go first, then
 the best Gemini scores of the list, then the best of the other streamers. `favored_streamers.txt` lists
