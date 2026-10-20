@@ -254,7 +254,7 @@ IRL_ANALYTICS_TOKEN_NAME = "youtube-analytics-token-irl.json"
 FAVORED_STREAMERS_FILE = Path("favored_streamers.txt")
 # No Short is ever made from these streamers (read again at each use: the app adds to it).
 BLOCKED_STREAMERS_FILE = Path("blocked_streamers.txt")
-PUBLISH_RETRY_SECONDS = 1800.0  # pause after a failed upload (network, sign-in...)
+PUBLISH_RETRY_SECONDS = 600.0  # pause after a failed upload (a network drop, a sign-in problem...)
 DEFAULT_DOWNLOAD_KBPS = 1000  # VOD audio download cap (~8 Mbit/s); DOWNLOAD_MAX_KBPS overrides it
 DEFAULT_DAILY_UPLOADS = 10  # YouTube refused the 11th upload of the day (default quota)
 DEFAULT_DAILY_GEMINI_REQUESTS = 20  # Gemini API free tier, per model and per day (each model)

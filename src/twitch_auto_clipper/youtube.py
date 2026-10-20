@@ -153,7 +153,7 @@ def authorize_channel(
     _, _, _, build, _, _ = _load_google_dependencies()
     scopes = [YOUTUBE_UPLOAD_SCOPE, YOUTUBE_READONLY_SCOPE, YOUTUBE_ANALYTICS_SCOPE]
     credentials = _credentials(client_secrets_path, token_path, scopes, True, "")
-    response = build("youtube", "v3", credentials=credentials).channels().list(part="snippet", mine=True).execute()
+    response = build("youtube", "v3", credentials=credentials).channels().list(part="snippet", mine=True).execute(num_retries=UPLOAD_RETRIES)
     channel = (response.get("items") or [{}])[0]
     if not channel.get("id") or channel["id"] == other_channel_id:
         token_path.unlink(missing_ok=True)
@@ -189,7 +189,7 @@ def fetch_video_retention(
                 metrics="engagedViews,averageViewDuration,averageViewPercentage",
                 filters="video==" + ",".join(video_ids[index:index + 200]),
                 sort="-engagedViews", maxResults=200,
-            ).execute()
+            ).execute(num_retries=UPLOAD_RETRIES)
             for video_id, engaged, seconds, percent in response.get("rows", []):
                 retention[video_id] = {
                     "engaged_views": int(engaged),
@@ -208,7 +208,7 @@ def get_authenticated_channel_id(youtube_service: Any) -> str:
     try:
         response = youtube_service.channels().list(
             part="id,snippet", mine=True
-        ).execute()
+        ).execute(num_retries=UPLOAD_RETRIES)
         channels = response.get("items", [])
         channel_id = channels[0].get("id") if channels else None
         if not channel_id:
@@ -249,7 +249,7 @@ def fetch_video_statistics(
         for index in range(0, len(video_ids), 50):
             response = service.videos().list(
                 part="statistics,status,contentDetails", id=",".join(video_ids[index:index + 50])
-            ).execute()
+            ).execute(num_retries=UPLOAD_RETRIES)
             for item in response.get("items", []):
                 values = item.get("statistics", {})
                 statistics[item["id"]] = {

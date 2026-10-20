@@ -49,7 +49,7 @@ class FakeChannels:
     def list(self, **kwargs):
         return self
 
-    def execute(self):
+    def execute(self, num_retries=0):
         return {"items": [{"id": self.channel_id, "snippet": {"title": "LiveActions!"}}]}
 
 
