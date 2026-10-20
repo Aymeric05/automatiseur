@@ -164,6 +164,27 @@ def authorize_channel(
     return channel["id"], channel.get("snippet", {}).get("title", "")
 
 
+def find_uploaded_video(
+    title: str, client_secrets_path: Path, token_path: Path, expected_channel_id: str | None = None,
+) -> tuple[str, str] | None:
+    """The channel's recent upload with exactly this title, or None (3 API quota units).
+
+    An upload cut by a network drop can still reach YouTube without the app getting
+    the confirmation: before sending it again, the app looks for it here.
+    """
+    service = authenticate_youtube(client_secrets_path, token_path, expected_channel_id or "check", allow_browser=False)
+    channels = service.channels().list(part="contentDetails", mine=True).execute(num_retries=UPLOAD_RETRIES)
+    playlist = channels["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    items = service.playlistItems().list(
+        part="snippet", playlistId=playlist, maxResults=50
+    ).execute(num_retries=UPLOAD_RETRIES).get("items", [])
+    for item in items:
+        if item["snippet"].get("title") == title:
+            video_id = item["snippet"]["resourceId"]["videoId"]
+            return video_id, f"https://www.youtube.com/watch?v={video_id}"
+    return None
+
+
 def fetch_video_retention(
     video_ids: list[str],
     start_date: str,

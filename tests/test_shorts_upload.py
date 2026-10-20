@@ -236,6 +236,26 @@ class PublishNextTests(unittest.TestCase):
         history = json.loads((self.tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"]
         self.assertEqual([entry["channel"] for entry in history], ["gaming", "gaming", "irl", "irl"])
 
+    def test_an_upload_seen_failing_but_received_by_youtube_is_never_sent_twice(self):
+        self._vod("cut", [80])
+        manifest = self.tmp / "cut_processing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["youtube_upload_errors"] = {"0.0-5.0": "The write operation timed out"}
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        searched = []
+
+        def finder(title, *args):
+            searched.append(title)
+            return "ytX", "https://youtu.be/ytX"
+
+        uploader = VODShortsUploader(self.tmp, uploader=self._upload, uploaded_finder=finder, daily_upload_limit=10)
+        uploader.quota.mark_exhausted()  # YouTube's limit reached: it is only recorded, not uploaded
+        _, result = uploader.publish_next() or (None, uploader.upload("cut", *uploader._ready_shorts()[0][5:]))
+        self.assertEqual((result.status, result.video_id), ("uploaded", "ytX"))
+        self.assertEqual((self.uploaded, searched), ([], ["cut 80"]))
+        self.assertEqual(list(self.tmp.glob("cut_*_short.mp4")), [])
+        self.assertIn("0.0-5.0", json.loads(manifest.read_text(encoding="utf-8"))["youtube_uploads"])
+
     def test_shorts_rendered_without_the_profanity_filter_are_never_published(self):
         self._vod("old", [99])
         manifest = self.tmp / "old_processing.json"

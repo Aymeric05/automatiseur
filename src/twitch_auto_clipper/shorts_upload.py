@@ -14,7 +14,7 @@ from .daily_quota import RollingQuota
 from .shorts_metadata import ShortMetadata
 from .streamer_lists import add_streamer, load_top_streamers
 from .vod_shorts import VODShortResult
-from .youtube import fetch_video_statistics, upload_video
+from .youtube import fetch_video_statistics, find_uploaded_video, upload_video
 
 UPLOAD_PRIVACY = "private"  # default visibility of automatic uploads
 UPLOAD_PRIVACIES = frozenset({"private", "unlisted", "public"})
@@ -104,6 +104,7 @@ class VODShortsUploader:
         clock: Callable[[], datetime] | None = None,
         random_source: Callable[[], float] = random.random,
         statistics_fetcher: Callable[..., dict[str, dict[str, int]]] | None = None,
+        uploaded_finder: Callable[..., tuple[str, str] | None] | None = None,
         retention_fetcher: Callable[[list[str], str], dict[str, dict[str, float]]] | None = None,
         blocked_streamers_path: Path | None = None,
         channel: str = "gaming",
@@ -140,6 +141,8 @@ class VODShortsUploader:
         # Every published Short, with its views: what works best is measured, not guessed.
         self.history_path = output_dir / "published_shorts.json"
         self._statistics_fetcher = statistics_fetcher or fetch_video_statistics
+        # Finds an upload YouTube received although the app saw it fail (never sent twice).
+        self._uploaded_finder = uploaded_finder or find_uploaded_video
         # Share of each Short watched (YouTube Analytics); None: views only.
         self._retention_fetcher = retention_fetcher
         # No Short of these streamers is published; one gets added when YouTube removes,
@@ -184,6 +187,17 @@ class VODShortsUploader:
                 short.candidate_id, short.output_path, "error",
                 error=f"Fichier video introuvable ou vide : {short.output_path}",
             )
+        errors = manifest.get("youtube_upload_errors")
+        if isinstance(errors, dict) and short.key in errors:
+            # Its last upload failed: it may have reached YouTube anyway (a drop before the answer).
+            try:
+                found = self._uploaded_finder(
+                    metadata.title, self.client_secrets_path, self.token_path, self.expected_channel_id
+                )
+            except Exception:
+                found = None  # unknown: the upload below is tried as usual
+            if found:
+                return self._uploaded(manifest, manifest_path, short, metadata, *found)
         if self.quota is not None and not self.quota.available():
             return ShortUploadResult(
                 short.candidate_id, short.output_path, "deferred", title=metadata.title,
@@ -227,6 +241,13 @@ class VODShortsUploader:
 
         if self.quota is not None:
             self.quota.record_use()
+        return self._uploaded(manifest, manifest_path, short, metadata, video_id, url)
+
+    def _uploaded(
+        self, manifest: dict[str, Any], manifest_path: Path, short: VODShortResult,
+        metadata: ShortMetadata, video_id: str, url: str,
+    ) -> ShortUploadResult:
+        """Record a Short that is on YouTube, then delete the local copy."""
         self._record_publication(manifest, short, metadata, video_id, url)
         try:
             self._record_upload(manifest_path, short, metadata, video_id, url)
