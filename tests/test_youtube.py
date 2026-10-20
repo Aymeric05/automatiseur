@@ -14,7 +14,8 @@ from twitch_auto_clipper.youtube import (
 class FakeMediaFileUpload:
     instances = []
 
-    def __init__(self, path: str, mimetype: str, resumable: bool) -> None:
+    def __init__(self, path: str, mimetype: str, resumable: bool, chunksize: int) -> None:
+        self.chunksize = chunksize  # small chunks: a network drop resends only one
         self.path = path
         self.mimetype = mimetype
         self.resumable = resumable
@@ -25,7 +26,8 @@ class FakeUploadRequest:
     def __init__(self) -> None:
         self.calls = 0
 
-    def next_chunk(self):
+    def next_chunk(self, num_retries=0):
+        assert num_retries > 0  # network errors and timeouts are retried
         self.calls += 1
         return None, {"id": "youtube123"}
 

@@ -13,6 +13,8 @@ YOUTUBE_SCOPES = [YOUTUBE_UPLOAD_SCOPE, YOUTUBE_READONLY_SCOPE]
 # authorization never changes and nothing waits for a new sign-in.
 YOUTUBE_ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly"
 ANALYTICS_TOKEN_NAME = "youtube-analytics-token.json"
+UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024
+UPLOAD_RETRIES = 5  # network errors and timeouts, with growing pauses
 # Rejections that mean a rights or rules problem (not "duplicate" or "length").
 WARNING_REASONS = frozenset({"copyright", "legal", "trademark", "termsOfUse", "inappropriate"})
 
@@ -299,7 +301,8 @@ def upload_video(
                 "selfDeclaredMadeForKids": made_for_kids,
             },
         }
-        media = MediaFileUpload(str(video_path), mimetype="video/mp4", resumable=True)
+        # Small chunks, each retried: a Wi-Fi drop resends a few MB, not the whole Short.
+        media = MediaFileUpload(str(video_path), mimetype="video/mp4", resumable=True, chunksize=UPLOAD_CHUNK_BYTES)
         request = service.videos().insert(
             part="snippet,status",
             body=body,
@@ -307,7 +310,7 @@ def upload_video(
         )
         response = None
         while response is None:
-            _, response = request.next_chunk()
+            _, response = request.next_chunk(num_retries=UPLOAD_RETRIES)
         video_id = response.get("id") if isinstance(response, dict) else None
         if not video_id:
             raise YouTubeUploadError("La reponse YouTube ne contient pas d'identifiant.")
