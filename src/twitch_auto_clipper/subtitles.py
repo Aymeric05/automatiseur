@@ -13,9 +13,10 @@ BLURRED_WORD = r"{\bord0\shad0\blur18}%s{\r}"
 
 
 # Gill Sans Ultra Bold (installed with Office), else Impact, else Arial Bold.
-HOOK_FONTS = ("GILSANUB.TTF", "impact.ttf", "arialbd.ttf")
+# Arial Rounded MT Bold: classic, wide (not squeezed), with rounded stroke ends.
+HOOK_FONTS = ("ARLRDBD.TTF", "GILSANUB.TTF", "arialbd.ttf")
 HOOK_FONT_SIZE = 70
-HOOK_COLOR = "#FFE135"  # yellow, black outline: readable on any background
+HOOK_COLOR = "white"  # black outline: readable on any background
 HOOK_STROKE = 8
 HOOK_DEPTH = 7  # pixels of 3D relief under the text
 HOOK_MAX_TEXT_WIDTH = 960  # pixels, in the 1080px-wide Short
