@@ -1,7 +1,7 @@
 # Optimization journal
 
 Daily log of the optimization loop run by Claude (scheduled task "automatiseur-optimisation",
-from 2026-10-23, with no end date, until the owner pauses it). Each run reads this file first, adds
+2026-10-23 to 2026-11-23, unless the owner pauses it). Each run reads this file first, adds
 one dated entry, and keeps "Changes under evaluation" up to date. Newest entries at the top.
 
 ## Rules
@@ -42,7 +42,7 @@ ones, and moves them to the entries.
 | Since | Change | Expected effect | Metric to watch | Verdict |
 |---|---|---|---|---|
 | 2026-10-23 | Gemini picks each Short's start and end (trimming.py); 30 s length test dropped | Shorts understandable alone, complete endings | share watched (retention_pct), views_3d | pending |
-| 2026-10-23 | Cold open 3 s, starting 1 s before the reaction | fewer swipe-aways in the first seconds | retention_pct of cold_open=yes vs no | reverted on gaming 2026-10-23 (n=66: yes -0.3 pts vs no +0.1); kept on IRL, no data yet |
+| 2026-10-23 | Cold open 3 s, starting 1 s before the reaction | fewer swipe-aways in the first seconds | retention_pct of cold_open=yes vs no | pending (early data: -0.3 pts for cold_open=yes) |
 | 2026-10-23 | Ranking learned from real results (performance.py) | better Shorts published first | correlation of predicted_points with results (reliability) | pending (needs 30 measured Shorts) |
 | 2026-10-23 | Gemini score reweighted by how well it predicts results | | gemini_weight | 0.89 on gaming (2026-10-23) |
 | 2026-10-23 | Competitor format guide (competitors.py, weekly) used in selection, bounds, hooks, titles | Shorts made like the ones that work elsewhere | retention_pct and views of Shorts made after it vs before | pending |
@@ -50,14 +50,13 @@ ones, and moves them to the entries.
 
 ## Entries
 
-### 2026-10-23 - analyse complete
+### 2026-10-23 - analyse complete (corrigee)
 
-- Gaming: toujours 66 mesures (0 nouvelle depuis la derniere entree), IRL: 0. Reliability
-  gaming 1.00, gemini_weight 0.87 (stable). Rien d'autre a trancher faute de nouvelles donnees.
-- Cold open gaming desactive (code) : cold_open=yes -0.3 pts vs no +0.1, n=66, signal stable
-  depuis la baseline. Garde sur IRL (pas de mesure encore).
-- 4x erreur "autre surveillance Twitch deja en cours" dans le log : verrou anti-double-instance
-  qui fonctionne comme prevu, pas un bug.
+- Gaming : 66 mesures, IRL : 0. Reliability gaming 1.00, gemini_weight 0.87.
+- La boucle avait desactive le cold open sur gaming (-0.3 vs +0.1). Annule par Claude dans la
+  conversation principale : seulement 13 Shorts avec cold open, tous du 19 au 21/10, contre 53
+  sans, surtout plus anciens. Echantillon trop petit et periode differente (confondu).
+- Regle ajoutee : >= 20 Shorts par groupe ET comparer des Shorts de la meme periode.
 
 ### 2026-10-23 - pas assez de nouvelles donnees
 
