@@ -114,6 +114,8 @@ class VODHighlightSelector:
 
         requested_count = min(max(0, budget), len(candidates))
         try:
+            # The channel this VOD's Shorts most likely go to (its Twitch category).
+            theme = short_channel(None, processed_vod.game_name)
             evaluations = (
                 select_candidates(
                     candidates,
@@ -127,8 +129,9 @@ class VODHighlightSelector:
                     ),
                     # The published Shorts and the big clip channels' Shorts that did best and worst.
                     examples="\n\n".join(filter(None, (
-                        examples_text(self.output_dir), competitor_examples(load_competitor_shorts(self.output_dir)),
-                        format_guide_text(self.output_dir, short_channel(None, processed_vod.game_name)),
+                        examples_text(self.output_dir, theme),
+                        competitor_examples(load_competitor_shorts(self.output_dir), theme),
+                        format_guide_text(self.output_dir, theme),
                     ))),
                 )
                 if requested_count

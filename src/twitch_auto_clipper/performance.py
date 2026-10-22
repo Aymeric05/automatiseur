@@ -217,10 +217,10 @@ def external_points(shorts: list[dict[str, Any]], theme: str) -> dict[tuple[str,
     return points
 
 
-def competitor_examples(shorts: list[dict[str, Any]], count: int = 4) -> str:
+def competitor_examples(shorts: list[dict[str, Any]], theme: str, count: int = 4) -> str:
     """Titles that do best and worst on the big clip channels, relative to each channel."""
     lines = []
-    for theme, label in (("gaming", "jeux video"), ("irl", "IRL / Just Chatting")):
+    for label in (("jeux video" if theme == "gaming" else "IRL / Just Chatting"),):
         own = [short for short in shorts if short.get("theme") == theme and short.get("title")]
         by_channel: dict[str, list[int]] = {}
         for short in own:
@@ -243,12 +243,13 @@ def _uploaded(entry: dict[str, Any]) -> datetime | None:
         return None
 
 
-def examples_text(output_dir: Path, count: int = 4) -> str:
+def examples_text(output_dir: Path, theme: str, count: int = 4) -> str:
     """The published Shorts that did best and worst, shown to Gemini as examples."""
     try:
         history = json.loads((output_dir / "published_shorts.json").read_text(encoding="utf-8"))["shorts"]
     except (OSError, json.JSONDecodeError, KeyError, TypeError):
         return ""
+    history = [entry for entry in history if entry.get("channel", "gaming") == theme]  # this channel only
     scores = performance(history)
     if len(scores) < 2 * count:
         return ""
