@@ -26,6 +26,17 @@ Hard limits (never change): never declare "made for kids"; never delete the owne
 never empty the recycle bin, never touch other projects, never reveal .env contents or tokens;
 never run two instances of the app; ask the owner before anything irreversible or doubtful.
 
+## Waiting for the owner
+
+Risky or doubtful actions are never done directly: the loop writes them here (what, why with
+numbers, risks, how to undo) and in its daily summary. The owner answers by writing OK or NON
+at the start of the line (or tells Claude); the next run applies the OK ones, drops the NON
+ones, and moves them to the entries.
+
+- (proposal) Word-by-word subtitles in the middle of the screen, as on the IRL clip channels
+  that do best. Why: seen on the top Shorts of Kai Cenat Live and Hasanabi Clips. Risk: changes
+  how every new Short looks; could do worse. Undo: one setting. Waiting for data first.
+
 ## Changes under evaluation
 
 | Since | Change | Expected effect | Metric to watch | Verdict |
