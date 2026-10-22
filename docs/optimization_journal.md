@@ -4,20 +4,27 @@ Daily log of the optimization loop run by Claude (scheduled task "automatiseur-o
 2026-10-23 to 2026-11-23, unless the owner pauses it). Each run reads this file first, adds
 one dated entry, and keeps "Changes under evaluation" up to date. Newest entries at the top.
 
-## Rules the owner set (never break them)
+## Rules
 
-- Two channels: LiveActions! = video games only, PeakMoments = everything else (IRL, Just
-  Chatting...). Each streamer in one whitelist only, the one of their main content.
+The owner said (2026-10-23) that the strategy rules below are his guesses at what works best
+to grow, and that the loop is free to reshape them when the evidence (our results, the big
+clip channels) shows something better. Change them one at a time, with numbers, and say so in
+the daily summary.
+
+Strategy (hypotheses, may be reshaped with evidence):
+- Two channels: LiveActions! = video games, PeakMoments = everything else (IRL, Just
+  Chatting...). Each streamer in one whitelist, the one of their main content.
 - Whitelist streamers keep priority; a standout whitelist streamer takes the day's Shorts.
-- The streamer's own learned score weighs much less than what the Short itself is; other
+- The streamer's learned score weighs much less than what the Short itself is; other
   channels never give points to a streamer.
-- Learning is based on real results (views, share watched, likes, comments), over many
-  Shorts: no change driven by a handful of lucky or unlucky Shorts.
+- Learning from real results over many Shorts, never from a handful of lucky ones.
 - Below a channel's top 30, nothing is kept or rendered. 10 uploads per 24 h per channel.
-- The framing (what is shown in the 9:16 crop) never changes; quality may improve.
-- Hook text: white Bangers, black outline, no emoji. Never declared "made for kids".
-- Never delete the owner's files, never empty the recycle bin, never touch other projects.
-- Ask the owner before anything doubtful, irreversible, or that changes how the Shorts look.
+- Framing (what the 9:16 crop shows), hook style (white Bangers, black outline, no emoji),
+  subtitles: owner preferences; change only with strong evidence, and tell the owner.
+
+Hard limits (never change): never declare "made for kids"; never delete the owner's files,
+never empty the recycle bin, never touch other projects, never reveal .env contents or tokens;
+never run two instances of the app; ask the owner before anything irreversible or doubtful.
 
 ## Changes under evaluation
 
