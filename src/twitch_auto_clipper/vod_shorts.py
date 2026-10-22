@@ -30,7 +30,13 @@ COLD_OPEN_BEFORE = 0.5  # the teaser starts just before the peak, so the reactio
 COLD_OPEN_MIN_START = 4.0  # a peak in the first seconds is seen right away: no teaser
 # x264 "veryfast": half the processor time of the default preset for the same look
 # (YouTube re-encodes every upload anyway), so a Short costs far less energy.
-VIDEO_ENCODER = ("-c:v", "libx264", "-preset", "veryfast")
+# CRF 18 (up to YouTube's recommended 12 Mbit/s): YouTube re-encodes every upload,
+# so the sharper the file it gets, the better the Short looks.
+VIDEO_ENCODER = (
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-maxrate", "12M", "-bufsize", "24M",
+    "-pix_fmt", "yuv420p",
+)
+AUDIO_ENCODER = ("-c:a", "aac", "-b:a", "192k")
 # YouTube Shorts accepts videos up to three minutes.
 MAX_SHORT_DURATION = 180.0
 # Reading a few seconds from Twitch and encoding them never takes this long.
@@ -129,9 +135,11 @@ def _build_vertical_filter_zoomed_out(input_path: Path | None = None, focus_x: f
         else ""
     )
     return (
-        "scale=-2:1920,"
+        # Lanczos scaling and a light sharpening: a sharper picture, the same framing.
+        "scale=-2:1920:flags=lanczos,"
         f"crop='min(iw,{window})':ih{position},"
-        "scale=1080:1920:force_original_aspect_ratio=decrease,"
+        "scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos,"
+        "unsharp=5:5:0.6,"
         "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,"
         "setsar=1"
     )
@@ -197,7 +205,7 @@ def _build_short_ffmpeg_command(
         ]
     return command + [
         *VIDEO_ENCODER,
-        "-c:a", "aac",
+        *AUDIO_ENCODER,
         "-movflags", "+faststart",
         "-f", "mp4",
         str(output_path),
@@ -239,7 +247,7 @@ def _build_cold_open_command(
         graph += f";[cv][2:v]overlay=(W-w)/2:{HOOK_TOP}[v]"
     return command + [
         "-filter_complex", graph, "-map", "[v]", "-map", "[a]",
-        *VIDEO_ENCODER, "-c:a", "aac", "-movflags", "+faststart", "-f", "mp4", str(output_path),
+        *VIDEO_ENCODER, *AUDIO_ENCODER, "-movflags", "+faststart", "-f", "mp4", str(output_path),
     ]
 
 
