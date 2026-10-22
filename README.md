@@ -177,15 +177,19 @@ A moment that would not rank among its channel's 30 best Shorts is never rendere
 Short pushed below the top 30 is deleted at once.
 
 The ranking learns from the published Shorts' real results only (views at 1, 3 or 7 days,
-share watched, likes and comments; each Short compared with the others of its channel). Each
-feature of a Short (streamer, kind of moment, emotion, length, cold open, Twitch category) earns
-or loses a few points (at most 3 each, 8 in all) from the results of the Shorts that had it,
-pulled towards zero when few are measured, recent ones weighing more. Each publication records
-the points predicted for it; once its results are in, the predictions are checked, and the
+share watched, likes and comments; each Short compared with the others of its channel; the
+share watched and the likes are ignored below 50 and 100 views). Since those results are
+partly luck, it moves slowly, over many Shorts: each feature of a Short (kind of moment,
+emotion, length, cold open, Twitch category) earns or loses at most 3 points from the Shorts
+that had it, only once 5 of them are measured, pulled towards zero (10 Shorts weigh half),
+older ones fading over 45 days. Who streamed it weighs much less: at most 1 point either way,
+except a streamer of the channel's list, who can gain up to 3 and never loses any. Each
+publication records the points predicted for it; once enough results are in (30 Shorts), the
 learned points weigh more when they predicted well, less (down to nothing) when they did not.
-The best and worst published Shorts are also shown to Gemini as examples when it selects new
-moments, and 15% of the uploads go to streamers with few measured Shorts, so the ranking
-keeps discovering. Every published Short is recorded in
+Gemini's own scores are checked the same way (from 40 Shorts): they weigh up to 20% more when
+they predicted the results, up to 40% less when they did not. The best and worst published
+Shorts are also shown to Gemini as examples when it selects new moments. There is no forced
+exploration: an unknown streamer starts at zero and can rank high on the quality of the Short. Every published Short is recorded in
 `data/output/published_shorts.json` (streamer and place in the list, per-live and
 comparative scores, where the moment comes from: transcript, chat or emotion, the emotion
 heard, hook, title, duration, lead-in, publication time). Every 6 hours the app reads their

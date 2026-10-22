@@ -44,10 +44,6 @@ STANDOUT_FACTOR = 2
 FAVORED_SCORE_BONUS = 15  # added to the Gemini score (0-100) of favored streamers' Shorts
 # The biggest streamers of the list win at a similar quality: (rank at most, bonus).
 RANK_BONUSES = ((5, 10), (15, 5))
-# Exploration: this share of the uploads goes to a streamer with fewer than
-# EXPLORE_MAX_MEASURED measured Shorts, so the learned ranking keeps discovering.
-EXPLORE_SHARE = 0.15
-EXPLORE_MAX_MEASURED = 3
 
 
 @dataclass(frozen=True)
@@ -163,11 +159,10 @@ class VODShortsUploader:
         vod_id: str,
         short: VODShortResult,
         metadata: ShortMetadata,
-        explore: bool = False,
         game: str = "",
     ) -> ShortUploadResult:
         manifest_path = self.output_dir / f"{vod_id}_processing.json"
-        recorded = {"explore": explore, "game": game}
+        recorded = {"game": game}
         manifest = self._load_manifest(manifest_path)
         uploads = manifest.get("youtube_uploads", {})
         if isinstance(uploads, dict) and short.key in uploads:
@@ -249,10 +244,10 @@ class VODShortsUploader:
 
     def _uploaded(
         self, manifest: dict[str, Any], manifest_path: Path, short: VODShortResult,
-        metadata: ShortMetadata, video_id: str, url: str, explore: bool = False, game: str = "",
+        metadata: ShortMetadata, video_id: str, url: str, game: str = "",
     ) -> ShortUploadResult:
         """Record a Short that is on YouTube, then delete the local copy."""
-        self._record_publication(manifest, short, metadata, video_id, url, explore, game)
+        self._record_publication(manifest, short, metadata, video_id, url, game)
         try:
             self._record_upload(manifest_path, short, metadata, video_id, url)
         except (OSError, ValueError) as error:
@@ -295,17 +290,8 @@ class VODShortsUploader:
             and (len(ready) < self.min_reserve or not self._upload_due(self._publication_window()))
         ):
             return None
-        best, explore = ready[0], False
-        if self._random() < EXPLORE_SHARE:
-            # Exploration: a streamer with few measured Shorts, so the ranking keeps discovering.
-            measured = {}
-            for entry in self._load_history()["shorts"]:
-                if any(isinstance(entry.get(key), int) for key in ("views_1d", "views_3d", "views_7d")):
-                    measured[str(entry.get("streamer", "")).lower()] = measured.get(str(entry.get("streamer", "")).lower(), 0) + 1
-            untested = next((item for item in ready if measured.get(item.login, 0) < EXPLORE_MAX_MEASURED), None)
-            if untested is not None:
-                best, explore = untested, True
-        return best.vod_id, self.upload(best.vod_id, best.short, best.metadata, explore=explore, game=best.game)
+        best = ready[0]
+        return best.vod_id, self.upload(best.vod_id, best.short, best.metadata, game=best.game)
 
     def _publication_window(self) -> tuple[datetime, datetime] | None:
         """The hour over which the uploads YouTube allows are spread.
@@ -370,7 +356,8 @@ class VODShortsUploader:
             not item.failed,
             item.login == standout,
             item.login in self.top_streamers,
-            compared.get(self._reserve_id(item), item.short.gemini_score or 0)
+            # Gemini's score, weighted by how well it predicted the real results (around 70).
+            70 + model.gemini_weight * (compared.get(self._reserve_id(item), item.short.gemini_score or 0) - 70)
             + (FAVORED_SCORE_BONUS if item.login in self.favored_streamers else 0)
             - (PROFANITY_PENALTY if item.muted else 0)
             + self._rank_bonus(item.login)
@@ -650,7 +637,7 @@ class VODShortsUploader:
 
     def _record_publication(
         self, manifest: dict[str, Any], short: VODShortResult, metadata: ShortMetadata,
-        video_id: str, url: str, explore: bool = False, game: str = "",
+        video_id: str, url: str, game: str = "",
     ) -> None:
         """Remember the published Short and what it was made of, to compare views later.
 
@@ -680,7 +667,6 @@ class VODShortsUploader:
             "lead_in_seconds": round(lead_in, 1) if lead_in is not None else None,
             "muted": short.muted,
             "game": game or manifest.get("game_name"),
-            "explore": explore,  # picked to discover, not as the best of the reserve
             "uploaded_at": self._clock().isoformat(timespec="seconds"),
         })
         entry = history["shorts"][-1]

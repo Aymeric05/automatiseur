@@ -22,14 +22,19 @@ import math
 from pathlib import Path
 from typing import Any
 
-HALF_LIFE_DAYS = 30.0  # a Short published a month ago weighs half as much
+# Shorts' results are partly luck: everything here moves slowly, over many Shorts.
+HALF_LIFE_DAYS = 45.0  # a Short published 45 days ago still weighs half
 MIN_AGE = timedelta(days=1)  # younger Shorts' results say nothing yet
-PRIOR_WEIGHT = 5.0  # a feature's mean counts for w / (w + 5): 2 Shorts weigh little
+MIN_SHORTS_PER_VALUE = 5  # a feature value seen on fewer measured Shorts earns nothing
+PRIOR_WEIGHT = 10.0  # a feature's mean counts for w / (w + 10): 10 Shorts weigh half
 POINTS_PER_SD = 4.0  # one standard deviation of performance, at full confidence
-FEATURE_MAX_POINTS = 3.0
+FEATURE_MAX_POINTS = 3.0  # what the Short is (length, kind of moment, emotion...)
+STREAMER_MAX_POINTS = 1.0  # who streamed it weighs much less (a listed streamer: up to +3, never below 0)
 TOTAL_MAX_POINTS = 8.0
-RELIABILITY_MIN_SHORTS = 20  # predictions checked before the learned points are trusted more or less
-RELIABILITY_WINDOW = 60
+RELIABILITY_MIN_SHORTS = 30  # predictions checked before the learned points are trusted more or less
+RELIABILITY_WINDOW = 100
+GEMINI_CHECK_MIN_SHORTS = 40  # Gemini's scores checked against the results before reweighting them
+GEMINI_WEIGHT_RANGE = (0.6, 1.2)
 # What the performance score is made of, and how much each part counts.
 COMPONENTS = {"views": 0.45, "retention": 0.35, "engagement": 0.20}
 # Below these views, the share watched and the likes are noise (2 views, 1 like...).
@@ -118,6 +123,7 @@ class PerformanceModel:
         ]
         self.performance = performance(mature)
         sums: dict[tuple[str, str], list[float]] = {}
+        counts: dict[tuple[str, str], int] = {}
         for entry in mature:
             perf = self.performance.get(entry["video_id"])
             if perf is None:
@@ -129,7 +135,11 @@ class PerformanceModel:
                     total = sums.setdefault((name, value), [0.0, 0.0])
                     total[0] += weight * perf
                     total[1] += weight
-        self.learned = {key: total / (weight + PRIOR_WEIGHT) for key, (total, weight) in sums.items()}
+                    counts[(name, value)] = counts.get((name, value), 0) + 1
+        self.learned = {
+            key: total / (weight + PRIOR_WEIGHT)
+            for key, (total, weight) in sums.items() if counts[key] >= MIN_SHORTS_PER_VALUE
+        }
         # Self-check: did the points predicted at publication match the real results?
         checked = [
             (float(entry["predicted_points"]), self.performance[entry["video_id"]])
@@ -139,6 +149,18 @@ class PerformanceModel:
         self.reliability = (
             max(0.0, min(1.5, 0.5 + 2.0 * _spearman(checked))) if len(checked) >= RELIABILITY_MIN_SHORTS else 1.0
         )
+        # Gemini's score at publication against the real results: it weighs more when it
+        # predicted them, less when it did not (applied around 70, the usual score).
+        scored = [
+            (float(entry.get("compared_score") or entry["gemini_score"]), self.performance[entry["video_id"]])
+            for entry in mature
+            if isinstance(entry.get("compared_score") or entry.get("gemini_score"), (int, float))
+            and entry["video_id"] in self.performance
+        ][-RELIABILITY_WINDOW:]
+        low, high = GEMINI_WEIGHT_RANGE
+        self.gemini_weight = (
+            max(low, min(high, 0.8 + _spearman(scored))) if len(scored) >= GEMINI_CHECK_MIN_SHORTS else 1.0
+        )
 
     def raw_points(self, short: dict[str, Any]) -> float:
         """Points from the features alone, before the self-check (recorded at publication)."""
@@ -146,7 +168,9 @@ class PerformanceModel:
         for name, value in features(short).items():
             points = POINTS_PER_SD * self.learned.get((name, value), 0.0)
             if name == "streamer" and value in self.protected:
-                points = max(points, 0.0)
+                points = max(0.0, min(FEATURE_MAX_POINTS, points))
+            elif name == "streamer":
+                points = max(-STREAMER_MAX_POINTS, min(STREAMER_MAX_POINTS, points))
             total += max(-FEATURE_MAX_POINTS, min(FEATURE_MAX_POINTS, points))
         return max(-TOTAL_MAX_POINTS, min(TOTAL_MAX_POINTS, total))
 

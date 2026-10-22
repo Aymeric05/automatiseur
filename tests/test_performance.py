@@ -38,10 +38,28 @@ class PerformanceTests(unittest.TestCase):
         self.assertLess(few.points({"streamer": "hit", "seconds": 30}), hit)  # one Short: much less sure
 
     def test_the_learned_points_weigh_less_when_their_predictions_were_wrong(self):
-        good = [short(f"g{i}", "s", 10 * (i + 1), predicted_points=i) for i in range(25)]
-        wrong = [short(f"w{i}", "s", 10 * (i + 1), predicted_points=-i) for i in range(25)]
+        good = [short(f"g{i}", "s", 10 * (i + 1), predicted_points=i) for i in range(35)]
+        wrong = [short(f"w{i}", "s", 10 * (i + 1), predicted_points=-i) for i in range(35)]
+        self.assertEqual(PerformanceModel(good[:20], "gaming", NOW).reliability, 1.0)  # too few to judge yet
         self.assertGreater(PerformanceModel(good, "gaming", NOW).reliability, 1.0)
         self.assertEqual(PerformanceModel(wrong, "gaming", NOW).reliability, 0.0)
+
+
+    def test_a_streamer_weighs_less_than_the_short_itself_except_a_listed_one(self):
+        history = [short(f"h{i}", "star", 5000, 95, source="emotion") for i in range(30)]
+        history += [short(f"f{i}", "other", 5, 30) for i in range(30)]
+        model = PerformanceModel(history, "gaming", NOW)
+        self.assertLessEqual(model.points({"streamer": "star"}) - model.points({"streamer": "nobody"}), 1.0)
+        listed = PerformanceModel(history, "gaming", NOW, protected=frozenset({"star"}))
+        self.assertGreater(listed.points({"streamer": "star"}) - listed.points({"streamer": "nobody"}), 1.0)
+        self.assertGreater(model.points({"source": "emotion"}), 1.0)  # what the Short is counts most
+
+    def test_gemini_weighs_more_when_its_scores_predicted_the_results(self):
+        right = [short(f"r{i}", "s", 10 * (i + 1), gemini_score=50 + i) for i in range(45)]
+        wrong = [short(f"w{i}", "s", 10 * (i + 1), gemini_score=95 - i) for i in range(45)]
+        self.assertEqual(PerformanceModel(right, "gaming", NOW).gemini_weight, 1.2)
+        self.assertEqual(PerformanceModel(wrong, "gaming", NOW).gemini_weight, 0.6)
+        self.assertEqual(PerformanceModel(right[:10], "gaming", NOW).gemini_weight, 1.0)  # too few to judge
 
 
 if __name__ == "__main__":
