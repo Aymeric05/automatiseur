@@ -20,7 +20,7 @@ HOOK_FONTS = (
 )
 HOOK_FONT_SIZE = 84  # Bangers is narrow: a bit bigger for the same presence
 HOOK_COLOR = "white"  # black outline: readable on any background
-HOOK_STROKE = 8
+HOOK_STROKE = 6
 HOOK_DEPTH = 7  # pixels of 3D relief under the text
 HOOK_MAX_TEXT_WIDTH = 960  # pixels, in the 1080px-wide Short
 
@@ -103,7 +103,7 @@ def _simple_emojis(text: str) -> str:
 
 
 def render_hook_image(text: str, output_path: Path) -> Path:
-    """Draw the hook as bold yellow text with color emojis on a transparent PNG.
+    """Draw the hook as white text, without emojis, on a transparent PNG.
 
     A black outline, a 3D extrusion and a soft drop shadow keep it readable on
     any background. libass draws emojis as plain white outlines, hence an image
@@ -114,6 +114,10 @@ def render_hook_image(text: str, output_path: Path) -> Path:
         from PIL import Image, ImageDraw, ImageFilter, ImageFont
     except ImportError as error:
         raise SubtitleGenerationError(f"Pillow indisponible : {error}") from error
+    # Never an emoji on the video (they stay in the YouTube title and description).
+    text = re.sub(r"\s+", " ", re.sub("[\U0001F000-\U0001FFFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D]", "", text)).strip()
+    if not text:
+        raise SubtitleGenerationError("Phrase d'accroche vide sans ses emojis.")
     text_font = None
     for name in HOOK_FONTS:
         try:

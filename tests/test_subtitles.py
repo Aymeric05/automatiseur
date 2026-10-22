@@ -90,7 +90,7 @@ class HookImageTests(unittest.TestCase):
         thumb = "\U0001F44D\U0001F3FD"  # thumbs up, medium skin tone
         self.assertEqual(_simple_emojis(f"Run {runner} now {thumb}"), "Run \U0001F3C3 now \U0001F44D")
 
-    def test_hook_is_bold_text_with_color_emojis_on_a_transparent_image(self) -> None:
+    def test_hook_is_white_text_without_emojis_on_a_transparent_image(self) -> None:
         from twitch_auto_clipper.subtitles import HOOK_MAX_TEXT_WIDTH, SubtitleGenerationError, render_hook_image
 
         with tempfile.TemporaryDirectory() as directory:
@@ -106,7 +106,8 @@ class HookImageTests(unittest.TestCase):
                 self.assertGreater(image.height, 200)  # wrapped on two lines
                 self.assertEqual(image.getpixel((0, 0))[3], 0)  # no box: transparent around the text
                 colors = image.getcolors(1_000_000)
-            self.assertTrue(any(r > 200 and g < 160 and b < 100 and a == 255 for _, (r, g, b, a) in colors))  # orange flame
+            self.assertFalse(any(r > 200 and g < 160 and b < 100 and a == 255 for _, (r, g, b, a) in colors))  # no flame emoji
+            self.assertTrue(any(min(r, g, b) > 240 and a == 255 for _, (r, g, b, a) in colors))  # white text
 
 
 if __name__ == "__main__":

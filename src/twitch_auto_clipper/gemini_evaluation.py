@@ -155,7 +155,7 @@ def _build_prompt(
         "avec le nom du streamer, qui dit ce qui se passe (pas une citation brute de la "
         "transcription), 1 emoji au plus. "
         "hook est la phrase d'accroche affichee en haut du Short pendant tout le clip : "
-        "4 a 9 mots et 1 ou 2 emojis simples, elle tease le moment fort sans le devoiler "
+        "4 a 9 mots, sans emoji, elle tease le moment fort sans le devoiler "
         "pour que le spectateur reste jusqu'a la fin, en lien direct avec ce qui se passe "
         "dans le clip ; varie les formulations d'un candidat a l'autre. "
         "description est une ou deux phrases fun qui decrivent le clip et donnent envie de "
