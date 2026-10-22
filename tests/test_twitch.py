@@ -102,7 +102,7 @@ class TwitchTests(unittest.TestCase):
         with patch("twitch_auto_clipper.twitch._get_youtube_dl", return_value=ResolvingYoutubeDL):
             url = resolve_twitch_video_url("https://www.twitch.tv/videos/123456")
         self.assertEqual(url, "https://example.test/1080p60/index.m3u8")
-        self.assertEqual(calls, [("best[height<=1080]/best", False)])
+        self.assertEqual(calls, [("best", False)])
 
     def test_unresolvable_video_url_is_a_download_error(self) -> None:
         class Failing(FakeYoutubeDL):

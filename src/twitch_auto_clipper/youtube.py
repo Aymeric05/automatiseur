@@ -302,8 +302,12 @@ def upload_video(
     made_for_kids: bool = False,
     expected_channel_id: str | None = None,
     allow_browser: bool = True,
+    category_id: str = "20",
 ) -> tuple[str, str]:
-    """Upload a video with resumable MediaFileUpload and return ID and URL."""
+    """Upload a video with resumable MediaFileUpload and return ID and URL.
+
+    ``category_id``: YouTube category, "20" Gaming, "24" Entertainment.
+    """
     if not video_path.is_file():
         raise YouTubeUploadError(f"Fichier video introuvable : {video_path}")
     if privacy not in {"private", "unlisted", "public"}:
@@ -316,7 +320,7 @@ def upload_video(
         )
         verify_expected_channel(service, expected_channel_id)
         body = {
-            "snippet": {"title": title, "description": description, "categoryId": "20"},
+            "snippet": {"title": title, "description": description, "categoryId": category_id},
             "status": {
                 "privacyStatus": privacy,
                 "selfDeclaredMadeForKids": made_for_kids,

@@ -215,6 +215,7 @@ class VODShortsUploader:
                 made_for_kids=False,  # never declared "made for kids": widest audience
                 expected_channel_id=self.expected_channel_id,
                 allow_browser=False,  # unattended: never wait for a sign-in page
+                category_id="20" if self.channel == "gaming" else "24",  # Gaming, else Entertainment
             )
         except Exception as error:
             reason = next((reason for reason in QUOTA_ERROR_REASONS if reason in str(error)), None)

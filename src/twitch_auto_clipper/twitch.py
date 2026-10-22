@@ -99,18 +99,19 @@ def download_twitch_vod(
     return downloaded_path
 
 
-def resolve_twitch_video_url(url: str, max_height: int = 1080) -> str:
+def resolve_twitch_video_url(url: str, max_height: int | None = None) -> str:
     """Return the HLS playlist URL of the VOD video (audio included).
 
     FFmpeg reads only the requested seconds from it, so a Short never needs
     the whole VOD on disk. The URL carries a short-lived Twitch token: resolve
-    it right before use, never store it.
+    it right before use, never store it. Without ``max_height``, the best rendition
+    Twitch has (the streamer's source quality, 1440p included).
     """
     if not is_twitch_vod_url(url):
         raise ValueError("L'URL doit etre une URL HTTPS de VOD Twitch valide.")
     options = {
         # Twitch renditions carry video and audio together: one URL is enough.
-        "format": f"best[height<={max_height}]/best",
+        "format": f"best[height<={max_height}]/best" if max_height else "best",
         "noplaylist": True,
         "quiet": True,
     }
