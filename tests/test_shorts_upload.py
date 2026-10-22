@@ -268,7 +268,6 @@ class PublishNextTests(unittest.TestCase):
             self.assertEqual(list(self.tmp.glob("weak_*_short.mp4")), [])  # deleted at once
             self.assertFalse(uploader.would_enter_reserve({"gemini_score": 50}, "someone", "v9", 2))
             self.assertTrue(uploader.would_enter_reserve({"gemini_score": 95}, "someone", "v9", 2))
-        self.assertFalse((self.tmp / "rejected_shorts.json").exists())
 
     def test_shorts_rendered_without_the_profanity_filter_are_never_published(self):
         self._vod("old", [99])

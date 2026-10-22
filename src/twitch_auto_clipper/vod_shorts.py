@@ -86,7 +86,6 @@ class VODShortResult:
     emotion: str | None = None
     hook: str | None = None
     focus_x: float | None = None  # where the crop is centered (0 to 1), None: the middle
-    max_seconds: float | None = None  # the length cap of this moment (length test)
     cold_open: bool = False  # opens on its strongest reaction
     channel: str = "gaming"  # the YouTube channel it goes to: "gaming" or "irl"
 
@@ -419,7 +418,6 @@ class VODShortsGenerator:
                 emotion=item.get("emotion"),
                 hook=item.get("gemini_hook"),
                 focus_x=self._number(item.get("focus_x")),
-                max_seconds=self._number(item.get("max_seconds")),
                 channel=str(item.get("channel") or "gaming"),
                 **extra,
             )
@@ -607,7 +605,6 @@ class VODShortsGenerator:
                     "emotion": short.emotion,
                     "hook": short.hook,
                     "focus_x": short.focus_x,
-                    "max_seconds": short.max_seconds,
                     "channel": short.channel,
                     "cold_open": short.cold_open if short.status == "generated"
                     else bool((existing.get(short.key) or {}).get("cold_open")),
