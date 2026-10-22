@@ -50,6 +50,10 @@ ones, and moves them to the entries.
 
 ## Entries
 
+### 2026-10-23 - pas assez de nouvelles donnees
+
+- Gaming toujours a 66 mesures, IRL a 0 : 0 nouveau mesure depuis la derniere entree, rien a trancher.
+
 ### 2026-10-23 - baseline
 
 - Gaming: 66 measured Shorts. Learned: <25 s +0.3, >40 s -0.3, chat moments +0.2,
