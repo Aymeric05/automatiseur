@@ -63,11 +63,48 @@ for channel in ("gaming", "irl"):
 
 guide = load("format_guide.json", {})
 competitors = load("competitor_shorts.json", {})
-print(f"\n## competitors: refreshed {competitors.get('refreshed_at')}, guide studied {guide.get('studied_at')}")
+studied = set(load("studied_videos.json", []))
+EMOJI = re.compile("[\U0001F000-\U0001FFFF\u2600-\u27BF]")
+
+
+def title_traits(title: str) -> dict:
+    words = title.split()
+    return {
+        "chars": len(title), "emoji": bool(EMOJI.search(title)), "question": "?" in title,
+        "exclaim": "!" in title, "hashtag": "#" in title,
+        "caps_word": any(len(w) > 3 and w.isupper() for w in words),
+    }
+
+
+def summary(shorts: list, seconds_key: str = "seconds") -> str:
+    traits = [title_traits(s.get("title") or "") for s in shorts]
+    share = lambda key: f"{100 * sum(t[key] for t in traits) // max(len(traits), 1)}%"
+    return (f"n={len(shorts)} sec={median([s.get(seconds_key) or 0 for s in shorts])} "
+            f"title_chars={median([t['chars'] for t in traits])} emoji={share('emoji')} ?={share('question')} "
+            f"!={share('exclaim')} #={share('hashtag')} CAPS={share('caps_word')}")
+
+
+print()
+print(f"## competitors: refreshed {competitors.get('refreshed_at')}, guide studied {guide.get('studied_at')}, "
+      f"{len(studied)} videos already watched by Gemini")
 for theme in ("gaming", "irl"):
-    count = sum(s.get("theme") == theme for s in competitors.get("shorts", []))
-    lengths = {k[1]: round(v, 2) for k, v in external_points(competitors.get("shorts", []), theme).items()}
-    print(f"{theme}: {count} Shorts, length points {lengths}, ideal {guide.get(theme, {}).get('ideal_seconds')}")
+    shorts = [s for s in competitors.get("shorts", []) if s.get("theme") == theme]
+    if len(shorts) < 9:
+        continue
+    by_channel: dict = {}
+    for s in shorts:
+        by_channel.setdefault(s["channel_id"], []).append(s["views"])
+    medians = {c: statistics.median(v) for c, v in by_channel.items()}
+    ranked = sorted(shorts, key=lambda s: (s["views"] + 1) / (medians[s["channel_id"]] + 1))
+    third = len(ranked) // 3
+    ours = [e for e in history if e.get("channel", "gaming") == theme][-60:]
+    print(f"{theme} ({len(by_channel)} channels), relative to each channel's median views:")
+    print(f"  top third   : {summary(ranked[-third:])}")
+    print(f"  bottom third: {summary(ranked[:third])}")
+    print(f"  ours (last 60): {summary(ours)}")
+    print(f"  guide ideal {guide.get(theme, {}).get('ideal_seconds')}; top 3 not yet watched: "
+          + ", ".join([s["video_id"] for s in reversed(ranked[-12:]) if s["video_id"] not in studied][:3])
+          + " | bottom 3 not yet watched: " + ", ".join([s["video_id"] for s in ranked[:12] if s["video_id"] not in studied][:3]))
 
 log = Path(OUTPUT / "monitor.log")
 lines = log.read_text(encoding="utf-8", errors="replace").splitlines()[-3000:] if log.exists() else []
