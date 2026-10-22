@@ -13,9 +13,12 @@ BLURRED_WORD = r"{\bord0\shad0\blur18}%s{\r}"
 
 
 # Gill Sans Ultra Bold (installed with Office), else Impact, else Arial Bold.
-# Arial Rounded MT Bold: classic, wide (not squeezed), with rounded stroke ends.
-HOOK_FONTS = ("ARLRDBD.TTF", "GILSANUB.TTF", "arialbd.ttf")
-HOOK_FONT_SIZE = 70
+# Bangers (Google Fonts, SIL Open Font License), shipped with the app; Windows fonts as fallback.
+HOOK_FONTS = (
+    str(Path(__file__).resolve().parents[2] / "assets" / "fonts" / "Bangers-Regular.ttf"),
+    "ARLRDBD.TTF", "arialbd.ttf",
+)
+HOOK_FONT_SIZE = 84  # Bangers is narrow: a bit bigger for the same presence
 HOOK_COLOR = "white"  # black outline: readable on any background
 HOOK_STROKE = 8
 HOOK_DEPTH = 7  # pixels of 3D relief under the text
