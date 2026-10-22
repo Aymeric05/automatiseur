@@ -26,6 +26,27 @@ Hard limits (never change): never declare "made for kids"; never delete the owne
 never empty the recycle bin, never touch other projects, never reveal .env contents or tokens;
 never run two instances of the app; ask the owner before anything irreversible or doubtful.
 
+## Knowledge (accumulated, per channel)
+
+What the loop has learned and how strongly. Each line: the pattern, the evidence (number of
+Shorts and channels), the date seen first and last. Strengthen, weaken or remove lines as new
+evidence comes; turn a strong line into an A/B test, then into the app's default.
+
+### LiveActions! (gaming)
+- Their hits (top third, 10 channels, 96 Shorts) vs flops: titles ~40 chars, 25% with emoji;
+  ours 45 chars, 76% with emoji. Lengths: theirs median ~74 s (long Shorts up to 3 min), ours 31 s.
+  (2026-10-23)
+- Weekly guide: start at the heart of the action, one strong event, cut right after the climax,
+  understandable without the game's lore. (2026-10-23)
+
+### PeakMoments (irl)
+- Their hits (6 channels, 58 Shorts) vs flops: hits ~28 s vs flops ~23 s; titles ~32 chars,
+  60% emoji; ours 45 chars, 93% emoji, 31 s. (2026-10-23)
+- Weekly guide: open on the key line or question, very expressive moments, cut right after the
+  punchline, avoid moments needing long political or narrative context; ideal 15-25 s. (2026-10-23)
+- Top Shorts of Kai Cenat Live / Hasanabi Clips use word-by-word subtitles in the middle (see
+  proposal). (2026-10-23)
+
 ## Waiting for the owner
 
 Risky or doubtful actions are never done directly: the loop writes them here (what, why with

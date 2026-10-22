@@ -55,11 +55,28 @@ for channel in ("gaming", "irl"):
     if effects:
         print("learned points (best, worst):", ", ".join(f"{n}={v} {p:+.1f}" for p, n, v in effects[:4]),
               "|", ", ".join(f"{n}={v} {p:+.1f}" for p, n, v in effects[-4:]))
+    watched = set(load("studied_videos.json", []))
+    ranked_own = sorted((e for e in measured if e["video_id"] not in watched), key=lambda e: scores[e["video_id"]])
+    if len(ranked_own) >= 2:
+        print(f"ours not yet watched: best {ranked_own[-1]['video_id']} ({ranked_own[-1].get('title', '')[:40]}) | "
+              f"worst {ranked_own[0]['video_id']} ({ranked_own[0].get('title', '')[:40]})")
     for label, since in CHANGES.items():
         before = [scores[e["video_id"]] for e in measured if e.get("uploaded_at", "") < since]
         after = [scores[e["video_id"]] for e in measured if e.get("uploaded_at", "") >= since]
         if after:
             print(f"change '{label}': perf before n={len(before)} median={median(before)} / after n={len(after)} median={median(after)}")
+
+tests = json.loads(Path("config/experiments.json").read_text(encoding="utf-8")).get("experiments", [])
+print("\n## A/B tests running" + ("" if tests else ": none"))
+for test in tests:
+    scores = PerformanceModel(history, test["channel"], NOW).performance
+    print(f"{test['id']} ({test['channel']}, since {test.get('started')}): {test.get('description', '')[:80]}")
+    for side in ("A", "B"):
+        group = [e for e in history if e.get("channel", "gaming") == test["channel"]
+                 and (e.get("experiments") or {}).get(test["id"]) == side and e["video_id"] in scores]
+        print(f"  {side}: measured n={len(group)} perf={median([scores[e['video_id']] for e in group])} "
+              f"retention={median([e['retention_pct'] for e in group if isinstance(e.get('retention_pct'), (int, float))])} "
+              f"views={median([e.get('views_3d', e.get('views_1d', 0)) for e in group])}")
 
 guide = load("format_guide.json", {})
 competitors = load("competitor_shorts.json", {})

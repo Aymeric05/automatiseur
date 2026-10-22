@@ -666,7 +666,7 @@ class VODShortsUploader:
             "gemini_score": short.gemini_score,
             "compared_score": self._comparative_scores().get(f"{short.vod_id}:{short.key}"),
             # Where the moment comes from (transcript, chat or emotion) and how it was made.
-            **{key: record.get(key) for key in ("source", "emotion", "hook", "focus_x", "cold_open")},
+            **{key: record.get(key) for key in ("source", "emotion", "hook", "focus_x", "cold_open", "experiments")},
             "seconds": round(short.end - short.start, 1),
             "lead_in_seconds": round(lead_in, 1) if lead_in is not None else None,
             "muted": short.muted,

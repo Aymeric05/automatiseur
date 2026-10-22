@@ -19,6 +19,7 @@ import shutil
 import time
 from typing import Any, Callable
 
+from . import experiments
 from .competitors import format_guide
 from .focus import IRL_CATEGORIES, short_channel
 from .highlights import EXCITEMENT_DB, _overlap_ratio, expand_moment, split_sentences
@@ -221,10 +222,15 @@ class VODAutomationPipeline:
                 message="Aucun moment assez interessant pour un Short.",
             )
 
+        # A/B tests running on this VOD's likely channel (see experiments.py).
+        test_variants, test_settings = experiments.for_vod(vod_id, short_channel(None, processing.game_name))
         if self.moment_trimmer is not None:
+            guide = dict(format_guide(self.output_dir, short_channel(None, processing.game_name)))
+            guide["rules"] = list(guide.get("rules", [])) + list(test_settings.get("trim_rules", []))
+            if test_settings.get("ideal_seconds"):
+                guide["ideal_seconds"] = test_settings["ideal_seconds"]
             selection = replace(selection, selected=self._trimmed(
-                selection.selected, sentences, source_path, processing.broadcaster_name,
-                format_guide(self.output_dir, short_channel(None, processing.game_name)),
+                selection.selected, sentences, source_path, processing.broadcaster_name, guide,
             ))
             if not selection.selected:
                 return VODAutomationResult(
@@ -236,7 +242,10 @@ class VODAutomationPipeline:
             selection = replace(selection, selected=self._with_focus(vod_id, selection.selected))
         # Video games go to one YouTube channel, everything else to the other.
         selection = replace(selection, selected=tuple(
-            {**moment, "channel": short_channel(moment.get("gaming"), processing.game_name)}
+            {
+                **moment, "channel": short_channel(moment.get("gaming"), processing.game_name),
+                "experiments": test_variants, "cold_open_off": test_settings.get("cold_open") is False,
+            }
             for moment in selection.selected
         ))
         if self.reserve_gate is not None:

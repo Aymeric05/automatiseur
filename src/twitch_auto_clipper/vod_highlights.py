@@ -8,6 +8,7 @@ from typing import Any
 
 from .chat_activity import add_chat_messages, add_chat_signals, chat_spike_moments
 from .gemini_evaluation import GeminiEvaluationError, select_candidates
+from . import experiments
 from .competitors import format_guide_text, load_competitor_shorts
 from .focus import short_channel
 from .performance import competitor_examples, examples_text
@@ -116,6 +117,7 @@ class VODHighlightSelector:
         try:
             # The channel this VOD's Shorts most likely go to (its Twitch category).
             theme = short_channel(None, processed_vod.game_name)
+            _, test_settings = experiments.for_vod(processed_vod.vod_id, theme)  # A/B tests running
             evaluations = (
                 select_candidates(
                     candidates,
@@ -132,6 +134,7 @@ class VODHighlightSelector:
                         examples_text(self.output_dir, theme),
                         competitor_examples(load_competitor_shorts(self.output_dir), theme),
                         format_guide_text(self.output_dir, theme),
+                        experiments.rules_text(test_settings.get("selection_rules", [])),
                     ))),
                 )
                 if requested_count

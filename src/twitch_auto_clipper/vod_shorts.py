@@ -88,6 +88,7 @@ class VODShortResult:
     focus_x: float | None = None  # where the crop is centered (0 to 1), None: the middle
     cold_open: bool = False  # opens on its strongest reaction
     channel: str = "gaming"  # the YouTube channel it goes to: "gaming" or "irl"
+    experiments: dict[str, str] | None = None  # A/B test variants of its VOD (see experiments.py)
 
     @property
     def key(self) -> str:
@@ -419,6 +420,7 @@ class VODShortsGenerator:
                 hook=item.get("gemini_hook"),
                 focus_x=self._number(item.get("focus_x")),
                 channel=str(item.get("channel") or "gaming"),
+                experiments=item.get("experiments") or None,
                 **extra,
             )
 
@@ -471,6 +473,8 @@ class VODShortsGenerator:
     @classmethod
     def _cold_open(cls, item: dict[str, Any], start: float, end: float) -> tuple[float, float] | None:
         """The teaser shown first: from just before the moment's ``peak``, within the Short."""
+        if item.get("cold_open_off"):  # turned off by an A/B test variant
+            return None
         peak = cls._number(item.get("peak"))
         if peak is None or not start + COLD_OPEN_MIN_START <= peak < end:
             return None
@@ -606,6 +610,7 @@ class VODShortsGenerator:
                     "hook": short.hook,
                     "focus_x": short.focus_x,
                     "channel": short.channel,
+                    "experiments": short.experiments,
                     "cold_open": short.cold_open if short.status == "generated"
                     else bool((existing.get(short.key) or {}).get("cold_open")),
                 }
