@@ -6,7 +6,7 @@ one dated entry, and keeps "Changes under evaluation" up to date. Newest entries
 
 ## Rules
 
-The owner said (2026-10-23) that the strategy rules below are his guesses at what works best
+The owner said (2026-10-23) that the strategy rules below are their guesses at what works best
 to grow, and that the loop is free to reshape them when the evidence (our results, the big
 clip channels) shows something better. Change them one at a time, with numbers, and say so in
 the daily summary.
