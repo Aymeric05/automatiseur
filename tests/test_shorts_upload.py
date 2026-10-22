@@ -257,7 +257,7 @@ class PublishNextTests(unittest.TestCase):
         self.assertEqual(list(self.tmp.glob("cut_*_short.mp4")), [])
         self.assertIn("0.0-5.0", json.loads(manifest.read_text(encoding="utf-8"))["youtube_uploads"])
 
-    def test_a_short_pushed_out_or_unable_to_enter_is_recorded_with_why(self):
+    def test_below_the_top_30_nothing_is_kept_nor_rendered(self):
         from twitch_auto_clipper import shorts_upload
 
         with patch.object(shorts_upload, "RESERVE_SIZE", 2):
@@ -265,11 +265,10 @@ class PublishNextTests(unittest.TestCase):
             self._vod("weak", [40])
             uploader = VODShortsUploader(self.tmp, uploader=self._upload, publishing=False)
             uploader.publish_next()
-            self.assertFalse(uploader.would_enter_reserve({"gemini_score": 50, "gemini_title": "meh"}, "someone", "v9", 2))
+            self.assertEqual(list(self.tmp.glob("weak_*_short.mp4")), [])  # deleted at once
+            self.assertFalse(uploader.would_enter_reserve({"gemini_score": 50}, "someone", "v9", 2))
             self.assertTrue(uploader.would_enter_reserve({"gemini_score": 95}, "someone", "v9", 2))
-        rejected = json.loads((self.tmp / "rejected_shorts.json").read_text(encoding="utf-8"))
-        self.assertEqual([entry["reason"][:3] for entry in rejected], ["3e ", "pas"])
-        self.assertEqual((rejected[0]["gemini_score"], rejected[0]["needed"]), (40.0, 80.0))
+        self.assertFalse((self.tmp / "rejected_shorts.json").exists())
 
     def test_shorts_rendered_without_the_profanity_filter_are_never_published(self):
         self._vod("old", [99])
@@ -558,23 +557,6 @@ class StatisticsTests(unittest.TestCase):
             )
             self.assertEqual((entry["views"], entry["views_1d"], entry["views_3d"]), (6000, 1000, 5000))
             self.assertNotIn("views_7d", entry)
-
-    def test_streamers_whose_shorts_are_watched_win_a_few_points(self):
-        with tempfile.TemporaryDirectory() as directory:
-            tmp = Path(directory)
-            shorts = [{"streamer": "two_hits", "views_1d": 100}, {"streamer": "two_hits", "views_3d": 100}]
-            shorts += [{"streamer": "eight_hits", "views_1d": 100}] * 8
-            shorts += [{"streamer": "flop", "views_1d": 2}] * 8 + [{"streamer": "listed", "views_1d": 1}] * 8
-            shorts += [{"views_7d": 10}, {"streamer": "flop", "views": 0}]  # unknown streamer; too recent
-            (tmp / "published_shorts.json").write_text(json.dumps({"shorts": shorts}), encoding="utf-8")
-            points = VODShortsUploader(tmp, top_streamers=frozenset({"listed"}))._audience_points()
-            # The same success counts more when measured on more Shorts, and stays small.
-            self.assertTrue(0 < points["two_hits"] < points["eight_hits"] < 3)
-            self.assertTrue(-3 < points["flop"] < 0)
-            self.assertEqual(points["listed"], 0.0)  # a listed streamer never loses points
-            many_hits = [{"streamer": "star", "views_1d": 10 ** 6}] * 50 + [{"streamer": "x", "views_1d": 0}] * 50
-            (tmp / "published_shorts.json").write_text(json.dumps({"shorts": many_hits}), encoding="utf-8")
-            self.assertEqual(VODShortsUploader(tmp)._audience_points()["star"], 3)  # capped
 
     def test_retention_is_read_with_the_views_when_authorized(self):
         with tempfile.TemporaryDirectory() as directory:

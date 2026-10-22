@@ -15,7 +15,6 @@ from .audio_events import detect_emotions
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
 from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus
-from .lessons import learn_lessons
 from .trimming import trim_moments
 from .streamer_lists import load_streamer_list, load_top_streamers
 from .gemini_evaluation import (
@@ -723,12 +722,6 @@ def main() -> int:
 
         def publish_next() -> bool:
             """Upload each channel's best ready Short when an upload is due; False after a failure."""
-            try:  # once a day: rules learned from the Shorts made for nothing and the views
-                lessons = learn_lessons(output_dir, args.gemini_model, output_dir, daily_gemini)
-            except Exception as error:  # never stops the publications
-                lessons = f"Lecons de selection non mises a jour : {error!r}"
-            if lessons:
-                report(lessons)
             succeeded = True
             for uploader in uploaders:
                 label = f"[{uploader.channel}] "

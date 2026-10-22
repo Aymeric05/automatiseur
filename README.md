@@ -173,11 +173,19 @@ Each Short opens on its strongest reaction (the laugh or scream found in the aud
 loudest second, when it clearly stands out) for 3 seconds, then starts over from the
 set-up: the first second decides whether viewers swipe away.
 
-A moment that would not rank among its channel's 30 best Shorts is never rendered. Every
-Short pushed out of a reserve or not rendered for that reason is recorded with why
-(`data/output/rejected_shorts.json`), and once a day Gemini compares them with the views of
-the published Shorts and writes a few rules (`data/output/selection_lessons.txt`) that the
-moment selection then follows, so the same kind of weak Short is not made again. Every published Short is recorded in
+A moment that would not rank among its channel's 30 best Shorts is never rendered, and a
+Short pushed below the top 30 is deleted at once.
+
+The ranking learns from the published Shorts' real results only (views at 1, 3 or 7 days,
+share watched, likes and comments; each Short compared with the others of its channel). Each
+feature of a Short (streamer, kind of moment, emotion, length, cold open, Twitch category) earns
+or loses a few points (at most 3 each, 8 in all) from the results of the Shorts that had it,
+pulled towards zero when few are measured, recent ones weighing more. Each publication records
+the points predicted for it; once its results are in, the predictions are checked, and the
+learned points weigh more when they predicted well, less (down to nothing) when they did not.
+The best and worst published Shorts are also shown to Gemini as examples when it selects new
+moments, and 15% of the uploads go to streamers with few measured Shorts, so the ranking
+keeps discovering. Every published Short is recorded in
 `data/output/published_shorts.json` (streamer and place in the list, per-live and
 comparative scores, where the moment comes from: transcript, chat or emotion, the emotion
 heard, hook, title, duration, lead-in, publication time). Every 6 hours the app reads their
@@ -201,11 +209,9 @@ other windows: before rendering a VOD's Shorts, the app grabs one 360p frame of 
 (a few MB in all) and asks Gemini, in a single request, where the important element is; each
 Short is then centered on it rather than on the middle (never just on the streamer's face).
 Streams filmed with a camera (webcam in full frame, IRL categories) stay centered, and so
-does every Short when Gemini or Twitch cannot answer. The views of the published Shorts count a
-little too: a streamer whose Shorts get more views than the channel's usual gains up to 3
-points, one below it loses up to 3 (never a streamer of the channel's list). Views are
-compared in log scale, at 7, 3 or 1 days, and a streamer's average is pulled towards the
-channel's when few of their Shorts are measured, since Shorts views are partly luck. Swear words are muted in the audio, blurred in the subtitles and masked (`****`) in the
+does every Short when Gemini or Twitch cannot answer. The real results of the published
+Shorts also move the ranking (see below; a streamer of the channel's list never loses points
+for their own results). Swear words are muted in the audio, blurred in the subtitles and masked (`****`) in the
 hook, title and description; such a Short loses 10 points in the ranking, so it is only
 published when clearly better than a clean one. A moment with a slur is dropped. Shorts rendered before this filter are never
 published. The

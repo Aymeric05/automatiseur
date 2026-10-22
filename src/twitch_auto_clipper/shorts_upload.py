@@ -11,7 +11,7 @@ import random
 from typing import Any, Callable, NamedTuple
 
 from .daily_quota import RollingQuota
-from .lessons import record_rejection
+from .performance import PerformanceModel, features
 from .shorts_metadata import ShortMetadata
 from .streamer_lists import add_streamer, load_top_streamers
 from .vod_shorts import VODShortResult
@@ -44,12 +44,10 @@ STANDOUT_FACTOR = 2
 FAVORED_SCORE_BONUS = 15  # added to the Gemini score (0-100) of favored streamers' Shorts
 # The biggest streamers of the list win at a similar quality: (rank at most, bonus).
 RANK_BONUSES = ((5, 10), (15, 5))
-# Streamers whose Shorts get more views than the channel's usual win a few points, and those
-# below it lose a few (except the listed ones). Shorts views are partly luck: the effect stays
-# small and grows with the number of Shorts measured.
-AUDIENCE_POINTS_PER_DECADE = 4  # 10 times the channel's usual views (in log scale)
-AUDIENCE_PRIOR_SHORTS = 4  # a streamer's average counts for n / (n + 4): 2 Shorts weigh a third
-AUDIENCE_MAX_POINTS = 3
+# Exploration: this share of the uploads goes to a streamer with fewer than
+# EXPLORE_MAX_MEASURED measured Shorts, so the learned ranking keeps discovering.
+EXPLORE_SHARE = 0.15
+EXPLORE_MAX_MEASURED = 3
 
 
 @dataclass(frozen=True)
@@ -72,6 +70,7 @@ class _ReadyShort(NamedTuple):
     muted: bool  # swear words were muted
     short: VODShortResult
     metadata: ShortMetadata
+    game: str = ""  # the stream's Twitch category
 
 
 class VODShortsUploader:
@@ -164,8 +163,11 @@ class VODShortsUploader:
         vod_id: str,
         short: VODShortResult,
         metadata: ShortMetadata,
+        explore: bool = False,
+        game: str = "",
     ) -> ShortUploadResult:
         manifest_path = self.output_dir / f"{vod_id}_processing.json"
+        recorded = {"explore": explore, "game": game}
         manifest = self._load_manifest(manifest_path)
         uploads = manifest.get("youtube_uploads", {})
         if isinstance(uploads, dict) and short.key in uploads:
@@ -198,7 +200,7 @@ class VODShortsUploader:
             except Exception:
                 found = None  # unknown: the upload below is tried as usual
             if found:
-                return self._uploaded(manifest, manifest_path, short, metadata, *found)
+                return self._uploaded(manifest, manifest_path, short, metadata, *found, **recorded)
         if self.quota is not None and not self.quota.available():
             return ShortUploadResult(
                 short.candidate_id, short.output_path, "deferred", title=metadata.title,
@@ -243,14 +245,14 @@ class VODShortsUploader:
 
         if self.quota is not None:
             self.quota.record_use()
-        return self._uploaded(manifest, manifest_path, short, metadata, video_id, url)
+        return self._uploaded(manifest, manifest_path, short, metadata, video_id, url, **recorded)
 
     def _uploaded(
         self, manifest: dict[str, Any], manifest_path: Path, short: VODShortResult,
-        metadata: ShortMetadata, video_id: str, url: str,
+        metadata: ShortMetadata, video_id: str, url: str, explore: bool = False, game: str = "",
     ) -> ShortUploadResult:
         """Record a Short that is on YouTube, then delete the local copy."""
-        self._record_publication(manifest, short, metadata, video_id, url)
+        self._record_publication(manifest, short, metadata, video_id, url, explore, game)
         try:
             self._record_upload(manifest_path, short, metadata, video_id, url)
         except (OSError, ValueError) as error:
@@ -282,13 +284,9 @@ class VODShortsUploader:
         result, or None when no upload was due or no Short is ready.
         """
         ready = self._ready_shorts()
-        key = self._rank_key(ready)
-        ready.sort(key=key, reverse=True)
-        for position, item in enumerate(ready[RESERVE_SIZE:], start=RESERVE_SIZE + 1):
-            # Pushed out of the reserve by better ones: remembered with why, so the selection learns.
-            self._reject(item.vod_id, item.login, item.short, item.metadata.title, key(item)[3], key(ready[RESERVE_SIZE - 1])[3],
-                         f"{position}e de la reserve, seuls les {RESERVE_SIZE} meilleurs restent")
-            self._delete_local(item.short.output_path)
+        ready.sort(key=self._rank_key(ready), reverse=True)
+        for item in ready[RESERVE_SIZE:]:
+            self._delete_local(item.short.output_path)  # below the top 30: never kept
         ready = ready[:RESERVE_SIZE]
         if self._arbitrate(ready):
             ready.sort(key=self._rank_key(ready), reverse=True)
@@ -297,8 +295,17 @@ class VODShortsUploader:
             and (len(ready) < self.min_reserve or not self._upload_due(self._publication_window()))
         ):
             return None
-        best = ready[0]
-        return best.vod_id, self.upload(best.vod_id, best.short, best.metadata)
+        best, explore = ready[0], False
+        if self._random() < EXPLORE_SHARE:
+            # Exploration: a streamer with few measured Shorts, so the ranking keeps discovering.
+            measured = {}
+            for entry in self._load_history()["shorts"]:
+                if any(isinstance(entry.get(key), int) for key in ("views_1d", "views_3d", "views_7d")):
+                    measured[str(entry.get("streamer", "")).lower()] = measured.get(str(entry.get("streamer", "")).lower(), 0) + 1
+            untested = next((item for item in ready if measured.get(item.login, 0) < EXPLORE_MAX_MEASURED), None)
+            if untested is not None:
+                best, explore = untested, True
+        return best.vod_id, self.upload(best.vod_id, best.short, best.metadata, explore=explore, game=best.game)
 
     def _publication_window(self) -> tuple[datetime, datetime] | None:
         """The hour over which the uploads YouTube allows are spread.
@@ -341,9 +348,9 @@ class VODShortsUploader:
         peak viewers of the next one) goes first, then the other listed
         streamers, then everyone else; within each group, the best Gemini
         score (plus ``FAVORED_SCORE_BONUS`` for ``favored_streamers`` and
-        ``RANK_BONUSES`` for the first ones of the list, plus or minus a few
-        ``_audience_points``, minus ``PROFANITY_PENALTY`` when swear words were
-        muted), then the biggest
+        ``RANK_BONUSES`` for the first ones of the list, plus or minus the points
+        learned from the published Shorts' real results (see performance.py),
+        minus ``PROFANITY_PENALTY`` when swear words were muted), then the biggest
         clip budget. A Short whose last upload failed goes last, so it never
         blocks the others.
         """
@@ -358,7 +365,7 @@ class VODShortsUploader:
             else None
         )
         compared = self._comparative_scores()
-        audience = self._audience_points()
+        model = self._model()
         return lambda item: (
             not item.failed,
             item.login == standout,
@@ -367,28 +374,27 @@ class VODShortsUploader:
             + (FAVORED_SCORE_BONUS if item.login in self.favored_streamers else 0)
             - (PROFANITY_PENALTY if item.muted else 0)
             + self._rank_bonus(item.login)
-            + audience.get(item.login, 0.0),
+            + model.points(self._features(item)),
             item.short.clip_budget,
         )
 
-    def _reject(
-        self, vod_id: str, login: str, short: VODShortResult | dict[str, Any], title: str,
-        score: float | None, threshold: float | None, reason: str,
-    ) -> None:
-        get = short.get if isinstance(short, dict) else (lambda name: getattr(short, name, None))
-        record_rejection(self.output_dir, {
-            "channel": self.channel, "vod_id": vod_id, "streamer": login, "title": title,
-            "gemini_score": get("gemini_score"), "justification": get("gemini_justification"),
-            "source": get("source"), "emotion": get("emotion"),
-            "seconds": round(float(get("end") or 0) - float(get("start") or 0), 1),
-            "score": round(score, 1) if score is not None else None,
-            "needed": round(threshold, 1) if threshold is not None else None, "reason": reason,
-        }, self._clock)
+    def _model(self) -> PerformanceModel:
+        """Points learned from this channel's published Shorts, from the latest results."""
+        return PerformanceModel(self._load_history()["shorts"], self.channel, self._clock(), self.top_streamers)
 
-    def would_enter_reserve(self, moment: dict[str, Any], login: str, vod_id: str, clip_budget: int) -> bool:
+    @staticmethod
+    def _features(item: _ReadyShort) -> dict[str, Any]:
+        return {
+            "streamer": item.login, "source": item.short.source, "emotion": item.short.emotion,
+            "seconds": item.short.end - item.short.start, "cold_open": item.short.cold_open, "game": item.game,
+        }
+
+    def would_enter_reserve(
+        self, moment: dict[str, Any], login: str, vod_id: str, clip_budget: int, game: str = "",
+    ) -> bool:
         """Whether a moment, once rendered, would rank among this channel's best ``RESERVE_SIZE``.
 
-        One that would be deleted right away is never rendered (and is recorded).
+        One that would be deleted right away is never rendered.
         """
         ready = self._ready_shorts()
         if len(ready) < RESERVE_SIZE:
@@ -398,56 +404,21 @@ class VODShortsUploader:
         candidate = _ReadyShort(
             vod_id=vod_id, login=login.lower(), peak_viewers=0, failed=False, muted=False,
             short=VODShortResult(
-                vod_id=vod_id, candidate_id="new", source_path="", output_path=Path(), start=0.0, end=0.0,
+                vod_id=vod_id, candidate_id="new", source_path="", output_path=Path(),
+                start=float(moment.get("start") or 0), end=float(moment.get("end") or 0),
                 clip_budget=clip_budget, gemini_score=float(moment.get("gemini_score") or 0),
                 gemini_justification=None, status="already_exists",
+                source=str(moment.get("source") or "transcript"), emotion=moment.get("emotion"),
+                cold_open=moment.get("peak") is not None,
             ),
             metadata=ShortMetadata(title="", description=""),
+            game=game,
         )
-        if key(candidate) > key(ready[RESERVE_SIZE - 1]):
-            return True
-        self._reject(vod_id, login, moment, str(moment.get("gemini_title") or ""), key(candidate)[3],
-                     key(ready[RESERVE_SIZE - 1])[3], "pas rendu : il n'aurait pas battu le 30e de la reserve")
-        return False
+        return key(candidate) > key(ready[RESERVE_SIZE - 1])
 
     def _rank_bonus(self, login: str) -> int:
         rank = self.streamer_ranks.get(login)
         return next((bonus for last, bonus in RANK_BONUSES if rank is not None and rank <= last), 0)
-
-    def _audience_points(self) -> dict[str, float]:
-        """A few points per streamer, from the views of their published Shorts.
-
-        Each Short counts with its most mature views (at 7, 3 or 1 days), in
-        log scale; a streamer's average is compared with the channel's, pulled
-        towards it when few Shorts are measured (``AUDIENCE_PRIOR_SHORTS``) and
-        kept within ``AUDIENCE_MAX_POINTS``. A listed streamer never loses points.
-        """
-        streamers: dict[str, list[float]] = {}
-        everyone: list[float] = []
-        for entry in self._load_history()["shorts"]:
-            views = next(
-                (entry[key] for key in ("views_7d", "views_3d", "views_1d")
-                 if isinstance(entry.get(key), (int, float))),
-                None,
-            )
-            if views is None:
-                continue  # too recent: its views say nothing yet
-            everyone.append(math.log10(views + 1))
-            if entry.get("streamer"):
-                streamers.setdefault(str(entry["streamer"]).lower(), []).append(everyone[-1])
-        if not everyone:
-            return {}
-        usual = sum(everyone) / len(everyone)
-        points = {}
-        for login, values in streamers.items():
-            shift = (
-                AUDIENCE_POINTS_PER_DECADE * (sum(values) / len(values) - usual)
-                * len(values) / (len(values) + AUDIENCE_PRIOR_SHORTS)
-            )
-            if login in self.top_streamers:
-                shift = max(shift, 0.0)
-            points[login] = max(-AUDIENCE_MAX_POINTS, min(AUDIENCE_MAX_POINTS, shift))
-        return points
 
     @staticmethod
     def _reserve_id(item: _ReadyShort) -> str:
@@ -545,9 +516,6 @@ class VODShortsUploader:
                 ):
                     # Rendered before swear words were muted, too short, too old or of a
                     # blocked streamer: never published.
-                    if record.get("profanity_filtered") and not too_short and path.stat().st_mtime < expired_before:
-                        self._reject(vod_id, str(manifest.get("broadcaster_login", "")), record, str(meta.get("title", "")),
-                                     None, None, "jamais publie en 14 jours")
                     self._delete_local(path)
                     continue
                 try:
@@ -565,6 +533,9 @@ class VODShortsUploader:
                         clip_id=key,
                         candidate_start=record.get("candidate_start"),
                         muted=bool(record.get("muted")),
+                        source=str(record.get("source") or "transcript"),
+                        emotion=record.get("emotion"),
+                        cold_open=bool(record.get("cold_open")),
                     )
                     peak_viewers = int(manifest.get("peak_viewers") or 0)
                 except (TypeError, ValueError):
@@ -579,6 +550,7 @@ class VODShortsUploader:
                     metadata=ShortMetadata(
                         title=str(meta.get("title", "")), description=str(meta.get("description", "")),
                     ),
+                    game=str(manifest.get("game_name") or ""),
                 ))
         return ready
 
@@ -678,9 +650,13 @@ class VODShortsUploader:
 
     def _record_publication(
         self, manifest: dict[str, Any], short: VODShortResult, metadata: ShortMetadata,
-        video_id: str, url: str,
+        video_id: str, url: str, explore: bool = False, game: str = "",
     ) -> None:
-        """Remember the published Short and what it was made of, to compare views later."""
+        """Remember the published Short and what it was made of, to compare views later.
+
+        ``predicted_points``: the points the learned ranking gave it at that time,
+        checked later against its real results (see performance.PerformanceModel).
+        """
         history = self._load_history()
         lead_in = short.candidate_start - short.start if short.candidate_start is not None else None
         generated = manifest.get("generated_shorts")
@@ -703,8 +679,12 @@ class VODShortsUploader:
             "seconds": round(short.end - short.start, 1),
             "lead_in_seconds": round(lead_in, 1) if lead_in is not None else None,
             "muted": short.muted,
+            "game": game or manifest.get("game_name"),
+            "explore": explore,  # picked to discover, not as the best of the reserve
             "uploaded_at": self._clock().isoformat(timespec="seconds"),
         })
+        entry = history["shorts"][-1]
+        entry["predicted_points"] = round(self._model().raw_points(entry), 2)
         try:
             self._write_manifest(self.history_path, history)
         except OSError:

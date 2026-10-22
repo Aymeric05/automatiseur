@@ -216,7 +216,7 @@ class GeminiEvaluationTests(unittest.TestCase):
             quota_dir=None,
             daily_limit=20,
             streamer=None,
-            lessons="",
+            examples="",
         )
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
