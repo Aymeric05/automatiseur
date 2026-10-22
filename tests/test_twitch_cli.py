@@ -155,10 +155,11 @@ class TwitchCliTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 main()
 
+    @patch("twitch_auto_clipper.cli.refresh_competitors", return_value=None)  # no YouTube call in tests
     @patch("twitch_auto_clipper.cli.TwitchVODAcquisitionManager.acquire_due", return_value=iter([]))
     @patch("twitch_auto_clipper.cli.TwitchVODAcquisitionManager.poll_once")
     @patch("twitch_auto_clipper.cli.authenticate_youtube")
-    def test_yes_starts_auto_upload_without_keyboard(self, authenticate, poll_once, acquire_due) -> None:
+    def test_yes_starts_auto_upload_without_keyboard(self, authenticate, poll_once, acquire_due, competitors) -> None:
         poll_once.return_value = VODMonitoringCycle(MonitoringCycle())
         arguments = ["twitch_auto_clipper", "--monitor-twitch-once", "--auto-upload-youtube", "--yes"]
         with patch.dict(os.environ, {"YOUTUBE_PRIVACY_POLICY_URL": "https://example.test/privacy"}), \

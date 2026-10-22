@@ -19,6 +19,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import json
 import math
+import statistics
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,12 @@ STREAMER_MAX_POINTS = 1.0  # who streamed it weighs much less (a listed streamer
 TOTAL_MAX_POINTS = 8.0
 RELIABILITY_MIN_SHORTS = 30  # predictions checked before the learned points are trusted more or less
 RELIABILITY_WINDOW = 100
+# What other big clip channels' Shorts show (see competitors.py): small points that
+# fade as the channel's own measured Shorts pile up (half at EXTERNAL_FADE_SHORTS).
+EXTERNAL_MIN_SHORTS = 5
+EXTERNAL_PRIOR = 10.0
+EXTERNAL_MAX_POINTS = {"streamer": 1.0, "length": 1.5}
+EXTERNAL_FADE_SHORTS = 50
 GEMINI_CHECK_MIN_SHORTS = 40  # Gemini's scores checked against the results before reweighting them
 GEMINI_WEIGHT_RANGE = (0.6, 1.2)
 # What the performance score is made of, and how much each part counts.
@@ -114,6 +121,7 @@ class PerformanceModel:
 
     def __init__(
         self, history: list[dict[str, Any]], channel: str, now: datetime, protected: frozenset[str] = frozenset(),
+        external: dict[tuple[str, str], float] | None = None,
     ) -> None:
         self.protected = protected  # listed streamers never lose points
         mature = [
@@ -122,6 +130,9 @@ class PerformanceModel:
             and now - _uploaded(entry) >= MIN_AGE
         ]
         self.performance = performance(mature)
+        # Other channels' results count less as this channel's own results pile up.
+        fade = 1.0 / (1.0 + len(self.performance) / EXTERNAL_FADE_SHORTS)
+        self.external = {key: points * fade for key, points in (external or {}).items()}
         sums: dict[tuple[str, str], list[float]] = {}
         counts: dict[tuple[str, str], int] = {}
         for entry in mature:
@@ -166,7 +177,7 @@ class PerformanceModel:
         """Points from the features alone, before the self-check (recorded at publication)."""
         total = 0.0
         for name, value in features(short).items():
-            points = POINTS_PER_SD * self.learned.get((name, value), 0.0)
+            points = POINTS_PER_SD * self.learned.get((name, value), 0.0) + self.external.get((name, value), 0.0)
             if name == "streamer" and value in self.protected:
                 points = max(0.0, min(FEATURE_MAX_POINTS, points))
             elif name == "streamer":
@@ -176,6 +187,53 @@ class PerformanceModel:
 
     def points(self, short: dict[str, Any]) -> float:
         return self.raw_points(short) * self.reliability
+
+
+def external_points(shorts: list[dict[str, Any]], theme: str) -> dict[tuple[str, str], float]:
+    """Points from the big clip channels of this theme: which streamers and lengths do best.
+
+    Each Short is compared with its own channel's median views (log scale).
+    """
+    by_channel: dict[str, list[float]] = {}
+    for short in shorts:
+        if short.get("theme") == theme:
+            by_channel.setdefault(short["channel_id"], []).append(math.log10(short.get("views", 0) + 1))
+    medians = {channel: statistics.median(values) for channel, values in by_channel.items()}
+    sums: dict[tuple[str, str], list[float]] = {}
+    for short in shorts:
+        if short.get("theme") != theme:
+            continue
+        relative = math.log10(short.get("views", 0) + 1) - medians[short["channel_id"]]
+        for key in (("streamer", short.get("streamer")), ("length", features(short)["length"])):
+            if key[1]:
+                total = sums.setdefault(key, [0.0, 0])
+                total[0] += relative
+                total[1] += 1
+    points = {}
+    for (name, value), (total, count) in sums.items():
+        if count >= EXTERNAL_MIN_SHORTS:
+            limit = EXTERNAL_MAX_POINTS[name]
+            points[(name, value)] = max(-limit, min(limit, 2.0 * total / (count + EXTERNAL_PRIOR)))
+    return points
+
+
+def competitor_examples(shorts: list[dict[str, Any]], count: int = 4) -> str:
+    """Titles that do best and worst on the big clip channels, relative to each channel."""
+    lines = []
+    for theme, label in (("gaming", "jeux video"), ("irl", "IRL / Just Chatting")):
+        own = [short for short in shorts if short.get("theme") == theme and short.get("title")]
+        by_channel: dict[str, list[int]] = {}
+        for short in own:
+            by_channel.setdefault(short["channel_id"], []).append(short.get("views", 0))
+        medians = {channel: statistics.median(values) for channel, values in by_channel.items()}
+        ranked = sorted(own, key=lambda short: math.log10(short.get("views", 0) + 1) - math.log10(medians[short["channel_id"]] + 1))
+        if len(ranked) < 2 * count:
+            continue
+        lines.append(f"Titres de Shorts {label} qui marchent le MIEUX sur les grosses chaines de clips :")
+        lines += [f"- {short['title']} ({short['seconds']} s)" for short in reversed(ranked[-count:])]
+        lines.append("Et le MOINS bien :")
+        lines += [f"- {short['title']} ({short['seconds']} s)" for short in ranked[:count]]
+    return "\n".join(lines)
 
 
 def _uploaded(entry: dict[str, Any]) -> datetime | None:

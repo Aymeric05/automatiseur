@@ -14,6 +14,7 @@ from threading import Event, Lock, Thread
 from .audio_events import detect_emotions
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
+from .competitors import refresh_competitors
 from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus
 from .trimming import trim_moments
 from .streamer_lists import load_streamer_list, load_top_streamers
@@ -722,6 +723,18 @@ def main() -> int:
 
         def publish_next() -> bool:
             """Upload each channel's best ready Short when an upload is due; False after a failure."""
+            try:  # once a day: the big clip channels' Shorts (found again once a week)
+                competitors = refresh_competitors(
+                    output_dir,
+                    lambda: authenticate_youtube(
+                        args.youtube_client_secrets, args.youtube_token, expected_channel_id or "check", allow_browser=False
+                    ),
+                    streamer_lists,  # a channel's theme: the list its Shorts' streamers are in
+                )
+            except Exception as error:  # never stops the publications
+                competitors = f"Chaines de clips non analysees : {error!r}"
+            if competitors:
+                report(competitors)
             succeeded = True
             for uploader in uploaders:
                 label = f"[{uploader.channel}] "

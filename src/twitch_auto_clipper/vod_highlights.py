@@ -8,7 +8,8 @@ from typing import Any
 
 from .chat_activity import add_chat_messages, add_chat_signals, chat_spike_moments
 from .gemini_evaluation import GeminiEvaluationError, select_candidates
-from .performance import examples_text
+from .competitors import load_competitor_shorts
+from .performance import competitor_examples, examples_text
 from .highlights import HighlightAnalysisError, _overlap_ratio, analyze_transcription, save_highlights
 from .vod_processing import VODProcessingResult
 
@@ -123,7 +124,10 @@ class VODHighlightSelector:
                     streamer=", ".join(
                         filter(None, (processed_vod.broadcaster_name, processed_vod.game_name))
                     ),
-                    examples=examples_text(self.output_dir),  # the published Shorts that did best and worst
+                    # The published Shorts and the big clip channels' Shorts that did best and worst.
+                    examples="\n\n".join(filter(None, (
+                        examples_text(self.output_dir), competitor_examples(load_competitor_shorts(self.output_dir)),
+                    ))),
                 )
                 if requested_count
                 else []

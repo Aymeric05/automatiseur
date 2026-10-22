@@ -11,7 +11,8 @@ import random
 from typing import Any, Callable, NamedTuple
 
 from .daily_quota import RollingQuota
-from .performance import PerformanceModel, features
+from .competitors import load_competitor_shorts
+from .performance import PerformanceModel, external_points, features
 from .shorts_metadata import ShortMetadata
 from .streamer_lists import add_streamer, load_top_streamers
 from .vod_shorts import VODShortResult
@@ -367,7 +368,10 @@ class VODShortsUploader:
 
     def _model(self) -> PerformanceModel:
         """Points learned from this channel's published Shorts, from the latest results."""
-        return PerformanceModel(self._load_history()["shorts"], self.channel, self._clock(), self.top_streamers)
+        return PerformanceModel(
+            self._load_history()["shorts"], self.channel, self._clock(), self.top_streamers,
+            external=external_points(load_competitor_shorts(self.output_dir), self.channel),
+        )
 
     @staticmethod
     def _features(item: _ReadyShort) -> dict[str, Any]:

@@ -189,7 +189,17 @@ learned points weigh more when they predicted well, less (down to nothing) when 
 Gemini's own scores are checked the same way (from 40 Shorts): they weigh up to 20% more when
 they predicted the results, up to 40% less when they did not. The best and worst published
 Shorts are also shown to Gemini as examples when it selects new moments. There is no forced
-exploration: an unknown streamer starts at zero and can rank high on the quality of the Short. Every published Short is recorded in
+exploration: an unknown streamer starts at zero and can rank high on the quality of the Short.
+
+The app also learns from the big YouTube channels that post Shorts of Twitch streams. Once a
+week it looks for them (at least 50,000 subscribers; searches by theme and "<streamer> clips"
+for the first streamers of each list), keeping per theme the 10 biggest whose recent Shorts are
+mostly about that theme's streamers. Once a day it reads their Shorts published 2 to 60 days
+ago (public views, likes, comments, length, title; the share watched is private). Each Short is
+compared with its own channel's median views, so a huge channel does not drown the others.
+Which streamers and lengths do better there gives small points (at most 1 and 1.5), fading as
+the channel's own measured Shorts pile up (half at 50), and the titles that do best and worst
+there are shown to Gemini as examples. About 1,700 API units a week for the search, 100 a day. Every published Short is recorded in
 `data/output/published_shorts.json` (streamer and place in the list, per-live and
 comparative scores, where the moment comes from: transcript, chat or emotion, the emotion
 heard, hook, title, duration, lead-in, publication time). Every 6 hours the app reads their
