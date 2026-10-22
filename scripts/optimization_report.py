@@ -58,8 +58,8 @@ for channel in ("gaming", "irl"):
     watched = set(load("studied_videos.json", []))
     ranked_own = sorted((e for e in measured if e["video_id"] not in watched), key=lambda e: scores[e["video_id"]])
     if len(ranked_own) >= 2:
-        print(f"ours not yet watched: best {ranked_own[-1]['video_id']} ({ranked_own[-1].get('title', '')[:40]}) | "
-              f"worst {ranked_own[0]['video_id']} ({ranked_own[0].get('title', '')[:40]})")
+        print(f"ours not yet watched: best {ranked_own[-1]['video_id']} ({(ranked_own[-1].get('title') or '')[:40]}) | "
+              f"worst {ranked_own[0]['video_id']} ({(ranked_own[0].get('title') or '')[:40]})")
     for label, since in CHANGES.items():
         before = [scores[e["video_id"]] for e in measured if e.get("uploaded_at", "") < since]
         after = [scores[e["video_id"]] for e in measured if e.get("uploaded_at", "") >= since]
