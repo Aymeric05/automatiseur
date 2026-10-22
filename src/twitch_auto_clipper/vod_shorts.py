@@ -471,6 +471,9 @@ class VODShortsGenerator:
     @classmethod
     def _cold_open(cls, item: dict[str, Any], start: float, end: float) -> tuple[float, float] | None:
         """The teaser shown first: from just before the moment's ``peak``, within the Short."""
+        if str(item.get("channel") or "gaming") == "gaming":
+            # Learned data (66 gaming Shorts, 2026-10-23): cold_open=yes -0.3 pts vs no +0.1.
+            return None
         peak = cls._number(item.get("peak"))
         if peak is None or not start + COLD_OPEN_MIN_START <= peak < end:
             return None
