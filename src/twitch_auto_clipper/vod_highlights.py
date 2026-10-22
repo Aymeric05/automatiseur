@@ -8,6 +8,7 @@ from typing import Any
 
 from .chat_activity import add_chat_messages, add_chat_signals, chat_spike_moments
 from .gemini_evaluation import GeminiEvaluationError, select_candidates
+from .lessons import load_lessons
 from .highlights import HighlightAnalysisError, _overlap_ratio, analyze_transcription, save_highlights
 from .vod_processing import VODProcessingResult
 
@@ -122,6 +123,7 @@ class VODHighlightSelector:
                     streamer=", ".join(
                         filter(None, (processed_vod.broadcaster_name, processed_vod.game_name))
                     ),
+                    lessons=load_lessons(self.output_dir),  # learned from the Shorts made for nothing
                 )
                 if requested_count
                 else []

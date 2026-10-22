@@ -15,6 +15,8 @@ from .audio_events import detect_emotions
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
 from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus
+from .lessons import learn_lessons
+from .trimming import trim_moments
 from .streamer_lists import load_streamer_list, load_top_streamers
 from .gemini_evaluation import (
     GeminiEvaluationError,
@@ -700,6 +702,13 @@ def main() -> int:
             delete_sources_on_success=True,  # audio and chat, once the VOD is completed
             # Screen-sharing streams: each Short centered on what matters, not on the middle.
             focus_finder=partial(find_focus, quota_dir=output_dir, daily_limit=daily_gemini),
+            # Gemini picks where each Short starts (the context) and ends (the punchline).
+            moment_trimmer=partial(trim_moments, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini),
+            # A moment that would be pushed out of its channel's reserve right away is never rendered.
+            reserve_gate=(
+                lambda moment, login, vod_id, budget: {u.channel: u for u in uploaders}[moment["channel"]]
+                .would_enter_reserve(moment, login, vod_id, budget)
+            ) if uploaders else None,
         )
 
         def report(line: str, is_error: bool = False) -> None:
@@ -714,6 +723,12 @@ def main() -> int:
 
         def publish_next() -> bool:
             """Upload each channel's best ready Short when an upload is due; False after a failure."""
+            try:  # once a day: rules learned from the Shorts made for nothing and the views
+                lessons = learn_lessons(output_dir, args.gemini_model, output_dir, daily_gemini)
+            except Exception as error:  # never stops the publications
+                lessons = f"Lecons de selection non mises a jour : {error!r}"
+            if lessons:
+                report(lessons)
             succeeded = True
             for uploader in uploaders:
                 label = f"[{uploader.channel}] "

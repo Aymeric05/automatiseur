@@ -13,7 +13,6 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 import json
-import random
 import re
 from pathlib import Path
 import shutil
@@ -21,7 +20,7 @@ import time
 from typing import Any, Callable
 
 from .focus import IRL_CATEGORIES, short_channel
-from .highlights import EXCITEMENT_DB, MAX_SHORT_SECONDS, _overlap_ratio, expand_moment, split_sentences
+from .highlights import EXCITEMENT_DB, _overlap_ratio, expand_moment, split_sentences
 from .profanity import has_slur
 from .video import audio_levels
 from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata, clip_transcript_text
@@ -59,10 +58,6 @@ GEMINI_WAIT = timedelta(minutes=30)
 # this score (0-100) a moment is neither rendered nor published.
 MIN_GEMINI_SCORE = 60
 LEAD_IN_ANALYSIS_SECONDS = 20  # audio examined before a moment to find what triggers it
-# Length test: this share of the moments is capped at SHORT_TEST_SECONDS instead of
-# MAX_SHORT_SECONDS; their views and retention tell which length works best.
-SHORT_TEST_SECONDS = 30.0
-SHORT_TEST_SHARE = 0.5
 MAX_SHORT_OVERLAP = 0.3  # widened moments sharing more of the shorter one are near-duplicates
 # A temporary file untouched this long belongs to a run cut short (closed window, sleep,
 # crash): a live download, render or transcription rewrites its files every few minutes.
@@ -116,6 +111,8 @@ class VODAutomationPipeline:
         video_source: Callable[[VODAcquisitionResult], Path | str] | None = None,
         delete_sources_on_success: bool = False,
         focus_finder: Callable[[str, list[float]], list[dict[str, Any]]] | None = None,
+        moment_trimmer: Callable[..., list[dict[str, Any] | None]] | None = None,
+        reserve_gate: Callable[[dict[str, Any], str, str, int], bool] | None = None,
     ) -> None:
         self.output_dir = output_dir
         self.processing_pipeline = processing_pipeline or VODProcessingPipeline(output_dir)
@@ -125,6 +122,11 @@ class VODAutomationPipeline:
         self.delete_sources_on_success = delete_sources_on_success
         # Where to center each Short of a screen-sharing stream (see focus.find_focus).
         self.focus_finder = focus_finder
+        # Gemini's start and end of each Short (see trimming.trim_moments); None: heuristic bounds.
+        self.moment_trimmer = moment_trimmer
+        # Whether a moment can enter its channel's reserve (item, login, vod_id, budget):
+        # one that would be deleted right away is never rendered.
+        self.reserve_gate = reserve_gate
 
     def run(self, acquisition: VODAcquisitionResult) -> VODAutomationResult:
         result = self._run(acquisition)
@@ -195,16 +197,12 @@ class VODAutomationPipeline:
                 levels = audio_levels(source_path, start - window, window) if window >= 1 else []
             except Exception:  # unreadable audio: a fixed lead-in is used
                 levels = []
-            # The same moment always draws the same length (a re-run renders the same Short).
-            short_test = random.Random(f"{vod_id}:{start}").random() < SHORT_TEST_SHARE
-            max_seconds = SHORT_TEST_SECONDS if short_test else MAX_SHORT_SECONDS
-            new_start, new_end = expand_moment(start, end, sentences, levels, max_seconds)
+            new_start, new_end = expand_moment(start, end, sentences, levels)
             # The highlighted sentence (title quote) stays the original moment.
             return {
                 **item, "start": new_start, "end": new_end,
                 "highlight_start": item.get("highlight_start", start),
                 "highlight_end": item.get("highlight_end", end),
-                "max_seconds": max_seconds,
                 "peak": reaction_peak(item, source_path, new_start, new_end),
             }
 
@@ -222,6 +220,16 @@ class VODAutomationPipeline:
                 message="Aucun moment assez interessant pour un Short.",
             )
 
+        if self.moment_trimmer is not None:
+            selection = replace(selection, selected=self._trimmed(
+                selection.selected, sentences, source_path, processing.broadcaster_name
+            ))
+            if not selection.selected:
+                return VODAutomationResult(
+                    vod_id, "completed", processing, selection,
+                    message="Aucun moment comprehensible seul pour un Short.",
+                )
+
         if self.focus_finder is not None and processing.game_name.lower() not in IRL_CATEGORIES:
             selection = replace(selection, selected=self._with_focus(vod_id, selection.selected))
         # Video games go to one YouTube channel, everything else to the other.
@@ -229,6 +237,16 @@ class VODAutomationPipeline:
             {**moment, "channel": short_channel(moment.get("gaming"), processing.game_name)}
             for moment in selection.selected
         ))
+        if self.reserve_gate is not None:
+            selection = replace(selection, selected=tuple(
+                moment for moment in selection.selected
+                if self.reserve_gate(moment, processing.broadcaster_login, vod_id, processing.clip_budget)
+            ))
+            if not selection.selected:
+                return VODAutomationResult(
+                    vod_id, "completed", processing, selection,
+                    message="Aucun moment assez bon pour entrer dans une reserve.",
+                )
 
         # 4. Shorts generation.
         video_source = self.video_source
@@ -284,6 +302,24 @@ class VODAutomationPipeline:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _trimmed(
+        self, moments: tuple[dict[str, Any], ...], sentences: list[dict[str, Any]], source_path: Path, streamer: str,
+    ) -> tuple[dict[str, Any], ...]:
+        """The moments with Gemini's bounds; one it finds incomplete is dropped (never rendered)."""
+        try:
+            trims = self.moment_trimmer(list(moments), sentences, streamer)
+        except Exception:  # Gemini unavailable: the heuristic bounds stay
+            return moments
+        kept = []
+        for moment, trim in zip(moments, trims):
+            if trim is None:
+                continue
+            if trim:
+                moment = {**moment, **trim}
+                moment["peak"] = reaction_peak(moment, source_path, trim["start"], trim["end"])
+            kept.append(moment)
+        return tuple(without_near_duplicates(kept))
 
     def _with_focus(self, vod_id: str, moments: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
         """The moments with where to center their Short (``focus_x``) and whether they show

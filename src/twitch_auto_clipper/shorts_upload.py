@@ -11,6 +11,7 @@ import random
 from typing import Any, Callable, NamedTuple
 
 from .daily_quota import RollingQuota
+from .lessons import record_rejection
 from .shorts_metadata import ShortMetadata
 from .streamer_lists import add_streamer, load_top_streamers
 from .vod_shorts import VODShortResult
@@ -281,9 +282,13 @@ class VODShortsUploader:
         result, or None when no upload was due or no Short is ready.
         """
         ready = self._ready_shorts()
-        ready.sort(key=self._rank_key(ready), reverse=True)
-        for item in ready[RESERVE_SIZE:]:
-            self._delete_local(item.short.output_path)  # pushed out of the reserve by better ones
+        key = self._rank_key(ready)
+        ready.sort(key=key, reverse=True)
+        for position, item in enumerate(ready[RESERVE_SIZE:], start=RESERVE_SIZE + 1):
+            # Pushed out of the reserve by better ones: remembered with why, so the selection learns.
+            self._reject(item.vod_id, item.login, item.short, item.metadata.title, key(item)[3], key(ready[RESERVE_SIZE - 1])[3],
+                         f"{position}e de la reserve, seuls les {RESERVE_SIZE} meilleurs restent")
+            self._delete_local(item.short.output_path)
         ready = ready[:RESERVE_SIZE]
         if self._arbitrate(ready):
             ready.sort(key=self._rank_key(ready), reverse=True)
@@ -365,6 +370,45 @@ class VODShortsUploader:
             + audience.get(item.login, 0.0),
             item.short.clip_budget,
         )
+
+    def _reject(
+        self, vod_id: str, login: str, short: VODShortResult | dict[str, Any], title: str,
+        score: float | None, threshold: float | None, reason: str,
+    ) -> None:
+        get = short.get if isinstance(short, dict) else (lambda name: getattr(short, name, None))
+        record_rejection(self.output_dir, {
+            "channel": self.channel, "vod_id": vod_id, "streamer": login, "title": title,
+            "gemini_score": get("gemini_score"), "justification": get("gemini_justification"),
+            "source": get("source"), "emotion": get("emotion"),
+            "seconds": round(float(get("end") or 0) - float(get("start") or 0), 1),
+            "score": round(score, 1) if score is not None else None,
+            "needed": round(threshold, 1) if threshold is not None else None, "reason": reason,
+        }, self._clock)
+
+    def would_enter_reserve(self, moment: dict[str, Any], login: str, vod_id: str, clip_budget: int) -> bool:
+        """Whether a moment, once rendered, would rank among this channel's best ``RESERVE_SIZE``.
+
+        One that would be deleted right away is never rendered (and is recorded).
+        """
+        ready = self._ready_shorts()
+        if len(ready) < RESERVE_SIZE:
+            return True
+        key = self._rank_key(ready)
+        ready.sort(key=key, reverse=True)
+        candidate = _ReadyShort(
+            vod_id=vod_id, login=login.lower(), peak_viewers=0, failed=False, muted=False,
+            short=VODShortResult(
+                vod_id=vod_id, candidate_id="new", source_path="", output_path=Path(), start=0.0, end=0.0,
+                clip_budget=clip_budget, gemini_score=float(moment.get("gemini_score") or 0),
+                gemini_justification=None, status="already_exists",
+            ),
+            metadata=ShortMetadata(title="", description=""),
+        )
+        if key(candidate) > key(ready[RESERVE_SIZE - 1]):
+            return True
+        self._reject(vod_id, login, moment, str(moment.get("gemini_title") or ""), key(candidate)[3],
+                     key(ready[RESERVE_SIZE - 1])[3], "pas rendu : il n'aurait pas battu le 30e de la reserve")
+        return False
 
     def _rank_bonus(self, login: str) -> int:
         rank = self.streamer_ranks.get(login)
@@ -501,6 +545,9 @@ class VODShortsUploader:
                 ):
                     # Rendered before swear words were muted, too short, too old or of a
                     # blocked streamer: never published.
+                    if record.get("profanity_filtered") and not too_short and path.stat().st_mtime < expired_before:
+                        self._reject(vod_id, str(manifest.get("broadcaster_login", "")), record, str(meta.get("title", "")),
+                                     None, None, "jamais publie en 14 jours")
                     self._delete_local(path)
                     continue
                 try:

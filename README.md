@@ -165,11 +165,19 @@ Short shows what triggers the reaction: the app reads the loudness of the 20 sec
 before the moment, finds where the excitement starts (a death, a goal, a scream Whisper does
 not transcribe) and starts 4 seconds before it (at most 15 seconds earlier; 3 seconds when
 nothing stands out). It then lets the reaction play out while the streamer keeps talking:
-18 to 45 seconds in all; as a test, half of the moments (drawn at random, always the same for a
-given moment) are capped at 30 seconds, to find out which length gets more views and retention.
+18 to 45 seconds in all. Then Gemini reads the timestamped sentences around each selected
+moment and picks the exact start (the context needed to understand it) and end (the punchline
+or the end of the reaction, never mid-sentence), 15 to 58 seconds; a moment that cannot stand
+alone is not rendered (one request per VOD; the bounds above stay when Gemini is unavailable).
 Each Short opens on its strongest reaction (the laugh or scream found in the audio, else the
-loudest second, when it clearly stands out) for 1.5 seconds, then starts over from the
-set-up: the first second decides whether viewers swipe away. Every published Short is recorded in
+loudest second, when it clearly stands out) for 3 seconds, then starts over from the
+set-up: the first second decides whether viewers swipe away.
+
+A moment that would not rank among its channel's 30 best Shorts is never rendered. Every
+Short pushed out of a reserve or not rendered for that reason is recorded with why
+(`data/output/rejected_shorts.json`), and once a day Gemini compares them with the views of
+the published Shorts and writes a few rules (`data/output/selection_lessons.txt`) that the
+moment selection then follows, so the same kind of weak Short is not made again. Every published Short is recorded in
 `data/output/published_shorts.json` (streamer and place in the list, per-live and
 comparative scores, where the moment comes from: transcript, chat or emotion, the emotion
 heard, hook, title, duration, lead-in, publication time). Every 6 hours the app reads their

@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from twitch_auto_clipper.shorts_metadata import ShortMetadata
 from datetime import date, datetime, timedelta, timezone
@@ -255,6 +256,20 @@ class PublishNextTests(unittest.TestCase):
         self.assertEqual((self.uploaded, searched), ([], ["cut 80"]))
         self.assertEqual(list(self.tmp.glob("cut_*_short.mp4")), [])
         self.assertIn("0.0-5.0", json.loads(manifest.read_text(encoding="utf-8"))["youtube_uploads"])
+
+    def test_a_short_pushed_out_or_unable_to_enter_is_recorded_with_why(self):
+        from twitch_auto_clipper import shorts_upload
+
+        with patch.object(shorts_upload, "RESERVE_SIZE", 2):
+            self._vod("good", [90, 80])
+            self._vod("weak", [40])
+            uploader = VODShortsUploader(self.tmp, uploader=self._upload, publishing=False)
+            uploader.publish_next()
+            self.assertFalse(uploader.would_enter_reserve({"gemini_score": 50, "gemini_title": "meh"}, "someone", "v9", 2))
+            self.assertTrue(uploader.would_enter_reserve({"gemini_score": 95}, "someone", "v9", 2))
+        rejected = json.loads((self.tmp / "rejected_shorts.json").read_text(encoding="utf-8"))
+        self.assertEqual([entry["reason"][:3] for entry in rejected], ["3e ", "pas"])
+        self.assertEqual((rejected[0]["gemini_score"], rejected[0]["needed"]), (40.0, 80.0))
 
     def test_shorts_rendered_without_the_profanity_filter_are_never_published(self):
         self._vod("old", [99])

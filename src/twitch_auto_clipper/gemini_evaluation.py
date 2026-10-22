@@ -358,6 +358,7 @@ def evaluate_candidates(
     daily_limit: int = 20,
     fallback_models: tuple[str, ...] = GEMINI_FALLBACK_MODELS,
     streamer: str | None = None,
+    lessons: str = "",
 ) -> list[dict[str, Any]]:
     """Ask Gemini to evaluate candidates using transcript and optional chat counts.
 
@@ -377,6 +378,11 @@ def evaluate_candidates(
         expected_count = None
 
     prompt = _build_prompt(context, selection_count=expected_count, streamer=streamer)
+    if lessons:
+        prompt += (
+            "\nRegles tirees des Shorts precedents (ceux faits pour rien et les vues des autres), "
+            "a appliquer :\n" + lessons
+        )
     response_text, used_model = _generate_json(
         prompt, EVALUATION_RESPONSE_FORMAT["schema"], model, quota_dir, daily_limit, fallback_models
     )
@@ -403,6 +409,7 @@ def select_candidates(
     quota_dir: Path | None = None,
     daily_limit: int = 20,
     streamer: str | None = None,
+    lessons: str = "",
 ) -> list[dict[str, Any]]:
     """Return at most ``requested_count`` distinct candidates chosen by Gemini."""
     if requested_count < 0:
@@ -417,6 +424,7 @@ def select_candidates(
         quota_dir=quota_dir,
         daily_limit=daily_limit,
         streamer=streamer,
+        lessons=lessons,
     )
 
 

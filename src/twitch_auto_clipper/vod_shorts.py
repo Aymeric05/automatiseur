@@ -25,8 +25,8 @@ ZOOM_OUT_EXTRA_WIDTH = 140
 # Top of the hook box, below the Shorts player's own top icons.
 HOOK_TOP = 200
 # Cold open: the Short opens on its strongest reaction (``peak``), then starts over.
-COLD_OPEN_SECONDS = 1.5
-COLD_OPEN_BEFORE = 0.5  # the teaser starts just before the peak, so the reaction is seen rising
+COLD_OPEN_SECONDS = 3.0  # long enough to see and hear the reaction
+COLD_OPEN_BEFORE = 1.0  # the teaser starts just before the peak, so the reaction is seen rising
 COLD_OPEN_MIN_START = 4.0  # a peak in the first seconds is seen right away: no teaser
 # x264 "veryfast": half the processor time of the default preset for the same look
 # (YouTube re-encodes every upload anyway), so a Short costs far less energy.

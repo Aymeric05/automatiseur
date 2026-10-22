@@ -24,8 +24,8 @@ class ReactionPeakTests(unittest.TestCase):
 class ColdOpenTests(unittest.TestCase):
     def test_the_teaser_starts_just_before_the_peak_and_stays_within_the_short(self):
         cold_open = VODShortsGenerator._cold_open
-        self.assertEqual(cold_open({"peak": 109.0}, 100.0, 130.0), (108.5, 110.0))
-        self.assertEqual(cold_open({"peak": 129.8}, 100.0, 130.0), (128.5, 130.0))
+        self.assertEqual(cold_open({"peak": 109.0}, 100.0, 130.0), (108.0, 111.0))  # 3 s: the reaction is seen
+        self.assertEqual(cold_open({"peak": 129.8}, 100.0, 130.0), (127.0, 130.0))
         self.assertIsNone(cold_open({"peak": 102.0}, 100.0, 130.0))  # seen in the first seconds
         self.assertIsNone(cold_open({}, 100.0, 130.0))
 
