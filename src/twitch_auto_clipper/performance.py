@@ -38,7 +38,7 @@ RELIABILITY_WINDOW = 100
 # fade as the channel's own measured Shorts pile up (half at EXTERNAL_FADE_SHORTS).
 EXTERNAL_MIN_SHORTS = 5
 EXTERNAL_PRIOR = 10.0
-EXTERNAL_MAX_POINTS = {"streamer": 1.0, "length": 1.5}
+EXTERNAL_MAX_POINTS = {"length": 1.5}  # how the Short is made, never who streamed it
 EXTERNAL_FADE_SHORTS = 50
 GEMINI_CHECK_MIN_SHORTS = 40  # Gemini's scores checked against the results before reweighting them
 GEMINI_WEIGHT_RANGE = (0.6, 1.2)
@@ -190,7 +190,7 @@ class PerformanceModel:
 
 
 def external_points(shorts: list[dict[str, Any]], theme: str) -> dict[tuple[str, str], float]:
-    """Points from the big clip channels of this theme: which streamers and lengths do best.
+    """Points from the big clip channels of this theme: which lengths do best (never streamers).
 
     Each Short is compared with its own channel's median views (log scale).
     """
@@ -204,7 +204,7 @@ def external_points(shorts: list[dict[str, Any]], theme: str) -> dict[tuple[str,
         if short.get("theme") != theme:
             continue
         relative = math.log10(short.get("views", 0) + 1) - medians[short["channel_id"]]
-        for key in (("streamer", short.get("streamer")), ("length", features(short)["length"])):
+        for key in (("length", features(short)["length"]),):
             if key[1]:
                 total = sums.setdefault(key, [0.0, 0])
                 total[0] += relative

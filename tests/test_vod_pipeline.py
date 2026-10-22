@@ -118,7 +118,7 @@ class VODAutomationPipelineTests(unittest.TestCase):
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_gemini_bounds_are_used_and_a_moment_that_cannot_stand_alone_is_not_rendered(self, gemini):
         pipeline = self._pipeline()
-        pipeline.moment_trimmer = lambda moments, sentences, streamer: [{"start": 15.0, "end": 40.0}, None]
+        pipeline.moment_trimmer = lambda moments, sentences, streamer, guide: [{"start": 15.0, "end": 40.0}, None]
         result = pipeline.run(self._acquisition(budget=2))
         self.assertEqual(result.status, "completed", format_vod_automation_result(result))
         self.assertEqual([(short.start, short.end) for short in result.shorts.shorts], [(14.5, 41.0)])  # + render margins

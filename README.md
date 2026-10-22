@@ -197,9 +197,12 @@ for the first streamers of each list), keeping per theme the 10 biggest whose re
 mostly about that theme's streamers. Once a day it reads their Shorts published 2 to 60 days
 ago (public views, likes, comments, length, title; the share watched is private). Each Short is
 compared with its own channel's median views, so a huge channel does not drown the others.
-Which streamers and lengths do better there gives small points (at most 1 and 1.5), fading as
-the channel's own measured Shorts pile up (half at 50), and the titles that do best and worst
-there are shown to Gemini as examples. About 1,700 API units a week for the search, 100 a day. Every published Short is recorded in
+Which lengths do better there gives small points (at most 1.5; never points for a streamer),
+fading as the channel's own measured Shorts pile up (half at 50). Once a week, Gemini also
+watches the 8 best and 8 worst of each theme's Shorts (by their YouTube links) and writes how
+a Short that works is made (`data/output/format_guide.json`: rules and ideal length); these
+rules are used to select the moments, to pick where each Short starts and ends, and to write
+its hook and title. About 1,700 API units a week for the search, 100 a day. Every published Short is recorded in
 `data/output/published_shorts.json` (streamer and place in the list, per-live and
 comparative scores, where the moment comes from: transcript, chat or emotion, the emotion
 heard, hook, title, duration, lead-in, publication time). Every 6 hours the app reads their

@@ -19,6 +19,7 @@ import shutil
 import time
 from typing import Any, Callable
 
+from .competitors import format_guide
 from .focus import IRL_CATEGORIES, short_channel
 from .highlights import EXCITEMENT_DB, _overlap_ratio, expand_moment, split_sentences
 from .profanity import has_slur
@@ -222,7 +223,8 @@ class VODAutomationPipeline:
 
         if self.moment_trimmer is not None:
             selection = replace(selection, selected=self._trimmed(
-                selection.selected, sentences, source_path, processing.broadcaster_name
+                selection.selected, sentences, source_path, processing.broadcaster_name,
+                format_guide(self.output_dir, short_channel(None, processing.game_name)),
             ))
             if not selection.selected:
                 return VODAutomationResult(
@@ -305,10 +307,11 @@ class VODAutomationPipeline:
 
     def _trimmed(
         self, moments: tuple[dict[str, Any], ...], sentences: list[dict[str, Any]], source_path: Path, streamer: str,
+        guide: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], ...]:
         """The moments with Gemini's bounds; one it finds incomplete is dropped (never rendered)."""
         try:
-            trims = self.moment_trimmer(list(moments), sentences, streamer)
+            trims = self.moment_trimmer(list(moments), sentences, streamer, guide)
         except Exception:  # Gemini unavailable: the heuristic bounds stay
             return moments
         kept = []

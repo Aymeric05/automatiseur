@@ -14,11 +14,13 @@ from threading import Event, Lock, Thread
 from .audio_events import detect_emotions
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
-from .competitors import refresh_competitors
+from .competitors import refresh_competitors, study_formats
 from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus
 from .trimming import trim_moments
 from .streamer_lists import load_streamer_list, load_top_streamers
 from .gemini_evaluation import (
+    GEMINI_FALLBACK_MODELS,
+    _generate_json,
     GeminiEvaluationError,
     load_json,
     rank_reserve,
@@ -735,6 +737,14 @@ def main() -> int:
                 competitors = f"Chaines de clips non analysees : {error!r}"
             if competitors:
                 report(competitors)
+            try:  # once a week: Gemini watches their best and worst Shorts (how they are made)
+                guide = study_formats(output_dir, lambda contents, schema: _generate_json(
+                    contents, schema, args.gemini_model, output_dir, daily_gemini, GEMINI_FALLBACK_MODELS
+                ))
+            except Exception as error:
+                guide = f"Guide de fabrication non mis a jour : {error!r}"
+            if guide:
+                report(guide)
             succeeded = True
             for uploader in uploaders:
                 label = f"[{uploader.channel}] "

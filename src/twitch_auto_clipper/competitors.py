@@ -171,3 +171,108 @@ def load_competitor_shorts(output_dir: Path) -> list[dict[str, Any]]:
         return json.loads((output_dir / COMPETITORS_FILE).read_text(encoding="utf-8")).get("shorts", [])
     except (OSError, json.JSONDecodeError, AttributeError):
         return []
+
+
+GUIDE_FILE = "format_guide.json"
+STUDY_INTERVAL = timedelta(days=7)
+STUDIED_SHORTS = 8  # best and worst of each theme, watched by Gemini
+GUIDE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "rules": {"type": "array", "items": {"type": "string"}},
+        "ideal_seconds": {"type": "array", "items": {"type": "number"}},
+    },
+    "required": ["rules", "ideal_seconds"],
+}
+
+
+def study_formats(
+    output_dir: Path,
+    generate: Callable[..., tuple[str, str]],
+    clock: Callable[[], datetime] | None = None,
+) -> str | None:
+    """Once a week, Gemini watches the best and worst Shorts of each theme's big clip channels
+    and writes how a Short that works is made (``format_guide.json``).
+
+    ``generate(contents, schema)`` asks Gemini for JSON (contents: text and video links).
+    """
+    import math
+    import statistics
+
+    from google.genai import types
+
+    now = (clock or (lambda: datetime.now(timezone.utc)))()
+    path = output_dir / GUIDE_FILE
+    try:
+        guide = json.loads(path.read_text(encoding="utf-8"))
+        if now - datetime.fromisoformat(guide["studied_at"]) < STUDY_INTERVAL:
+            return None
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        guide = {}
+    shorts = load_competitor_shorts(output_dir)
+    studied = {}
+    for theme in QUERIES:
+        own = [short for short in shorts if short.get("theme") == theme]
+        logs: dict[str, list[float]] = {}
+        for short in own:
+            logs.setdefault(short["channel_id"], []).append(math.log10(short["views"] + 1))
+        medians = {channel: statistics.median(values) for channel, values in logs.items()}
+        ranked = sorted(own, key=lambda short: math.log10(short["views"] + 1) - medians[short["channel_id"]])
+        if len(ranked) < 2 * STUDIED_SHORTS:
+            continue
+        best, worst = ranked[-STUDIED_SHORTS:][::-1], ranked[:STUDIED_SHORTS]
+        contents: list[Any] = [
+            "Voici des YouTube Shorts de grosses chaines qui reprennent des lives Twitch "
+            + ("de jeux video. " if theme == "gaming" else "IRL / Just Chatting. ")
+            + f"Les {STUDIED_SHORTS} premiers sont ceux qui ont le MIEUX marche (par rapport a leur "
+            f"chaine), les {STUDIED_SHORTS} suivants ceux qui ont le MOINS bien marche. Regarde-les et "
+            "compare comment ils sont faits : les premieres secondes, le contexte donne, la fin, la "
+            "duree, le type de moment, le texte a l'ecran (accroche, sous-titres), le titre. Ecris 6 "
+            "a 10 regles courtes et concretes pour faire des Shorts qui marchent, utilisables pour "
+            "choisir le moment d'un live, ou le commencer et le finir, et ecrire l'accroche et le "
+            "titre (pas de regle sur le montage, la musique ou les effets, ni sur un streamer "
+            "precis). ideal_seconds : [duree min, duree max] des Shorts qui marchent le mieux. "
+            'Retourne un JSON {"rules":["..."],"ideal_seconds":[15,30]}.'
+        ]
+        for label, group in (("MIEUX", best), ("MOINS BIEN", worst)):
+            for short in group:
+                contents += [
+                    f"{label} - {short['title']} ({short['seconds']} s, {short['views']} vues) :",
+                    types.Part.from_uri(file_uri=f"https://www.youtube.com/watch?v={short['video_id']}", mime_type="video/*"),
+                ]
+        try:
+            answer = json.loads(generate(contents, GUIDE_SCHEMA)[0])
+            low, high = (float(value) for value in answer["ideal_seconds"][:2])
+            studied[theme] = {
+                "rules": [str(rule).strip() for rule in answer["rules"] if str(rule).strip()][:10],
+                "ideal_seconds": [max(15.0, min(low, high)), min(58.0, max(low, high))],
+            }
+        except Exception:
+            continue  # this theme keeps its previous guide
+    if not studied:
+        return None
+    guide.update(studied)
+    guide["studied_at"] = now.isoformat(timespec="seconds")
+    path.write_text(json.dumps(guide, ensure_ascii=False, indent=1), encoding="utf-8")
+    return "Guide de fabrication mis a jour d'apres les grosses chaines : " + ", ".join(
+        f"{theme} ({len(value['rules'])} regles, {value['ideal_seconds'][0]:.0f}-{value['ideal_seconds'][1]:.0f} s)"
+        for theme, value in studied.items()
+    )
+
+
+def format_guide(output_dir: Path, theme: str) -> dict[str, Any]:
+    """This theme's guide: ``rules`` and ``ideal_seconds`` (empty before the first study)."""
+    try:
+        guide = json.loads((output_dir / GUIDE_FILE).read_text(encoding="utf-8")).get(theme)
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return {}
+    return guide if isinstance(guide, dict) else {}
+
+
+def format_guide_text(output_dir: Path, theme: str) -> str:
+    guide = format_guide(output_dir, theme)
+    if not guide.get("rules"):
+        return ""
+    return "Comment sont faits les Shorts qui marchent sur les grosses chaines de clips :\n" + "\n".join(
+        f"- {rule}" for rule in guide["rules"]
+    )

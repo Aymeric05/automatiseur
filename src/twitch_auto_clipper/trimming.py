@@ -43,13 +43,17 @@ def trim_moments(
     moments: list[dict[str, Any]],
     sentences: list[dict[str, Any]],
     streamer: str = "",
+    guide: dict[str, Any] | None = None,
     model: str = "gemini-3.6-flash",
     quota_dir: Path | None = None,
     daily_limit: int = 20,
     fallback_models: tuple[str, ...] = GEMINI_FALLBACK_MODELS,
 ) -> list[dict[str, Any] | None]:
     """Per moment, its new ``start``/``end`` (and ``trim_reason``), or None when Gemini finds
-    it cannot be understood alone. One request for all the moments of a VOD."""
+    it cannot be understood alone. One request for all the moments of a VOD. ``guide``: how
+    the Shorts that work on the big clip channels are made (see competitors.study_formats)."""
+    guide = guide or {}
+    low, high = guide.get("ideal_seconds") or (MIN_SECONDS, MAX_SECONDS)
     context = []
     for index, moment in enumerate(moments, start=1):
         start = float(moment.get("highlight_start", moment["start"]))
@@ -74,7 +78,9 @@ def trim_moments(
         "l'histoire), sans longue introduction inutile, et il finit sur la chute, la reponse ou la "
         f"fin de la reaction, jamais au milieu d'une phrase ni d'une histoire. Duree entre "
         f"{MIN_SECONDS:.0f} et {MAX_SECONDS:.0f} secondes, le plus court possible tant que c'est "
-        "complet. complete vaut false si, meme avec les meilleures bornes, le moment ne se "
+        f"complet, idealement entre {low:.0f} et {high:.0f} secondes. "
+        + "".join(f"Regle observee sur les Shorts qui marchent : {rule} " for rule in guide.get("rules", []))
+        + "complete vaut false si, meme avec les meilleures bornes, le moment ne se "
         "comprend pas sans le reste du live ou n'a pas de vraie chute. reason explique en une "
         'phrase courte. Retourne un JSON {"moments":[{"id":"m1","start":0,"end":0,'
         '"complete":true,"reason":"..."}]} avec exactement les id fournis.\n\n'
