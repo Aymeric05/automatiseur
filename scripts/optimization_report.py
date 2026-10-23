@@ -135,3 +135,21 @@ for text, count in errors.most_common(6):
 published = sum("Publication VOD" in line and "[publie]" in line for line in lines)
 pipelines = Counter(line.split(":")[-1].strip()[:20] for line in lines if line.startswith("Pipeline VOD"))
 print(f"uploads ok: {published}; pipelines: {dict(pipelines)}")
+funnels = [line.split("entonnoir : ")[1].split(";")[0].rstrip(")") for line in lines if "entonnoir : " in line]
+print("moments kept per step, last VODs:", " | ".join(funnels[-8:]) or "none yet")
+
+# Production: Shorts rendered (rendered_at, recorded from 2026-10-23) vs published, and the reserve now.
+print("\n## production (rendered vs published per 24 h; reserve target 30)")
+made, reserve = Counter(), Counter()
+for manifest in OUTPUT.glob("*_processing.json"):
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    uploaded = data.get("youtube_uploads") or {}
+    for key, short in (data.get("generated_shorts") or {}).items():
+        channel = short.get("channel") or "gaming"
+        if (short.get("rendered_at") or "") >= (NOW - timedelta(days=1)).isoformat():
+            made[channel] += 1
+        if data.get("automation_status") == "completed" and key not in uploaded and (OUTPUT / short.get("file", "")).exists():
+            reserve[channel] += 1
+for channel in ("gaming", "irl"):
+    sent = sum(e.get("channel", "gaming") == channel and e.get("uploaded_at", "") >= (NOW - timedelta(days=1)).isoformat() for e in history)
+    print(f"{channel}: rendered {made[channel]}, published {sent}, reserve {reserve[channel]}/30")

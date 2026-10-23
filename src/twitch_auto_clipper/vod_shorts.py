@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import subprocess
@@ -616,6 +617,8 @@ class VODShortsGenerator:
                     "bounds": short.bounds,
                     "cold_open": short.cold_open if short.status == "generated"
                     else bool((existing.get(short.key) or {}).get("cold_open")),
+                    "rendered_at": (existing.get(short.key) or {}).get("rendered_at")
+                    or datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 }
                 errors.pop(short.key, None)
             elif short.error:

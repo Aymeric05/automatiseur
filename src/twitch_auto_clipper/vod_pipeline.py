@@ -222,6 +222,8 @@ class VODAutomationPipeline:
                 message="Aucun moment assez interessant pour un Short.",
             )
 
+        # How many moments each step keeps, logged for the daily optimization loop.
+        funnel = [f"{len(selection.selected)} retenus"]
         # A/B tests running on this VOD's likely channel (see experiments.py).
         test_variants, test_settings = experiments.for_vod(vod_id, short_channel(None, processing.game_name))
         if self.moment_trimmer is not None:
@@ -232,6 +234,7 @@ class VODAutomationPipeline:
             selection = replace(selection, selected=self._trimmed(
                 selection.selected, sentences, source_path, processing.broadcaster_name, guide,
             ))
+            funnel.append(f"{len(selection.selected)} complets")
             if not selection.selected:
                 return VODAutomationResult(
                     vod_id, "completed", processing, selection,
@@ -253,6 +256,7 @@ class VODAutomationPipeline:
                 moment for moment in selection.selected
                 if self.reserve_gate(moment, processing.broadcaster_login, vod_id, processing.clip_budget)
             ))
+            funnel.append(f"{len(selection.selected)} admis en reserve")
             if not selection.selected:
                 return VODAutomationResult(
                     vod_id, "completed", processing, selection,
@@ -307,7 +311,7 @@ class VODAutomationPipeline:
             selection,
             shorts,
             tuple(metadata),
-            message="; ".join(f"metadonnees {error}" for error in metadata_errors) or None,
+            message="; ".join(["entonnoir : " + ", ".join(funnel)] + [f"metadonnees {error}" for error in metadata_errors]),
         )
 
     # ------------------------------------------------------------------

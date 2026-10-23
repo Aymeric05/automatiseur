@@ -123,6 +123,8 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertEqual(result.status, "completed", format_vod_automation_result(result))
         self.assertEqual([(short.start, short.end) for short in result.shorts.shorts], [(14.5, 41.0)])  # + render margins
         self.assertEqual([short["bounds"] for short in self._manifest()["generated_shorts"].values()], ["gemini"])
+        self.assertIn("entonnoir : 2 retenus, 1 complets", result.message)
+        self.assertTrue(all(short["rendered_at"] for short in self._manifest()["generated_shorts"].values()))
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_screen_shorts_are_centered_on_what_matters(self, gemini):
