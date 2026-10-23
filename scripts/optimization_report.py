@@ -138,18 +138,25 @@ print(f"uploads ok: {published}; pipelines: {dict(pipelines)}")
 funnels = [line.split("entonnoir : ")[1].split(";")[0].rstrip(")") for line in lines if "entonnoir : " in line]
 print("moments kept per step, last VODs:", " | ".join(funnels[-8:]) or "none yet")
 
-# Production: Shorts rendered (rendered_at, recorded from 2026-10-23) vs published, and the reserve now.
-print("\n## production (rendered vs published per 24 h; reserve target 30)")
-made, reserve = Counter(), Counter()
+# Production: what the pipeline makes, per channel, and what becomes of it (published, in the
+# reserve, or discarded below the top 30), by source of the moment and by game (last 7 days).
+print("\n## production (rendered in 24 h; fate of last 7 days' Shorts by source and game)")
+made, fate = Counter(), {}
 for manifest in OUTPUT.glob("*_processing.json"):
+    if manifest.stat().st_mtime < (NOW - timedelta(days=7)).timestamp():
+        continue
     data = json.loads(manifest.read_text(encoding="utf-8"))
     uploaded = data.get("youtube_uploads") or {}
     for key, short in (data.get("generated_shorts") or {}).items():
         channel = short.get("channel") or "gaming"
         if (short.get("rendered_at") or "") >= (NOW - timedelta(days=1)).isoformat():
             made[channel] += 1
-        if data.get("automation_status") == "completed" and key not in uploaded and (OUTPUT / short.get("file", "")).exists():
-            reserve[channel] += 1
+        end = "pub" if key in uploaded else "res" if (OUTPUT / short.get("file", "")).exists() else "drop"
+        for group in (f"src={short.get('source')}", f"game={data.get('game_name', '')[:18]}",
+                      f"len={'<25' if short['end'] - short['start'] < 25 else '25-40' if short['end'] - short['start'] <= 40 else '>40'}s"):
+            fate.setdefault(channel, {}).setdefault(group, Counter())[end] += 1
 for channel in ("gaming", "irl"):
     sent = sum(e.get("channel", "gaming") == channel and e.get("uploaded_at", "") >= (NOW - timedelta(days=1)).isoformat() for e in history)
-    print(f"{channel}: rendered {made[channel]}, published {sent}, reserve {reserve[channel]}/30")
+    groups = sorted(fate.get(channel, {}).items(), key=lambda item: -sum(item[1].values()))
+    print(f"{channel}: rendered {made[channel]}, published {sent} (24 h) | " + ", ".join(
+        f"{g} {c['pub']}pub/{c['res']}res/{c['drop']}drop" for g, c in groups[:9]))
