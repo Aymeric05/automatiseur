@@ -561,7 +561,9 @@ class VODShortsUploader:
         if self._statistics_retry_at is not None and now < self._statistics_retry_at:
             return None
         history = self._load_history()
-        last = history.get("fetched_at")
+        # Per channel: both share the history, and one channel's reading must not skip the other's.
+        fetched_key = "fetched_at" if self.channel == "gaming" else f"{self.channel}_fetched_at"
+        last = history.get(fetched_key)
         try:
             if last and now - datetime.fromisoformat(last) < STATISTICS_INTERVAL:
                 return None
@@ -619,7 +621,7 @@ class VODShortsUploader:
                 retention_note = f" ; retention lue pour {len(retention)} Shorts"
             except Exception as error:  # not authorized or unavailable: views only
                 retention_note = f" ; retention non lue ({error})"
-        history["fetched_at"] = now.isoformat()
+        history[fetched_key] = now.isoformat()
         self._write_manifest(self.history_path, history)
         total = sum(entry.get("views", 0) for entry in followed)
         best = max(followed, key=lambda entry: entry.get("views", 0))

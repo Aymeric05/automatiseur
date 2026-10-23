@@ -612,6 +612,20 @@ class StatisticsTests(unittest.TestCase):
             self.assertEqual([entry.get("problem") for entry in entries],
                              ["retire de YouTube", "bloque dans 3 pays", None])
 
+    def test_each_channel_reads_its_own_statistics_even_right_after_the_other(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            now = datetime(2026, 10, 18, 12, 0, tzinfo=timezone.utc)
+            (tmp / "published_shorts.json").write_text(json.dumps({"fetched_at": None, "shorts": [
+                {"video_id": "g", "uploaded_at": "2026-10-16T09:00:00+00:00"},
+                {"video_id": "i", "channel": "irl", "uploaded_at": "2026-10-16T09:00:00+00:00"},
+            ]}), encoding="utf-8")
+            read = []
+            fetch = lambda ids, *a: read.extend(ids) or {video_id: {"views": 10} for video_id in ids}
+            for channel in ("gaming", "irl"):
+                VODShortsUploader(tmp, clock=lambda: now, statistics_fetcher=fetch, channel=channel).refresh_statistics()
+            self.assertEqual(read, ["g", "i"])
+
     def test_a_failed_reading_is_retried_an_hour_later(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)
