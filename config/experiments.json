@@ -21,6 +21,15 @@
           "Titre YouTube court (30-35 caracteres), emoji seulement s'il renforce vraiment l'accroche, pas systematique."
         ]
       }
+    },
+    {
+      "id": "gaming_length_v1",
+      "channel": "gaming",
+      "started": "2026-10-24",
+      "description": "Shorts plus longs, comme les hits des grosses chaines de clips gaming (10 chaines, 96 Shorts : mediane 74s, jusqu'a 3 min, vs nos 31s).",
+      "b": {
+        "ideal_seconds": [45, 90]
+      }
     }
   ]
 }

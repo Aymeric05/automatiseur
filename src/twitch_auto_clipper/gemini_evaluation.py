@@ -19,7 +19,7 @@ GEMINI_TIMEOUT_MS = 300_000
 # is refused by Google and skipped for the day.
 GEMINI_FALLBACK_MODELS = (
     "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-flash-latest",
-    "gemini-2.5-flash", "gemini-flash-lite-latest",
+    "gemini-flash-lite-latest",
 )
 TRANSIENT_MARKERS = ("503", "500", "unavailable", "internal", "deadline", "high demand")
 HOOK_MAX_LENGTH = 80

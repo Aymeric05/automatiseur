@@ -16,6 +16,7 @@ import re
 import statistics
 import sys
 
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, "src")
 from twitch_auto_clipper.performance import PerformanceModel, external_points, features, performance  # noqa: E402
 
