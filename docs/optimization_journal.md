@@ -1,7 +1,7 @@
 # Optimization journal
 
 Daily log of the optimization loop run by Claude (scheduled task "automatiseur-optimisation",
-2026-10-23 to 2026-11-23, unless the owner pauses it). Each run reads this file first, adds
+from 2026-10-23, with no end date, until the owner pauses it). Each run reads this file first, adds
 one dated entry, and keeps "Changes under evaluation" up to date. Newest entries at the top.
 
 ## Rules
