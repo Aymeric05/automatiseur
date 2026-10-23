@@ -252,7 +252,6 @@ def _generate_json(
             next_reset = quota.next_reset()
             if not quota.available():
                 continue
-            quota.record_use()
         try:
             # generate_content, not the beta Interactions API: the latter has its own,
             # much smaller quota and answered HTTP 429 while generate_content worked.
@@ -266,9 +265,14 @@ def _generate_json(
                 },
             )
             used_model = name
+            if quota is not None:
+                quota.record_use()
             break
         except Exception as error:
             message = str(error).lower()
+            # An overloaded model (503) served nothing: the request is not counted.
+            if quota is not None and not any(marker in message for marker in TRANSIENT_MARKERS):
+                quota.record_use()
             if any(marker in message for marker in QUOTA_ERROR_MARKERS):
                 if quota is not None:
                     quota.mark_exhausted()  # Google refused: no more requests to this model today
