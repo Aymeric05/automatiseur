@@ -141,7 +141,7 @@ print("moments kept per step, last VODs:", " | ".join(funnels[-8:]) or "none yet
 # Production: what the pipeline makes, per channel, and what becomes of it (published, in the
 # reserve, or discarded below the top 30), by source of the moment and by game (last 7 days).
 print("\n## production (rendered in 24 h; fate of last 7 days' Shorts by source and game)")
-made, fate = Counter(), {}
+made, fate, vods = Counter(), {}, set()
 for manifest in OUTPUT.glob("*_processing.json"):
     if manifest.stat().st_mtime < (NOW - timedelta(days=7)).timestamp():
         continue
@@ -151,6 +151,7 @@ for manifest in OUTPUT.glob("*_processing.json"):
         channel = short.get("channel") or "gaming"
         if (short.get("rendered_at") or "") >= (NOW - timedelta(days=1)).isoformat():
             made[channel] += 1
+            vods.add(data.get("vod_id"))
         end = "pub" if key in uploaded else "res" if (OUTPUT / short.get("file", "")).exists() else "drop"
         for group in (f"src={short.get('source')}", f"game={data.get('game_name', '')[:18]}",
                       f"len={'<25' if short['end'] - short['start'] < 25 else '25-40' if short['end'] - short['start'] <= 40 else '>40'}s"):
@@ -160,3 +161,9 @@ for channel in ("gaming", "irl"):
     groups = sorted(fate.get(channel, {}).items(), key=lambda item: -sum(item[1].values()))
     print(f"{channel}: rendered {made[channel]}, published {sent} (24 h) | " + ", ".join(
         f"{g} {c['pub']}pub/{c['res']}res/{c['drop']}drop" for g, c in groups[:9]))
+queue = load("twitch_vod_state.json", {})
+dropped = Counter(a.get("error", "")[:30] for a in (queue.get("abandoned") or {}).values()
+                  if (a.get("abandoned_at") or "") >= (NOW - timedelta(days=1)).isoformat())
+cap = [line for line in lines if "Telechargements des VOD limites" in line][-1:]
+print(f"throughput: {len(vods)} VODs rendered in 24 h (goal ~20+); queue {len(queue.get('jobs') or {})} jobs; "
+      f"dropped in 24 h: {dict(dropped)}; {cap[0] if cap else ''}")
