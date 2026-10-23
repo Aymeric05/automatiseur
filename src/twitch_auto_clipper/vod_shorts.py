@@ -89,6 +89,7 @@ class VODShortResult:
     cold_open: bool = False  # opens on its strongest reaction
     channel: str = "gaming"  # the YouTube channel it goes to: "gaming" or "irl"
     experiments: dict[str, str] | None = None  # A/B test variants of its VOD (see experiments.py)
+    bounds: str = "heuristic"  # "gemini" when Gemini picked its start and end (trimming.py)
 
     @property
     def key(self) -> str:
@@ -421,6 +422,7 @@ class VODShortsGenerator:
                 focus_x=self._number(item.get("focus_x")),
                 channel=str(item.get("channel") or "gaming"),
                 experiments=item.get("experiments") or None,
+                bounds="gemini" if item.get("trim_reason") is not None or item.get("trimmed") else "heuristic",
                 **extra,
             )
 
@@ -611,6 +613,7 @@ class VODShortsGenerator:
                     "focus_x": short.focus_x,
                     "channel": short.channel,
                     "experiments": short.experiments,
+                    "bounds": short.bounds,
                     "cold_open": short.cold_open if short.status == "generated"
                     else bool((existing.get(short.key) or {}).get("cold_open")),
                 }

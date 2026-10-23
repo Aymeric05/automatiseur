@@ -328,7 +328,7 @@ class VODAutomationPipeline:
             if trim is None:
                 continue
             if trim:
-                moment = {**moment, **trim}
+                moment = {**moment, **trim, "trimmed": True}
                 moment["peak"] = reaction_peak(moment, source_path, trim["start"], trim["end"])
             kept.append(moment)
         return tuple(without_near_duplicates(kept))
