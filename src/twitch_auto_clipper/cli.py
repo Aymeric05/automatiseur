@@ -265,7 +265,7 @@ DEFAULT_DOWNLOAD_KBPS = 1000  # VOD download cap floor (~8 Mbit/s); DOWNLOAD_MAX
 SPEED_TEST_URL = "https://speed.cloudflare.com/__down?bytes=50000000"
 DOWNLOAD_SHARE = 0.10  # share of the bandwidth measured at start-up given to the VOD downloads
 PREFETCH_AHEAD = 2  # VODs kept downloaded: the one being processed and the next one
-DEFAULT_DAILY_UPLOADS = 10  # YouTube refused the 11th upload of the day (default quota)
+DEFAULT_DAILY_UPLOADS = 10  # known to pass in 24 h; beyond, one try an hour until YouTube refuses
 DEFAULT_DAILY_GEMINI_REQUESTS = 20  # Gemini API free tier, per model and per day (each model)
 
 

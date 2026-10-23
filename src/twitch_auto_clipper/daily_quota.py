@@ -103,11 +103,14 @@ class RollingQuota:
 
     YouTube limits a channel's uploads over a rolling 24 hours, not per
     calendar day: it refused uploads the day after a batch of 10, although the
-    API quota day had reset. Uses are persisted across restarts.
+    API quota day had reset. Uses are persisted across restarts. Beyond
+    ``limit`` (the uploads known to pass), one more is tried every
+    ``PROBE_INTERVAL`` until YouTube refuses: its real limit decides.
     """
 
     WINDOW = timedelta(hours=24)
     RETRY_AFTER_REFUSAL = timedelta(hours=1)  # YouTube does not say when it accepts again
+    PROBE_INTERVAL = timedelta(hours=1)
 
     def __init__(
         self,
@@ -125,10 +128,16 @@ class RollingQuota:
         uses, retry_after = self._state()
         if retry_after is not None and self._clock() < retry_after:
             return 0
-        return max(0, self.limit - len(uses))
+        if len(uses) < self.limit:
+            return self.limit - len(uses)
+        return 1 if self._clock() - max(uses) >= self.PROBE_INTERVAL else 0
 
     def available(self) -> bool:
         return self.remaining() > 0
+
+    def uses(self) -> list[datetime]:
+        """The uses of the last 24 hours."""
+        return self._state()[0]
 
     def record_use(self) -> None:
         uses, _ = self._state()
@@ -146,7 +155,7 @@ class RollingQuota:
         if retry_after is not None:
             moments.append(retry_after)
         if len(uses) >= self.limit:
-            moments.append(sorted(uses)[len(uses) - self.limit] + self.WINDOW)
+            moments.append(max(uses) + self.PROBE_INTERVAL)
         return max(moments)
 
     def _state(self) -> tuple[list[datetime], datetime | None]:

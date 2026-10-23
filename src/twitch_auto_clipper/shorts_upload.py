@@ -685,7 +685,7 @@ class VODShortsUploader:
             return "Nouvel essai au prochain passage."
         retry = self.quota.next_reset()
         return (
-            f"Limite YouTube atteinte (au plus {self.quota.limit} envois sur 24 h) : "
+            f"Limite YouTube atteinte ({len(self.quota.uses())} envois sur 24 h), Short garde en reserve : "
             f"nouvel essai apres {retry:%Y-%m-%d %H:%M} UTC."
         )
 

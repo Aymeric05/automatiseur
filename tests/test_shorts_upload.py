@@ -304,17 +304,17 @@ class PublishNextTests(unittest.TestCase):
             clock=lambda: now[0], random_source=rolls, top_streamers=frozenset(top), min_reserve=min_reserve,
         )
 
-    def test_uploads_start_as_soon_as_youtube_allows_them(self):
+    def test_beyond_the_known_limit_one_upload_an_hour_is_tried_until_youtube_refuses(self):
         self._vod("v", [90, 80])
         batch = datetime(2026, 10, 15, 17, 0, tzinfo=timezone.utc)
-        (self.tmp / "youtube_uploads.json").write_text(json.dumps({  # 10 uploads yesterday at 17:00
+        (self.tmp / "youtube_uploads.json").write_text(json.dumps({  # 10 uploads from 17:00 to 17:09
             "uses": [(batch + timedelta(minutes=i)).isoformat() for i in range(10)], "retry_after": None,
         }), encoding="utf-8")
-        now = [batch + timedelta(hours=23, minutes=59)]
+        now = [batch + timedelta(minutes=50)]
         uploader = self._clocked(now, limit=10)
-        self.assertIsNone(uploader.publish_next())  # still 10 uploads in the last 24 hours
-        now[0] = batch + timedelta(hours=24)
-        self.assertIsNotNone(uploader.publish_next())  # the first one is 24 hours old
+        self.assertIsNone(uploader.publish_next())  # the last upload is less than an hour old
+        now[0] = batch + timedelta(minutes=69)
+        self.assertIsNotNone(uploader.publish_next())  # an hour later: YouTube decides
         self.assertEqual(self.uploaded, ["v 90"])
 
     def test_the_hour_spreads_the_day_quota_at_random_moments(self):
@@ -644,7 +644,9 @@ class RollingQuotaTests(unittest.TestCase):
             now[0] += timedelta(hours=10)
             quota.record_use()
             self.assertFalse(RollingQuota(path, 2, clock=lambda: now[0]).available())
-            self.assertEqual(quota.next_reset(), datetime(2026, 10, 16, 17, 0, tzinfo=timezone.utc))
+            self.assertEqual(quota.next_reset(), datetime(2026, 10, 16, 4, 0, tzinfo=timezone.utc))
+            now[0] = datetime(2026, 10, 16, 4, 0, tzinfo=timezone.utc)
+            self.assertEqual(quota.remaining(), 1)  # beyond the limit: one try an hour
             now[0] = datetime(2026, 10, 16, 17, 0, tzinfo=timezone.utc)
             self.assertEqual(quota.remaining(), 1)  # the first use left the window
             quota.mark_exhausted()  # YouTube refused anyway
