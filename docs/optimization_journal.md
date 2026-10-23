@@ -42,6 +42,9 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   hook top of screen, strong emotion in the first seconds (rage/laugh/punchline), one tight fast-cut
   moment; flops = slow scripted RP, passive gameplay, no real stake. Test started: shorter titles,
   less emoji (gaming_title_style_v1). (2026-10-23)
+- Gemini watch (2026-10-24, our 3 latest Shorts + our 2 extremes vs 5 hits/5 flops): confirms
+  immediate hook + fast-cut rhythm; no ending/start/framing defect found (the 2026-10-23 fix holds).
+  Test started: longer Shorts (gaming_length_v1), per the length gap below.
 
 ### PeakMoments (irl)
 - Their hits (6 channels, 58 Shorts) vs flops: hits ~28 s vs flops ~23 s; titles ~32 chars,
@@ -54,6 +57,9 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   visual/sound hook in the first second, context in under 3 s (split-screen, captions), climax at
   15-35 s; flops = no hook, long monologue explanations (>40 s), static shot. Test started: shorter
   titles, less emoji (irl_title_style_v1). (2026-10-23)
+- Gemini watch (2026-10-24, our 3 latest Shorts + our 2 extremes vs 5 hits/5 flops): confirms
+  immediate hook + fast rhythm; no ending/start/framing defect found. No new test: no line strong
+  enough yet beyond the running one.
 
 ## Waiting for the owner
 
@@ -65,6 +71,13 @@ ones, and moves them to the entries.
 - (proposal) Word-by-word subtitles in the middle of the screen, as on the IRL clip channels
   that do best. Why: seen on the top Shorts of Kai Cenat Live and Hasanabi Clips. Risk: changes
   how every new Short looks; could do worse. Undo: one setting. Waiting for data first.
+- (proposal) Process more than one VOD at a time (currently a single worker, one VOD fully at a
+  time). Why: only 5 VODs rendered in 24 h (goal ~20+), 53 jobs queued, 69 dropped for "file
+  pleine" in 24 h; on VOD 2908180885 the download+transcript were ready in ~5 min but ~3h25 passed
+  between the chat step and the Gemini selection step (highlights) - the bottleneck is there, not
+  the download bandwidth. Risk: touches the core worker/queue architecture, could add instability
+  or burn through the shared Gemini daily quota faster. Undo: none done yet, this needs a design
+  call first.
 
 ## Changes under evaluation
 
@@ -78,8 +91,27 @@ ones, and moves them to the entries.
 | 2026-10-22 | Sharper encoding (CRF 18, Lanczos, sharpening), Twitch source quality | better-looking Shorts | retention_pct | pending |
 | 2026-10-23 | A/B gaming_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | pending (0 measured) |
 | 2026-10-23 | A/B irl_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | pending (0 measured) |
+| 2026-10-24 | A/B gaming_length_v1: longer Shorts (45-90s vs guide's 15-45s) | retention/views closer to competitor hits (median 74s) | retention_pct, views_3d of B vs A | pending (0 measured) |
 
 ## Entries
+
+### 2026-10-24 - modele Gemini mort + debit en panne
+
+- Gaming : Gemini a revu nos 3 Shorts recents (aucun defaut, la correction d'hier tient) et nos 2
+  extremes vs 5 hits/5 flops concurrents (confirme accroche immediate + montage nerveux). Test
+  lance : Shorts plus longs 45-90s (gaming_length_v1), vu l'ecart avec les chaines de clips
+  (mediane 74s, jusqu'a 3 min). Tests titres toujours a 0 mesure, prochain point apres mesures.
+- IRL : memes verifications (3 Shorts recents sans defaut, confirmations accroche/rythme) ; pas de
+  nouveau test, aucune ligne assez forte. Test titres toujours a 0 mesure.
+- Bug corrige (gemini_evaluation.py) : gemini-2.5-flash renvoie 404 pour tout le monde depuis peu
+  et cette erreur n'etait pas traitee comme transitoire -> l'appel Gemini s'arretait net au lieu
+  d'essayer le modele suivant (erreurs NOT_FOUND/UNAVAILABLE du log). Modele retire de la liste de
+  secours. Aussi corrige : scripts/optimization_report.py plantait sur les titres avec emoji.
+  Commit + redemarrage app.
+- Debit : seulement 5 VOD rendues en 24h (objectif ~20+), 53 jobs en file, 69 abandonnees pour
+  file pleine. Pas un probleme de telechargement (audio+transcript prets en ~5 min) : ~3h25
+  d'ecart observe entre le chat et la selection Gemini sur une VOD. Proposition envoyee au
+  proprietaire (paralleliser le traitement des VOD) : voir "Waiting for the owner".
 
 ### 2026-10-23 - titres + bug de fin coupee
 
