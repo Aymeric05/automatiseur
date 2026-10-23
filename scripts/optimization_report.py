@@ -60,6 +60,9 @@ for channel in ("gaming", "irl"):
     if len(ranked_own) >= 2:
         print(f"ours not yet watched: best {ranked_own[-1]['video_id']} ({(ranked_own[-1].get('title') or '')[:40]}) | "
               f"worst {ranked_own[0]['video_id']} ({(ranked_own[0].get('title') or '')[:40]})")
+    fresh = [e for e in entries if e.get("uploaded_at", "") >= (NOW - timedelta(days=1)).isoformat()][-3:]
+    if fresh:
+        print("ours published in the last 24 h (quality check): " + ", ".join(e["video_id"] for e in fresh))
     for label, since in CHANGES.items():
         before = [scores[e["video_id"]] for e in measured if e.get("uploaded_at", "") < since]
         after = [scores[e["video_id"]] for e in measured if e.get("uploaded_at", "") >= since]
@@ -119,9 +122,9 @@ for theme in ("gaming", "irl"):
     print(f"  top third   : {summary(ranked[-third:])}")
     print(f"  bottom third: {summary(ranked[:third])}")
     print(f"  ours (last 60): {summary(ours)}")
-    print(f"  guide ideal {guide.get(theme, {}).get('ideal_seconds')}; top 3 not yet watched: "
-          + ", ".join([s["video_id"] for s in reversed(ranked[-12:]) if s["video_id"] not in studied][:3])
-          + " | bottom 3 not yet watched: " + ", ".join([s["video_id"] for s in ranked[:12] if s["video_id"] not in studied][:3]))
+    print(f"  guide ideal {guide.get(theme, {}).get('ideal_seconds')}; top 5 not yet watched: "
+          + ", ".join([s["video_id"] for s in reversed(ranked[-20:]) if s["video_id"] not in studied][:5])
+          + " | bottom 5 not yet watched: " + ", ".join([s["video_id"] for s in ranked[:20] if s["video_id"] not in studied][:5]))
 
 log = Path(OUTPUT / "monitor.log")
 lines = log.read_text(encoding="utf-8", errors="replace").splitlines()[-3000:] if log.exists() else []
