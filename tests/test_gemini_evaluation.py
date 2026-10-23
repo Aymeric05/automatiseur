@@ -110,8 +110,8 @@ class GeminiEvaluationTests(unittest.TestCase):
         client.generate_content = overloaded_first
         get_client.return_value = client
         [evaluation] = evaluate_candidates([{"start": 1.0, "end": 4.0}], [])
-        self.assertEqual(models, ["gemini-3.6-flash", "gemini-flash-latest"])
-        self.assertEqual((evaluation["score"], evaluation["model"]), (70, "gemini-flash-latest"))
+        self.assertEqual(models, ["gemini-3.6-flash", "gemini-3.8-flash"])
+        self.assertEqual((evaluation["score"], evaluation["model"]), (70, "gemini-3.8-flash"))
 
     @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
     def test_daily_quota_is_counted_per_model_and_never_exceeded(self, get_client) -> None:
