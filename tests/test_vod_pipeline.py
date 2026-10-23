@@ -132,13 +132,15 @@ class VODAutomationPipelineTests(unittest.TestCase):
 
         def focus(vod_id, times):
             asked.append((vod_id, len(times)))
-            return [{"focus_x": 0.27, "gaming": True}, {"gaming": False}]  # the second: a camera shot
+            # Three frames per Short: the first mostly a screen (one camera frame), the second a camera shot.
+            return [{"focus_x": 0.25, "gaming": True}, {"gaming": True}, {"focus_x": 0.27, "gaming": True},
+                    {"gaming": False}, {"gaming": False}, {"focus_x": 0.9, "gaming": False}]
 
         commands = self._render_with_focus(focus)
-        self.assertEqual(asked, [("vod_1", 2)])
-        self.assertEqual(sum("0.270*iw-ow/2" in command for command in commands), 1)
+        self.assertEqual(asked, [("vod_1", 6)])
+        self.assertEqual(sum("0.260*iw-ow/2" in command for command in commands), 1)  # median of the screen frames
         shorts = sorted(self._manifest()["generated_shorts"].values(), key=lambda short: str(short["focus_x"]))
-        self.assertEqual([(short["focus_x"], short["channel"]) for short in shorts], [(0.27, "gaming"), (None, "irl")])
+        self.assertEqual([(short["focus_x"], short["channel"]) for short in shorts], [(0.26, "gaming"), (None, "irl")])
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_shorts_stay_centered_when_the_focus_is_unknown_or_the_stream_is_irl(self, gemini):

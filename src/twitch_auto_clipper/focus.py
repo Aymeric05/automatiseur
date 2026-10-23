@@ -3,7 +3,7 @@
 A Short keeps only a vertical strip of about a third of the stream's width.
 When the streamer shows their screen, what matters (the video, the chart, the
 game) is often off-center, pushed aside by the chat, a facecam or other
-windows; Gemini looks at one low-res frame per moment and says where it is.
+windows; Gemini looks at low-res frames spread over each Short and says where it is.
 """
 
 from __future__ import annotations

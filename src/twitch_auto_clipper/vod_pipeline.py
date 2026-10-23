@@ -14,6 +14,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 import json
 import re
+import statistics
 from pathlib import Path
 import shutil
 import time
@@ -59,6 +60,8 @@ GEMINI_WAIT = timedelta(minutes=30)
 # Asked for many moments, Gemini calls almost everything "interesting": below
 # this score (0-100) a moment is neither rendered nor published.
 MIN_GEMINI_SCORE = 60
+# Where in each Short (share of its length) Gemini looks to frame it.
+FOCUS_SAMPLES = (0.2, 0.5, 0.8)
 LEAD_IN_ANALYSIS_SECONDS = 20  # audio examined before a moment to find what triggers it
 MAX_SHORT_OVERLAP = 0.3  # widened moments sharing more of the shorter one are near-duplicates
 # A temporary file untouched this long belongs to a run cut short (closed window, sleep,
@@ -339,16 +342,32 @@ class VODAutomationPipeline:
 
     def _with_focus(self, vod_id: str, moments: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
         """The moments with where to center their Short (``focus_x``) and whether they show
-        a video game (``gaming``); unchanged when unknown."""
+        a video game (``gaming``); unchanged when unknown.
+
+        Gemini sees FOCUS_SAMPLES frames spread over each Short's final bounds: the
+        Short follows what most of them show (the median center of the screen
+        frames, or centered when most are camera shots), not a single instant.
+        """
         times = [
-            (float(moment.get("highlight_start", moment["start"])) + float(moment.get("highlight_end", moment["end"]))) / 2
-            for moment in moments
+            float(moment["start"]) + share * (float(moment["end"]) - float(moment["start"]))
+            for moment in moments for share in FOCUS_SAMPLES
         ]
         try:
             found = self.focus_finder(vod_id, times)
         except Exception:  # Twitch or Gemini unavailable: centered Shorts, as before
             return moments
-        return tuple({**moment, **info} for moment, info in zip(moments, found))
+        focused = []
+        for index, moment in enumerate(moments):
+            frames = found[index * len(FOCUS_SAMPLES):(index + 1) * len(FOCUS_SAMPLES)]
+            info: dict[str, Any] = {}
+            centers = [frame["focus_x"] for frame in frames if "focus_x" in frame]
+            if len(centers) * 2 > len(frames):  # mostly a shared screen
+                info["focus_x"] = round(statistics.median(centers), 3)
+            votes = [frame["gaming"] for frame in frames if "gaming" in frame]
+            if votes:
+                info["gaming"] = votes.count(True) * 2 > len(votes)
+            focused.append({**moment, **info})
+        return tuple(focused)
 
     def _delete_sources(self, source_path: Path, processing: VODProcessingResult) -> list[str]:
         """Delete everything a completed VOD no longer needs.
