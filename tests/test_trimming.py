@@ -18,9 +18,14 @@ class TrimTests(unittest.TestCase):
         trims = parse_trims(answer, moments, SENTENCES)
         self.assertEqual(trims[0], {"start": 20.0, "end": 58.0, "trim_reason": "setup then punchline"})
         self.assertIsNone(trims[1])
-        self.assertEqual(trims[2], {})
+        # Unusable Gemini answer: original end (40.0, mid-sentence) still snaps to a sentence end.
+        self.assertEqual(trims[2], {"end": 48.0})
         self.assertEqual((trims[3]["start"], trims[3]["end"]), (30.0, 48.0))
-        self.assertEqual(parse_trims("not json", moments, SENTENCES), [{}] * 4)
+        self.assertEqual(parse_trims("not json", moments, SENTENCES), [{"end": 48.0}] * 4)
+
+    def test_fallback_end_is_left_alone_when_already_on_a_sentence_end(self):
+        moments = [{"start": 10.0, "end": 18.0}]
+        self.assertEqual(parse_trims("not json", moments, SENTENCES), [{}])
 
 
 if __name__ == "__main__":

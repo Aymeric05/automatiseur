@@ -95,16 +95,28 @@ def parse_trims(
 ) -> list[dict[str, Any] | None]:
     """Gemini's bounds, snapped to the sentences and kept within the Short limits.
 
-    A moment Gemini left out or answered badly keeps its bounds ({}); one it
-    finds incomplete is None (not rendered).
+    A moment Gemini left out or answered badly keeps its bounds, snapped to the
+    nearest sentence end so it still never stops mid-word; one it finds
+    incomplete is None (not rendered).
     """
     found: list[dict[str, Any] | None] = [{} for _ in moments]
+    starts = sorted(s["start"] for s in sentences)
+    ends = sorted(s["end"] for s in sentences)
+
+    def snap_fallback_ends() -> None:
+        for index, moment in enumerate(moments):
+            if found[index] is None or found[index]:
+                continue
+            end = float(moment.get("end", 0))
+            snapped = next((value for value in ends if value >= end - 0.05), end)
+            if snapped != end:
+                found[index] = {"end": round(snapped, 2)}
+
     try:
         answers = json.loads(text).get("moments")
     except (json.JSONDecodeError, AttributeError):
+        snap_fallback_ends()
         return found
-    starts = sorted(s["start"] for s in sentences)
-    ends = sorted(s["end"] for s in sentences)
     for answer in answers if isinstance(answers, list) else []:
         if not isinstance(answer, dict) or not str(answer.get("id", "")).startswith("m"):
             continue
@@ -126,4 +138,5 @@ def parse_trims(
         if end - start > MAX_SECONDS or end <= start:
             continue  # unusable answer: the moment keeps its bounds
         found[index] = {"start": round(start, 2), "end": round(end, 2), "trim_reason": answer.get("reason")}
+    snap_fallback_ends()
     return found

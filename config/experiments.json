@@ -1,3 +1,26 @@
 {
-  "experiments": []
+  "experiments": [
+    {
+      "id": "gaming_title_style_v1",
+      "channel": "gaming",
+      "started": "2026-10-23",
+      "description": "Titres plus courts et moins d'emoji, comme les Shorts qui marchent le mieux chez les concurrents (39.5 car., 25% emoji vs nos 45 car., 88% emoji).",
+      "b": {
+        "selection_rules": [
+          "Titre YouTube court (35-40 caracteres), au plus un emoji et seulement s'il renforce vraiment l'accroche."
+        ]
+      }
+    },
+    {
+      "id": "irl_title_style_v1",
+      "channel": "irl",
+      "started": "2026-10-23",
+      "description": "Titres plus courts et moins d'emoji, comme les Shorts qui marchent le mieux chez les concurrents (32 car., 60% emoji vs nos 45 car., 93% emoji).",
+      "b": {
+        "selection_rules": [
+          "Titre YouTube court (30-35 caracteres), emoji seulement s'il renforce vraiment l'accroche, pas systematique."
+        ]
+      }
+    }
+  ]
 }

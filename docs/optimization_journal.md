@@ -34,10 +34,14 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
 
 ### LiveActions! (gaming)
 - Their hits (top third, 10 channels, 96 Shorts) vs flops: titles ~40 chars, 25% with emoji;
-  ours 45 chars, 76% with emoji. Lengths: theirs median ~74 s (long Shorts up to 3 min), ours 31 s.
+  ours 45 chars, 76-88% with emoji. Lengths: theirs median ~74 s (long Shorts up to 3 min), ours 31 s.
   (2026-10-23)
 - Weekly guide: start at the heart of the action, one strong event, cut right after the climax,
   understandable without the game's lore. (2026-10-23)
+- Gemini watch (5 hits vs 5 flops, UChCE_tZPaGv80-dH4kMY_Qg/CaseOh/NoPixel channels): hits = banner
+  hook top of screen, strong emotion in the first seconds (rage/laugh/punchline), one tight fast-cut
+  moment; flops = slow scripted RP, passive gameplay, no real stake. Test started: shorter titles,
+  less emoji (gaming_title_style_v1). (2026-10-23)
 
 ### PeakMoments (irl)
 - Their hits (6 channels, 58 Shorts) vs flops: hits ~28 s vs flops ~23 s; titles ~32 chars,
@@ -46,6 +50,10 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   punchline, avoid moments needing long political or narrative context; ideal 15-25 s. (2026-10-23)
 - Top Shorts of Kai Cenat Live / Hasanabi Clips use word-by-word subtitles in the middle (see
   proposal). (2026-10-23)
+- Gemini watch (5 hits vs 5 flops, Kai Cenat/theGrefg/SNL UK-adjacent channels): hits = punchy
+  visual/sound hook in the first second, context in under 3 s (split-screen, captions), climax at
+  15-35 s; flops = no hook, long monologue explanations (>40 s), static shot. Test started: shorter
+  titles, less emoji (irl_title_style_v1). (2026-10-23)
 
 ## Waiting for the owner
 
@@ -68,8 +76,23 @@ ones, and moves them to the entries.
 | 2026-10-23 | Gemini score reweighted by how well it predicts results | | gemini_weight | 0.89 on gaming (2026-10-23) |
 | 2026-10-23 | Competitor format guide (competitors.py, weekly) used in selection, bounds, hooks, titles | Shorts made like the ones that work elsewhere | retention_pct and views of Shorts made after it vs before | pending |
 | 2026-10-22 | Sharper encoding (CRF 18, Lanczos, sharpening), Twitch source quality | better-looking Shorts | retention_pct | pending |
+| 2026-10-23 | A/B gaming_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | pending (0 measured) |
+| 2026-10-23 | A/B irl_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | pending (0 measured) |
 
 ## Entries
+
+### 2026-10-23 - titres + bug de fin coupee
+
+- Gaming : Gemini a regarde 5 hits/5 flops concurrents + nos 2 extremes + 3 Shorts recents. Hits =
+  banniere d'accroche, emotion forte des les 1res secondes, montage nerveux ; nos 3 Shorts recents
+  coupent tous la fin en plein mot. Test lance : titres plus courts, moins d'emoji
+  (gaming_title_style_v1).
+- IRL : memes conclusions (hook visuel/sonore immediat, contexte <3s, climax 15-35s) ; 1 Short sur 3
+  aussi coupe en plein milieu de phrase. Test lance : titres plus courts, moins d'emoji
+  (irl_title_style_v1).
+- Bug corrige (trimming.py) : quand Gemini ne renvoie pas de bornes utilisables pour un moment, le
+  Short gardait son ancienne fin heuristique sans jamais la recaler sur une vraie fin de phrase ->
+  coupe en plein mot. Elle est maintenant toujours recalee. Commit + redemarrage app.
 
 ### 2026-10-23 - analyse complete (corrigee)
 
