@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 from threading import Event, Lock, Thread
+import time
+import urllib.request
 
 from .audio_events import detect_emotions
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
@@ -259,9 +261,25 @@ FAVORED_STREAMERS_FILE = Path("favored_streamers.txt")
 # No Short is ever made from these streamers (read again at each use: the app adds to it).
 BLOCKED_STREAMERS_FILE = Path("blocked_streamers.txt")
 PUBLISH_RETRY_SECONDS = 600.0  # pause after a failed upload (a network drop, a sign-in problem...)
-DEFAULT_DOWNLOAD_KBPS = 1000  # VOD audio download cap (~8 Mbit/s); DOWNLOAD_MAX_KBPS overrides it
+DEFAULT_DOWNLOAD_KBPS = 1000  # VOD download cap floor (~8 Mbit/s); DOWNLOAD_MAX_KBPS overrides the measure
+SPEED_TEST_URL = "https://speed.cloudflare.com/__down?bytes=50000000"
+DOWNLOAD_SHARE = 0.10  # share of the bandwidth measured at start-up given to the VOD downloads
+PREFETCH_AHEAD = 2  # VODs kept downloaded: the one being processed and the next one
 DEFAULT_DAILY_UPLOADS = 10  # YouTube refused the 11th upload of the day (default quota)
 DEFAULT_DAILY_GEMINI_REQUESTS = 20  # Gemini API free tier, per model and per day (each model)
+
+
+def measured_download_kbps(default: int) -> int:
+    """DOWNLOAD_SHARE of the bandwidth available now, never below ``default`` (also used if it cannot be measured)."""
+    try:
+        start, size = time.monotonic(), 0
+        request = urllib.request.Request(SPEED_TEST_URL, headers={"User-Agent": "automatiseur"})  # urllib's is refused
+        with urllib.request.urlopen(request, timeout=10) as response:
+            while (chunk := response.read(1 << 16)) and time.monotonic() - start < 8:
+                size += len(chunk)
+        return max(default, int(size / (time.monotonic() - start) / 1024 * DOWNLOAD_SHARE))
+    except OSError:
+        return default
 
 
 def _daily_limit(parser: argparse.ArgumentParser, name: str, default: int) -> int:
@@ -573,6 +591,9 @@ def main() -> int:
             parser.error("--max-cycles doit etre positif.")
         kill_children_with_this_process()
         download_kbps = _daily_limit(parser, "DOWNLOAD_MAX_KBPS", DEFAULT_DOWNLOAD_KBPS)
+        if args.monitor_twitch and not os.environ.get("DOWNLOAD_MAX_KBPS"):  # adapts to the connection of the day
+            download_kbps = measured_download_kbps(DEFAULT_DOWNLOAD_KBPS)
+            print(f"Telechargements des VOD limites a {download_kbps} Ko/s (10 % du debit mesure).")
         daily_uploads = _daily_limit(parser, "YOUTUBE_MAX_UPLOADS_PER_DAY", DEFAULT_DAILY_UPLOADS)
         daily_gemini = _daily_limit(parser, "GEMINI_MAX_REQUESTS_PER_DAY", DEFAULT_DAILY_GEMINI_REQUESTS)
         upload_privacy = os.environ.get("YOUTUBE_PRIVACY", "").strip().lower() or "private"
@@ -793,16 +814,34 @@ def main() -> int:
             def work() -> None:
                 while not stop.is_set():
                     try:
-                        process_due_vods(manager, automation, report)
+                        process_due_vods(manager, automation, report, download=False)
                     except Exception as error:  # keep the worker alive; jobs stay queued
                         report(f"Erreur du traitement des VOD : {error!r}", True)
                     stop.wait(WORKER_IDLE_SECONDS)
+
+            def prefetch_chat(vod_id: str) -> None:
+                if not (output_dir / f"{vod_id}_chat_timestamps.json").exists():
+                    download_twitch_chat(f"https://www.twitch.tv/videos/{vod_id}", output_dir / f"{vod_id}_chat.json")
+
+            # Downloads the next VOD (audio, then chat) while the worker transcribes and renders.
+            def prefetch() -> None:
+                while not stop.is_set():
+                    try:
+                        result = manager.prefetch(PREFETCH_AHEAD, prefetch_chat)
+                    except Exception as error:  # keep the thread alive; jobs stay queued
+                        report(f"Erreur du telechargement des VOD : {error!r}", True)
+                        result = None
+                    if result is None:
+                        stop.wait(WORKER_IDLE_SECONDS)
+                    else:
+                        report(format_vod_acquisition_result(result), result.status in {"error", "abandoned"})
 
             def publish() -> None:
                 while not stop.is_set():
                     stop.wait(PUBLISH_IDLE_SECONDS if publish_next() else PUBLISH_RETRY_SECONDS)
 
             Thread(target=work, name="vod-worker", daemon=True).start()
+            Thread(target=prefetch, name="vod-prefetch", daemon=True).start()
             if uploaders:
                 Thread(target=publish, name="shorts-publisher", daemon=True).start()
             manager.run(report_cycle, stop, max_cycles=args.max_cycles)

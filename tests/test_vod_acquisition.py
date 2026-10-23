@@ -139,6 +139,22 @@ class VODAcquisitionTests(unittest.TestCase):
         manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream("big", budget=10),)))
         self.assertEqual([a.stream_id for a in manager.acquire_due()], ["big", "small"])
 
+    def test_prefetch_downloads_the_next_vods_ahead_and_the_worker_takes_only_downloaded_ones(self) -> None:
+        self.client.find_vod_for_stream.side_effect = lambda broadcaster, stream_id: vod(f"vod-{stream_id}", stream_id)
+        manager = self.manager()
+        for stream_id, budget in (("a", 10), ("b", 5), ("c", 2)):
+            manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(stream_id, budget=budget),)))
+        self.assertEqual(list(manager.acquire_due(download=False)), [])  # nothing downloaded yet
+        chats = []
+        self.assertEqual(manager.prefetch(2, chats.append).stream_id, "a")
+        self.assertEqual(manager.prefetch(2, chats.append).stream_id, "b")
+        self.assertIsNone(manager.prefetch(2, chats.append))  # two VODs ahead: enough
+        self.assertEqual(chats, ["vod-a", "vod-b"])
+        self.assertEqual([a.status for a in manager.acquire_due(download=False)], ["already_downloaded"] * 2)
+        manager.record_automation("a", "vod-a", "completed")
+        (self.root / "input" / "vod-a_audio.mp4").unlink()  # the worker's cleanup
+        self.assertEqual(manager.prefetch(2).stream_id, "c")
+
     def test_top_streamer_gets_twenty_moments_and_carries_its_peak(self) -> None:
         manager = TwitchVODAcquisitionManager(
             api_client=self.client, input_dir=self.root / "input", state_path=self.root / "state" / "vods.json",

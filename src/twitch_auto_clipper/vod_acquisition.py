@@ -106,6 +106,7 @@ class TwitchVODAcquisitionManager:
         self._processed_streams: dict[str, str] = {}
         self._processed_vod_ids: set[str] = set()
         self._jobs: dict[str, dict[str, Any]] = {}
+        self._prefetching: set[str] = set()  # stream ids being downloaded ahead (see prefetch)
         self._abandoned: dict[str, dict[str, Any]] = {}
         self._load_state()
 
@@ -162,8 +163,11 @@ class TwitchVODAcquisitionManager:
                     ))
         return tuple(results)
 
-    def acquire_due(self) -> Iterator[VODAcquisitionResult]:
+    def acquire_due(self, download: bool = True) -> Iterator[VODAcquisitionResult]:
         """Yield one acquisition per due job, biggest clip budget first.
+
+        With ``download=False``, only the jobs whose audio is already downloaded
+        (by ``prefetch``) are yielded.
 
         When VODs pile up, the top streamers' VODs are processed first, then
         the most watched streams (highest peak viewers), so a big live that
@@ -180,13 +184,49 @@ class TwitchVODAcquisitionManager:
                 # A VOD whose audio is already downloaded is finished first: its files never wait.
                 (not self._started(job), *self._priority(stream_id, job))
                 for stream_id, job in self._jobs.items()
-                if _parse(job["next_attempt_at"]) <= now
+                if _parse(job["next_attempt_at"]) <= now and stream_id not in self._prefetching
+                and (download or self._started(job))
             )
         for *_, stream_id in due:
             with self._lock:
                 job = dict(self._jobs.get(stream_id) or {})
             if job:
                 yield replace(self._acquire(stream_id, job), peak_viewers=_peak(job))
+
+    def prefetch(self, ahead: int, extra: Callable[[str], Any] | None = None) -> VODAcquisitionResult | None:
+        """Download the next due VOD's audio, then ``extra(vod_id)`` (its chat), while the worker is busy.
+
+        The network waits no longer for the transcription and rendering, nor these
+        for the network. At most ``ahead`` VODs stay downloaded (the one being
+        processed included, not those waiting for Gemini). Returns None when there
+        is nothing to download.
+        """
+        now = self._clock()
+        with self._lock:
+            self._purge_locked(now)
+            # A VOD waiting for Gemini keeps its audio but no longer holds a place.
+            if sum(self._started(job) and _parse(job["next_attempt_at"]) <= now for job in self._jobs.values()) >= ahead:
+                return None
+            due = sorted(
+                (*self._priority(stream_id, job), stream_id) for stream_id, job in self._jobs.items()
+                if _parse(job["next_attempt_at"]) <= now and not self._started(job)
+            )
+            if not due:
+                return None
+            stream_id = due[0][-1]
+            job = dict(self._jobs[stream_id])
+            self._prefetching.add(stream_id)
+        try:
+            result = replace(self._acquire(stream_id, job), peak_viewers=_peak(job))
+            if result.status == "downloaded" and extra is not None:
+                try:
+                    extra(str(result.vod_id))
+                except Exception:  # the pipeline downloads it again
+                    pass
+            return result
+        finally:
+            with self._lock:
+                self._prefetching.discard(stream_id)
 
     def record_automation(
         self,

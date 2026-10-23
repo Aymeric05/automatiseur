@@ -522,8 +522,12 @@ def process_due_vods(
     manager: TwitchVODAcquisitionManager,
     automation: VODAutomationPipeline,
     report: Callable[[str, bool], None],
+    download: bool = True,
 ) -> int:
     """Acquire and process every due VOD job once; returns how many were due.
+
+    With ``download=False``, only the VODs already downloaded (by the prefetch
+    thread) are processed.
 
     Runs on the worker side, never in the monitoring loop. ``report`` receives
     each line and whether it is an error. The files of finished VODs are
@@ -537,7 +541,7 @@ def process_due_vods(
 
     cleanup()
     count = 0
-    for acquisition in manager.acquire_due():
+    for acquisition in manager.acquire_due(download):
         count += 1
         report(format_vod_acquisition_result(acquisition), acquisition.status in {"error", "abandoned"})
         if acquisition.status not in {"downloaded", "already_downloaded"}:
