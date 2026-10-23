@@ -74,7 +74,7 @@ for test in tests:
     for side in ("A", "B"):
         group = [e for e in history if e.get("channel", "gaming") == test["channel"]
                  and (e.get("experiments") or {}).get(test["id"]) == side and e["video_id"] in scores]
-        print(f"  {side}: measured n={len(group)} perf={median([scores[e['video_id']] for e in group])} "
+        print(f"  {side}: measured n={len(group)} vods={len({e.get('vod_id') for e in group})} perf={median([scores[e['video_id']] for e in group])} "
               f"retention={median([e['retention_pct'] for e in group if isinstance(e.get('retention_pct'), (int, float))])} "
               f"views={median([e.get('views_3d', e.get('views_1d', 0)) for e in group])}")
 
