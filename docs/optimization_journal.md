@@ -45,6 +45,14 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
 - Gemini watch (2026-10-24, our 3 latest Shorts + our 2 extremes vs 5 hits/5 flops): confirms
   immediate hook + fast-cut rhythm; no ending/start/framing defect found (the 2026-10-23 fix holds).
   Test started: longer Shorts (gaming_length_v1), per the length gap below.
+- Gemini watch (2026-10-25, 5 hits/5 flops vs our best/worst + 3 quality-check Shorts): confirms
+  immediate hook + fast context + dynamic cuts = hits, flat slow intros = flops. 2 of 3
+  quality-check Shorts had a defect again (cut mid-sentence, no context at start). Bug found and
+  fixed (trimming.py): the hard 58 s cap rejected Gemini's longer bounds for the gaming_length_v1
+  test (ideal 45-90 s), falling back to un-recut heuristic bounds. Cap now follows the test's
+  ideal_seconds.
+- Production: World of Warcraft moments fully wasted this week (13 rendered, 0 kept in reserve,
+  0 published) - one stream's worth so far, watching for a repeat before touching selection.
 
 ### PeakMoments (irl)
 - Their hits (6 channels, 58 Shorts) vs flops: hits ~28 s vs flops ~23 s; titles ~32 chars,
@@ -60,6 +68,12 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
 - Gemini watch (2026-10-24, our 3 latest Shorts + our 2 extremes vs 5 hits/5 flops): confirms
   immediate hook + fast rhythm; no ending/start/framing defect found. No new test: no line strong
   enough yet beyond the running one.
+- Gemini watch (2026-10-25, 5 hits/5 flops vs our best/worst + 3 quality-check Shorts): confirms
+  short duration, hook + context in the first seconds, clean endings on hits; flops run long with
+  a weak start. No defect on any of our 3 quality-check Shorts. No new test: title test still at
+  0 measures, no new line strong enough.
+- Production: Just Chatting drives almost all published IRL Shorts (14/34 rendered this week);
+  Fortnite mostly discarded (1 published of 8) but sample too small to act on yet.
 
 ## Waiting for the owner
 
@@ -94,6 +108,21 @@ ones, and moves them to the entries.
 | 2026-10-24 | A/B gaming_length_v1: longer Shorts (45-90s vs guide's 15-45s) | retention/views closer to competitor hits (median 74s) | retention_pct, views_3d of B vs A | pending (0 measured) |
 
 ## Entries
+
+### 2026-10-25 - bug de coupe recidive sur gaming_length_v1
+
+- Gaming : Gemini a revu 5 hits/5 flops concurrents + nos 2 extremes + 3 Shorts recents : confirme
+  accroche immediate + contexte rapide + montage nerveux. 2 Shorts sur 3 recents avaient un defaut
+  (fin coupee en plein mot, debut sans contexte). Cause trouvee : le plafond fixe de 58s dans
+  trimming.py rejetait les bornes plus longues de Gemini pour le test gaming_length_v1 (ideal
+  45-90s), et retombait sur l'ancienne fin non recalee. Corrige (le plafond suit maintenant
+  ideal_seconds du test) + teste. Tests titres et longueur toujours a 0 mesure.
+- IRL : memes verifications, aucun defaut sur les 3 Shorts recents. Production : Just Chatting
+  tire l'essentiel des Shorts publies (14/34), Fortnite surtout abandonne (1/8) mais echantillon
+  trop petit. Pas de nouveau test.
+- Debit : toujours 6 VOD rendues en 24h (objectif 20+), 40 en file, 61 abandonnees pour file
+  pleine, 18 pour trop ancien. Meme goulot qu'avant (etape chat -> selection Gemini, pas le
+  telechargement) ; proposition de paralleliser toujours en attente du proprietaire.
 
 ### 2026-10-24 - modele Gemini mort + debit en panne
 

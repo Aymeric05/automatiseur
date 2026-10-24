@@ -54,6 +54,7 @@ def trim_moments(
     the Shorts that work on the big clip channels are made (see competitors.study_formats)."""
     guide = guide or {}
     low, high = guide.get("ideal_seconds") or (MIN_SECONDS, MAX_SECONDS)
+    max_seconds = max(MAX_SECONDS, high)  # an experiment's ideal_seconds may ask for longer Shorts
     context = []
     for index, moment in enumerate(moments, start=1):
         start = float(moment.get("highlight_start", moment["start"]))
@@ -77,7 +78,7 @@ def trim_moments(
         "donner le contexte (ce qui declenche la situation, la question posee, le debut de "
         "l'histoire), sans longue introduction inutile, et il finit sur la chute, la reponse ou la "
         f"fin de la reaction, jamais au milieu d'une phrase ni d'une histoire. Duree entre "
-        f"{MIN_SECONDS:.0f} et {MAX_SECONDS:.0f} secondes, le plus court possible tant que c'est "
+        f"{MIN_SECONDS:.0f} et {max_seconds:.0f} secondes, le plus court possible tant que c'est "
         f"complet, idealement entre {low:.0f} et {high:.0f} secondes. "
         + "".join(f"Regle observee sur les Shorts qui marchent : {rule} " for rule in guide.get("rules", []))
         + "complete vaut false si, meme avec les meilleures bornes, le moment ne se "
@@ -87,11 +88,14 @@ def trim_moments(
         + json.dumps(context, ensure_ascii=False)
     )
     text, _ = _generate_json(prompt, TRIM_SCHEMA, model, quota_dir, daily_limit, fallback_models)
-    return parse_trims(text, moments, sentences)
+    return parse_trims(text, moments, sentences, max_seconds)
 
 
 def parse_trims(
-    text: str, moments: list[dict[str, Any]], sentences: list[dict[str, Any]]
+    text: str,
+    moments: list[dict[str, Any]],
+    sentences: list[dict[str, Any]],
+    max_seconds: float = MAX_SECONDS,
 ) -> list[dict[str, Any] | None]:
     """Gemini's bounds, snapped to the sentences and kept within the Short limits.
 
@@ -135,7 +139,7 @@ def parse_trims(
         end = min(ends, key=lambda value: abs(value - end), default=end)
         if end - start < MIN_SECONDS:
             end = next((value for value in ends if value - start >= MIN_SECONDS), start + MIN_SECONDS)
-        if end - start > MAX_SECONDS or end <= start:
+        if end - start > max_seconds or end <= start:
             continue  # unusable answer: the moment keeps its bounds
         found[index] = {"start": round(start, 2), "end": round(end, 2), "trim_reason": answer.get("reason")}
     snap_fallback_ends()

@@ -27,6 +27,16 @@ class TrimTests(unittest.TestCase):
         moments = [{"start": 10.0, "end": 18.0}]
         self.assertEqual(parse_trims("not json", moments, SENTENCES), [{}])
 
+    def test_experiment_max_seconds_allows_longer_shorts(self):
+        # gaming_length_v1 (ideal_seconds up to 90s): a 70s answer must not be
+        # rejected by the default 58s cap when a higher max_seconds is passed.
+        moments = [{"start": 10.0, "end": 20.0}]
+        answer = json.dumps({"moments": [
+            {"id": "m1", "start": 10, "end": 80, "complete": True, "reason": "long arc"},
+        ]})
+        trims = parse_trims(answer, moments, SENTENCES, max_seconds=90.0)
+        self.assertEqual(trims[0], {"start": 10.0, "end": 78.0, "trim_reason": "long arc"})
+
 
 if __name__ == "__main__":
     unittest.main()
