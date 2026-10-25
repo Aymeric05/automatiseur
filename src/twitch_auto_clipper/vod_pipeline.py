@@ -24,6 +24,7 @@ from . import experiments
 from .competitors import format_guide
 from .focus import IRL_CATEGORIES, short_channel
 from .highlights import EXCITEMENT_DB, _overlap_ratio, expand_moment, split_sentences
+from .trimming import snap_ends
 from .profanity import has_slur
 from .video import audio_levels
 from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata, clip_transcript_text
@@ -328,15 +329,17 @@ class VODAutomationPipeline:
         """The moments with Gemini's bounds; one it finds incomplete is dropped (never rendered)."""
         try:
             trims = self.moment_trimmer(list(moments), sentences, streamer, guide)
-        except Exception:  # Gemini unavailable: the heuristic bounds stay
-            return moments
+        except Exception:  # Gemini unavailable: still snap ends to a sentence boundary
+            return tuple(snap_ends(list(moments), sentences))
         kept = []
         for moment, trim in zip(moments, trims):
             if trim is None:
                 continue
             if trim:
                 moment = {**moment, **trim, "trimmed": True}
-                moment["peak"] = reaction_peak(moment, source_path, trim["start"], trim["end"])
+                # trim may only carry a snapped "end" (fallback): use the merged moment's
+                # own bounds, never trim's, which can lack "start" and crash the VOD.
+                moment["peak"] = reaction_peak(moment, source_path, moment["start"], moment["end"])
             kept.append(moment)
         return tuple(without_near_duplicates(kept))
 

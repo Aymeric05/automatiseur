@@ -53,6 +53,14 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   ideal_seconds.
 - Production: World of Warcraft moments fully wasted this week (13 rendered, 0 kept in reserve,
   0 published) - one stream's worth so far, watching for a repeat before touching selection.
+- Gemini watch (2026-10-26, 5 hits/5 flops vs our best/worst + 3 quality-check Shorts): confirms
+  immediate hook + fast cuts = hits. The 3 quality-check Shorts ALL had the same defect again
+  (cut mid-word/mid-sentence) despite the 2026-10-25 fix. Real cause found (vod_pipeline.py,
+  trimming.py): when Gemini's trim call fails outright (quota, network), the VOD's moments kept
+  their raw, un-snapped heuristic end entirely - and separately, when Gemini only snapped a
+  moment's end (no usable start), the next step crashed the whole VOD on a missing "start" key
+  (log: "KeyError('start')", 3x on VOD 2907583164). Both fixed: a failed trim call now still
+  snaps every end to a sentence boundary; the crash can no longer happen.
 
 ### PeakMoments (irl)
 - Their hits (6 channels, 58 Shorts) vs flops: hits ~28 s vs flops ~23 s; titles ~32 chars,
@@ -74,6 +82,12 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   0 measures, no new line strong enough.
 - Production: Just Chatting drives almost all published IRL Shorts (14/34 rendered this week);
   Fortnite mostly discarded (1 published of 8) but sample too small to act on yet.
+- Gemini watch (2026-10-26, 5 hits/5 flops vs our best/worst + 3 quality-check Shorts): confirms
+  hook + context in the first seconds, clean endings on hits; one of our 3 quality-check Shorts
+  had desynced subtitles (single occurrence, not a pattern yet). Competitors refreshed today: top
+  third of 6 channels now 45 s vs bottom third 33 s vs ours 30.6 s - same direction as the
+  2026-10-23 reading (28 s vs 23 s), on the 2nd free test slot. Test started: longer Shorts,
+  30-50 s (irl_length_v1).
 
 ## Waiting for the owner
 
@@ -106,8 +120,28 @@ ones, and moves them to the entries.
 | 2026-10-23 | A/B gaming_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | pending (0 measured) |
 | 2026-10-23 | A/B irl_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | pending (0 measured) |
 | 2026-10-24 | A/B gaming_length_v1: longer Shorts (45-90s vs guide's 15-45s) | retention/views closer to competitor hits (median 74s) | retention_pct, views_3d of B vs A | pending (0 measured) |
+| 2026-10-26 | A/B irl_length_v1: longer Shorts (30-50s vs guide's 15-25s) | retention/views closer to competitor hits (top third 45s) | retention_pct, views_3d of B vs A | pending (0 measured) |
+| 2026-10-26 | Fix: a failed Gemini trim call (quota/network) still snaps every moment's end to a sentence boundary, instead of keeping the raw un-snapped end | fewer mid-word/mid-sentence cuts | Gemini quality-check defects on our Shorts | pending |
+| 2026-10-26 | Fix: a partial trim (end only, no start) no longer crashes the whole VOD (missing "start" key) | fewer VOD retries/losses | "erreur inattendue" / KeyError in the log | pending |
 
 ## Entries
+
+### 2026-10-26 - vraie cause de la coupe en plein mot + VOD qui plantaient
+
+- Gaming : Gemini a revu 5 hits/5 flops concurrents + nos extremes + 3 Shorts recents : les 3
+  recents avaient encore une fin coupee en plein mot malgre le correctif d'hier. Vraie cause
+  trouvee : quand l'appel Gemini de recadrage echoue completement (quota, reseau), les moments
+  gardaient leur fin brute non recalee ; et quand Gemini ne renvoyait qu'une fin recalee (pas de
+  debut utilisable), l'etape suivante plantait toute la VOD (KeyError 'start', vu 3 fois dans le
+  log sur une meme VOD). Les deux corriges + testes (pytest ok). World of Warcraft : toujours les
+  memes 13 moments perdus de la semaine, pas un nouvel episode, rien a changer encore.
+- IRL : memes verifications, aucun defaut sur 2 Shorts sur 3 (1 sous-titres desynchronises,
+  episode isole). Concurrents : tiers du haut desormais 45s vs tiers du bas 33s vs nos 31s, meme
+  sens que le 23/10 (28s vs 23s). Test lance sur le 2e emplacement libre : Shorts plus longs
+  30-50s (irl_length_v1).
+- Debit : seulement 2 VOD rendues en 24h (objectif 20+, hier 6), 40 en file, 63 abandonnees pour
+  file pleine, 14 pour trop ancien. Meme goulot deja remonte au proprietaire (etape chat ->
+  selection Gemini) ; proposition de paralleliser toujours en attente.
 
 ### 2026-10-25 - bug de coupe recidive sur gaming_length_v1
 

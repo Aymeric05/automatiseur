@@ -126,6 +126,15 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertIn("entonnoir : 2 retenus, 1 complets", result.message)
         self.assertTrue(all(short["rendered_at"] for short in self._manifest()["generated_shorts"].values()))
 
+    def test_trim_with_only_a_fallback_end_does_not_crash(self):
+        # A moment Gemini's trim call only partially fixed (end snapped to a sentence
+        # boundary, no "start") must not crash reaction_peak with a missing key.
+        pipeline = self._pipeline()
+        pipeline.moment_trimmer = lambda moments, sentences, streamer, guide: [{"end": 40.0}]
+        moments = ({"start": 10.0, "end": 35.0},)
+        kept = pipeline._trimmed(moments, TRANSCRIPT, self.source, "Streamer")
+        self.assertEqual([(moment["start"], moment["end"]) for moment in kept], [(10.0, 40.0)])
+
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_screen_shorts_are_centered_on_what_matters(self, gemini):
         asked = []

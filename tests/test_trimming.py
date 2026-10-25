@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from twitch_auto_clipper.trimming import parse_trims
+from twitch_auto_clipper.trimming import parse_trims, snap_ends
 
 SENTENCES = [{"start": 10.0 * i, "end": 10.0 * i + 8, "text": f"sentence {i}"} for i in range(12)]
 
@@ -36,6 +36,15 @@ class TrimTests(unittest.TestCase):
         ]})
         trims = parse_trims(answer, moments, SENTENCES, max_seconds=90.0)
         self.assertEqual(trims[0], {"start": 10.0, "end": 78.0, "trim_reason": "long arc"})
+
+
+    def test_snap_ends_pushes_mid_sentence_ends_forward(self):
+        # When Gemini's trim call fails outright, a moment must not keep a raw
+        # mid-sentence end: it still snaps to the next sentence boundary.
+        moments = [{"start": 30.0, "end": 40.0}, {"start": 10.0, "end": 18.0}]
+        snapped = snap_ends(moments, SENTENCES)
+        self.assertEqual(snapped[0]["end"], 48.0)
+        self.assertEqual(snapped[1], moments[1])  # already on a sentence end: untouched
 
 
 if __name__ == "__main__":

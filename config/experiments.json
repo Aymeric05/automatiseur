@@ -30,6 +30,15 @@
       "b": {
         "ideal_seconds": [45, 90]
       }
+    },
+    {
+      "id": "irl_length_v1",
+      "channel": "irl",
+      "started": "2026-10-26",
+      "description": "Shorts plus longs, comme les hits des grosses chaines de clips IRL (6 chaines : tiers du haut 45s vs tiers du bas 33s vs nos 31s ; meme sens vu le 2026-10-23, 28s vs 23s).",
+      "b": {
+        "ideal_seconds": [30, 50]
+      }
     }
   ]
 }

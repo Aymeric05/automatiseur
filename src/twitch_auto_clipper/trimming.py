@@ -91,6 +91,21 @@ def trim_moments(
     return parse_trims(text, moments, sentences, max_seconds)
 
 
+def snap_ends(moments: list[dict[str, Any]], sentences: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each moment's ``end`` pushed forward to the next sentence end, so it never cuts mid-sentence.
+
+    Used when Gemini's trim could not be reached at all (quota, network): without it, a moment
+    kept its raw heuristic end, unsnapped.
+    """
+    ends = sorted(s["end"] for s in sentences)
+    snapped = []
+    for moment in moments:
+        end = float(moment.get("end", 0))
+        new_end = next((value for value in ends if value >= end - 0.05), end)
+        snapped.append({**moment, "end": round(new_end, 2)} if new_end != end else moment)
+    return snapped
+
+
 def parse_trims(
     text: str,
     moments: list[dict[str, Any]],
