@@ -126,6 +126,23 @@ ones, and moves them to the entries.
 
 ## Entries
 
+### 2026-10-27 - quota Gemini a sec, pas d'analyse video possible
+
+- Gaming : analyse Gemini impossible (quota du jour atteint sur les 5 modeles, y compris
+  gemini-flash-lite-latest). Tests toujours sous le seuil (titres A n=7/B n=5, longueur A n=6/B n=3,
+  vods<6) : rien a trancher. 2 tests deja en cours, aucun emplacement libre.
+- IRL : meme blocage Gemini (verifie une fois, quota deja a zero pour tous les modeles, pas
+  reessaye sur IRL). Tests sous le seuil (titres A n=11/B n=0, longueur 0 mesure des deux cotes).
+  2 tests deja en cours, aucun emplacement libre.
+- Production (donnees seules, pas de confirmation Gemini) : gaming, les Shorts >40s publient mieux
+  (12/55=22%) que 25-40s (8/63=13%) et <25s (8/45=18%) - va dans le sens du test longueur en cours,
+  rien a changer. Dota 2 tres gaspille (14/17 abandonnes) - a surveiller. IRL : NMS Boxing quasi
+  tout abandonne (16/18) et Fortnite toujours tres abandonne (7/8, comme le 25/10) - fenetres de 7
+  jours qui se chevauchent, pas encore une 2e preuve independante ; a surveiller. Debit : 11 VOD/24h
+  (objectif 20+), 39 en file, 44 abandonnees pour file pleine - meme goulot deja remonte au
+  proprietaire (quota Gemini quotidien plein aujourd'hui confirme que l'etape de selection est bien
+  le frein, pas le telechargement). Rien a coder.
+
 ### 2026-10-26 - vraie cause de la coupe en plein mot + VOD qui plantaient
 
 - Gaming : Gemini a revu 5 hits/5 flops concurrents + nos extremes + 3 Shorts recents : les 3
