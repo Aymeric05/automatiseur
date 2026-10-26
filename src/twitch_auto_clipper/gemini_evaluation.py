@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -251,11 +252,13 @@ def _generate_json(
     client = _get_gemini_client()
     response = used_model = last_error = None
     next_reset = None
+    pauses = []  # when the models refused for a minute only are back
     for name in dict.fromkeys((model, *fallback_models)):
         quota = DailyQuota(quota_dir / f"gemini_quota_{name}.json", daily_limit) if quota_dir else None
         if quota is not None:
             next_reset = quota.next_reset()
             if not quota.available():
+                pauses += [quota.paused_until()] if quota.paused_until() else []
                 continue
         try:
             # generate_content, not the beta Interactions API: the latter has its own,
@@ -278,22 +281,26 @@ def _generate_json(
             # An overloaded model (503) served nothing: the request is not counted.
             if quota is not None and not any(marker in message for marker in TRANSIENT_MARKERS):
                 quota.record_use()
-            if any(marker in message for marker in QUOTA_ERROR_MARKERS):
-                if quota is not None:
-                    quota.mark_exhausted()  # Google refused: no more requests to this model today
+            if any(marker in message for marker in QUOTA_ERROR_MARKERS) and quota is not None:
+                if "perday" in message:  # e.g. GenerateRequestsPerDayPerProjectPerModel-FreeTier
+                    quota.mark_exhausted()  # no more requests to this model today
+                else:  # a per-minute limit (tokens or requests): back after Google's delay
+                    delay = re.search(r"retrydelay['\"]?\s*:\s*['\"]?(\d+)s", message)
+                    pauses.append(datetime.now(timezone.utc) + timedelta(seconds=int(delay.group(1)) + 5 if delay else 60))
+                    quota.pause(pauses[-1])
             elif not any(marker in message for marker in TRANSIENT_MARKERS):
                 raise GeminiEvaluationError(f"Echec de l'appel Gemini : {error}") from error
             last_error = error  # overloaded or out of quota: try the next model
     if response is None:
-        if last_error is None:
+        if last_error is None and not pauses:
             raise GeminiEvaluationError(
                 f"Quota Gemini du jour atteint pour tous les modeles ({daily_limit} requetes chacun).",
                 retry_at=next_reset,
             )
-        quota_only = any(marker in str(last_error).lower() for marker in QUOTA_ERROR_MARKERS)
+        quota_only = last_error is None or any(marker in str(last_error).lower() for marker in QUOTA_ERROR_MARKERS)
         raise GeminiEvaluationError(
-            f"Echec de l'appel Gemini : {last_error}",
-            retry_at=next_reset if quota_only else None,
+            f"Echec de l'appel Gemini : {last_error or 'limite par minute atteinte'}",
+            retry_at=(min(pauses) if pauses else next_reset) if quota_only else None,
         )
     response_text = getattr(response, "text", None)
     if not isinstance(response_text, str) or not response_text.strip():

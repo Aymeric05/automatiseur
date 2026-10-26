@@ -58,7 +58,23 @@ class DailyQuota:
 
     def available(self) -> bool:
         state = self._state()
+        if state.get("paused_until") and self._clock() < datetime.fromisoformat(state["paused_until"]):
+            return False
         return not state["exhausted"] and state["used"] < self.daily_limit
+
+    def pause(self, until: datetime) -> None:
+        """Refused for a short while only (a per-minute limit): available again at ``until``."""
+        state = self._state()
+        state["paused_until"] = until.isoformat()
+        self._write(state)
+
+    def paused_until(self) -> datetime | None:
+        """When a pause ends, if this quota is only paused (not used up for the day)."""
+        state = self._state()
+        if state["exhausted"] or state["used"] >= self.daily_limit or not state.get("paused_until"):
+            return None
+        until = datetime.fromisoformat(state["paused_until"])
+        return until if self._clock() < until else None
 
     def remaining(self) -> int:
         state = self._state()
@@ -85,6 +101,7 @@ class DailyQuota:
             "day": state["day"],
             "used": int(state.get("used", 0)),
             "exhausted": bool(state.get("exhausted")),
+            "paused_until": state.get("paused_until"),
         }
 
     def _write(self, state: dict[str, Any]) -> None:

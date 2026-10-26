@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+from datetime import datetime, timedelta, timezone
 import os
 import tempfile
 import unittest
@@ -148,14 +149,32 @@ class GeminiEvaluationTests(unittest.TestCase):
         from twitch_auto_clipper.daily_quota import DailyQuota
 
         client = FakeGeminiClient("")
-        client.generate_content = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("429 RESOURCE_EXHAUSTED"))
+        client.generate_content = lambda **kwargs: (_ for _ in ()).throw(
+            RuntimeError("429 RESOURCE_EXHAUSTED quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier"))
         get_client.return_value = client
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(GeminiEvaluationError) as raised:
                 evaluate_candidates([{"start": 1.0, "end": 4.0}], [], quota_dir=Path(directory),
                                     fallback_models=())
             self.assertFalse(DailyQuota(Path(directory) / "gemini_quota_gemini-3.6-flash.json", 20).available())
-        self.assertIsNotNone(raised.exception.retry_at)
+        self.assertGreater(raised.exception.retry_at - datetime.now(timezone.utc), timedelta(minutes=5))  # tomorrow
+
+    @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
+    def test_a_per_minute_limit_only_pauses_the_model_for_google_s_delay(self, get_client) -> None:
+        from twitch_auto_clipper.daily_quota import DailyQuota
+
+        client = FakeGeminiClient("")
+        client.generate_content = lambda **kwargs: (_ for _ in ()).throw(RuntimeError(
+            "429 RESOURCE_EXHAUSTED quotaId: GenerateContentInputTokensPerModelPerMinute-FreeTier, retryDelay: '30s'"))
+        get_client.return_value = client
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(GeminiEvaluationError) as raised:
+                evaluate_candidates([{"start": 1.0, "end": 4.0}], [], quota_dir=Path(directory),
+                                    fallback_models=())
+            quota = DailyQuota(Path(directory) / "gemini_quota_gemini-3.6-flash.json", 20)
+            self.assertFalse(quota.available())
+            self.assertIsNotNone(quota.paused_until())  # paused, not closed for the day
+        self.assertLess(raised.exception.retry_at - datetime.now(timezone.utc), timedelta(minutes=1))
 
     @patch.dict(os.environ, {}, clear=True)
     def test_evaluate_candidates_requires_api_key(self) -> None:
