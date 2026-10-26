@@ -168,3 +168,8 @@ dropped = Counter(a.get("error", "")[:30] for a in (queue.get("abandoned") or {}
 cap = [line for line in lines if "Telechargements des VOD limites" in line][-1:]
 print(f"throughput: {len(vods)} VODs rendered in 24 h (goal ~20+); queue {len(queue.get('jobs') or {})} jobs; "
       f"dropped in 24 h: {dict(dropped)}; {cap[0] if cap else ''}")
+gemini = {path.stem.replace("gemini_quota_", ""): load(path.name, {}) for path in OUTPUT.glob("gemini_quota_*.json")}
+waiting = sum("Gemini indisponible" in line for line in lines)
+print("gemini today: " + ", ".join(f"{name} {q.get('used')}{' CLOSED' if q.get('exhausted') else ''}{' paused' if q.get('paused_until') else ''}"
+                                   for name, q in sorted(gemini.items()) if q.get("day") == max(v.get("day", "") for v in gemini.values()))
+      + f" | VODs sent back to wait for Gemini (log): {waiting}")
