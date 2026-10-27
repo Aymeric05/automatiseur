@@ -165,6 +165,8 @@ class YouTubeTests(unittest.TestCase):
         self.assertFalse(
             fake_service.videos_api.arguments["body"]["status"]["selfDeclaredMadeForKids"]
         )
+        snippet = fake_service.videos_api.arguments["body"]["snippet"]
+        self.assertEqual((snippet["defaultLanguage"], snippet["defaultAudioLanguage"]), ("en", "en"))
 
     def test_upload_video_rejects_missing_video(self) -> None:
         with self.assertRaisesRegex(YouTubeUploadError, "introuvable"):

@@ -320,7 +320,11 @@ def upload_video(
         )
         verify_expected_channel(service, expected_channel_id)
         body = {
-            "snippet": {"title": title, "description": description, "categoryId": category_id},
+            # English title and speech: YouTube shows the Short to English-speaking viewers first.
+            "snippet": {
+                "title": title, "description": description, "categoryId": category_id,
+                "defaultLanguage": "en", "defaultAudioLanguage": "en",
+            },
             "status": {
                 "privacyStatus": privacy,
                 "selfDeclaredMadeForKids": made_for_kids,
