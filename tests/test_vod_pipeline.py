@@ -135,6 +135,15 @@ class VODAutomationPipelineTests(unittest.TestCase):
         kept = pipeline._trimmed(moments, TRANSCRIPT, self.source, "Streamer")
         self.assertEqual([(moment["start"], moment["end"]) for moment in kept], [(10.0, 40.0)])
 
+    @patch("twitch_auto_clipper.vod_highlights.select_candidates")
+    def test_a_moment_about_a_video_game_goes_to_the_gaming_channel_even_on_the_webcam(self, gemini):
+        gemini.side_effect = lambda *args, **kwargs: [
+            {**evaluation, "video_game": evaluation["candidate_id"] == "candidate_1"} for evaluation in fake_gemini(*args, **kwargs)
+        ]
+        self._render_with_focus(lambda vod_id, times: [{"gaming": False}] * len(times))  # webcam frames only
+        channels = sorted(short["channel"] for short in self._manifest()["generated_shorts"].values())
+        self.assertEqual(channels, ["gaming", "irl"])
+
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_a_moment_whose_picture_does_not_move_is_never_rendered(self, gemini):
         pipeline = self._pipeline()

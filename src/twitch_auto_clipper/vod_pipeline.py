@@ -259,7 +259,10 @@ class VODAutomationPipeline:
         # Video games go to one YouTube channel, everything else to the other.
         selection = replace(selection, selected=tuple(
             {
-                **moment, "channel": short_channel(moment.get("gaming"), processing.game_name),
+                # A moment about a video game goes to the gaming channel, even shown mostly on the webcam.
+                **moment, "channel": short_channel(
+                    True if moment.get("gemini_video_game") is True else moment.get("gaming"), processing.game_name,
+                ),
                 "experiments": test_variants, "cold_open_off": test_settings.get("cold_open") is False,
                 "sound_on": test_settings.get("sound") is True,
             }

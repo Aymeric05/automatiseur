@@ -58,6 +58,7 @@ EVALUATION_RESPONSE_FORMAT = {
                         "hook": {"type": "string"},
                         "title": {"type": "string"},
                         "description": {"type": "string"},
+                        "video_game": {"type": "boolean"},
                         "music": {"type": "string", "enum": ["none", *sounds.MUSIC]},
                         "sound_effect": {"type": "string", "enum": ["none", *sounds.EFFECTS]},
                     },
@@ -169,6 +170,8 @@ def _build_prompt(
         "dans le clip ; varie les formulations d'un candidat a l'autre. "
         "description est une ou deux phrases fun qui decrivent le clip et donnent envie de "
         "le regarder, avec au moins 3 emojis bien choisis (dont un au debut). "
+        "video_game vaut true quand le sujet du clip est un jeu video (une partie jouee, ou un "
+        "jeu, une partie ou une video de jeu regardee et commentee), false sinon. "
         f"music est l'ambiance d'une musique de fond instrumentale qui irait avec le clip "
         f"({', '.join(sounds.MUSIC)}), ou none quand le clip a deja sa musique ou qu'elle "
         f"generait. sound_effect est un effet sonore pour le moment fort ({', '.join(sounds.EFFECTS)}) "
@@ -240,6 +243,7 @@ def _parse_response(response_text: str, candidate_ids: set[str]) -> list[dict[st
                 "description": description.strip()[:DESCRIPTION_MAX_LENGTH]
                 if isinstance(description, str)
                 else "",
+                "video_game": evaluation.get("video_game") is True,
                 # Optional too: only used by the Shorts that get sounds (see sounds.py).
                 "music": evaluation.get("music") if evaluation.get("music") in sounds.MUSIC else None,
                 "sound_effect": evaluation.get("sound_effect") if evaluation.get("sound_effect") in sounds.EFFECTS else None,
