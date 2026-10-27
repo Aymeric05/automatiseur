@@ -184,6 +184,26 @@ def _build_split_filter(focus_x: float, facecam: list[float]) -> str:
     )
 
 
+def _shot_filter(shot: dict[str, Any], plain: Callable[[float | None], str]) -> str:
+    """One shot's framing: split when a webcam sits over a shared screen, else ``plain``."""
+    focus_x = shot.get("focus_x")
+    return _build_split_filter(focus_x, shot["facecam"]) if split_layout(focus_x, shot.get("facecam")) else plain(focus_x)
+
+
+def _build_shots_filter(framing: list[dict[str, Any]], start: float, end: float, plain: Callable[[float | None], str]) -> str:
+    """Each shot of the Short (``framing``: from when, live seconds) cut out and framed on its
+    own, then joined back. Labels are numbered per shot so split filters never collide."""
+    count = len(framing)
+    parts = [f"split={count}" + "".join(f"[sh{i}]" for i in range(count))]
+    for i, shot in enumerate(framing):
+        begin = max(0.0, float(shot["from"]) - start)
+        finish = float(framing[i + 1]["from"]) - start if i + 1 < count else end - start + 1
+        framed = _shot_filter(shot, plain).replace("[sp", f"[s{i}p")
+        parts.append(f"[sh{i}]trim=start={begin:.3f}:end={finish:.3f},setpts=PTS-STARTPTS,{framed}[sv{i}]")
+    parts.append("".join(f"[sv{i}]" for i in range(count)) + f"concat=n={count}:v=1:a=0")
+    return ";".join(parts)
+
+
 def _screen_window(center: float, cam_left: float, cam_right: float) -> float:
     """Left edge of the screen shown under the webcam: around ``center``, beside the
     webcam overlay when that still shows the center, so the face is not shown twice."""
@@ -214,6 +234,7 @@ def _build_short_ffmpeg_command(
     teaser: tuple[float, float] | None = None,
     teaser_mute: list[tuple[float, float]] | tuple[tuple[float, float], ...] = (),
     hook_y: str = str(HOOK_TOP),
+    teaser_filter: str | None = None,
 ) -> list[str]:
     """Return the FFmpeg command list for generating one vertical Short.
 
@@ -226,7 +247,7 @@ def _build_short_ffmpeg_command(
     if teaser is not None:
         return _build_cold_open_command(
             source_path, output_path, start, end, vertical_filter, subtitles_path, hook_path,
-            mute, teaser, teaser_mute, hook_y,
+            mute, teaser, teaser_mute, hook_y, teaser_filter,
         )
     duration = end - start
     video_filter = vertical_filter
@@ -283,8 +304,11 @@ def _build_cold_open_command(
     teaser: tuple[float, float],
     teaser_mute: list[tuple[float, float]] | tuple[tuple[float, float], ...],
     hook_y: str = str(HOOK_TOP),
+    teaser_filter: str | None = None,
 ) -> list[str]:
-    """The Short preceded by its teaser: the same source read twice, then joined."""
+    """The Short preceded by its teaser: the same source read twice, then joined.
+
+    ``teaser_filter`` frames the teaser (by default ``vertical_filter``, its labels renamed)."""
     reading = ["-readrate", "1"] if str(source_path).startswith(("http://", "https://")) else []
     command = ["ffmpeg", "-y"]
     for segment_start, segment_end in (teaser, (start, end)):
@@ -293,7 +317,7 @@ def _build_cold_open_command(
     main_filter = vertical_filter + ("," + _subtitles_filter(subtitles_path) if subtitles_path else "")
     graph = (
         # A split filter's labels would appear twice in the graph: the teaser's are renamed.
-        f"[0:v]{vertical_filter.replace('[sp', '[tsp')}[tv];[0:a]{_mute_filter(teaser_mute)}[ta];"
+        f"[0:v]{teaser_filter or vertical_filter.replace('[sp', '[tsp')}[tv];[0:a]{_mute_filter(teaser_mute)}[ta];"
         f"[1:v]{main_filter}[mv];[1:a]{_mute_filter(mute)}[ma];"
         "[tv][ta][mv][ma]concat=n=2:v=1:a=1[cv][a]"
     )
@@ -500,7 +524,13 @@ class VODShortsGenerator:
         mute = profane_intervals(segments, start, end)
         teaser = self._cold_open(item, start, end)
         focus_x = self._number(item.get("focus_x"))
-        split = split_layout(focus_x, item.get("facecam"))
+        framing = [shot for shot in item.get("framing") or [] if isinstance(shot, dict) and "from" in shot]
+        # Hook and subtitles follow the layout of most of the Short (split or not).
+        if len(framing) > 1:
+            lengths = [float(b["from"]) - float(a["from"]) for a, b in zip(framing, framing[1:])] + [end - float(framing[-1]["from"])]
+            split = sum(w for w, shot in zip(lengths, framing) if split_layout(shot.get("focus_x"), shot.get("facecam"))) * 2 > sum(lengths)
+        else:
+            split = split_layout(focus_x, item.get("facecam"))
         subtitles_path, warning = self._write_subtitles(
             segments, output_path, start, end, item.get("media_speech"), (540, SPLIT_SUBTITLES_Y) if split else None,
         )
@@ -510,13 +540,21 @@ class VODShortsGenerator:
         try:
             temporary_path.unlink(missing_ok=True)
             source_path = source()
+            plain = lambda x: self._filter_builder(source_path, x)  # noqa: E731
+            if len(framing) > 1:
+                vertical = _build_shots_filter(framing, start, end, plain)
+                teaser_shot = next((shot for shot in reversed(framing) if teaser and float(shot["from"]) <= teaser[0]), framing[0])
+                teaser_filter = _shot_filter(teaser_shot, plain).replace("[sp", "[tsp")
+            else:
+                vertical = _build_split_filter(focus_x, item["facecam"]) if split_layout(focus_x, item.get("facecam")) else plain(focus_x)
+                teaser_filter = None
             command = _build_short_ffmpeg_command(
-                source_path, temporary_path, start, end,
-                _build_split_filter(focus_x, item["facecam"]) if split else self._filter_builder(source_path, focus_x),
+                source_path, temporary_path, start, end, vertical,
                 subtitles_path, hook_path,
                 mute=mute, teaser=teaser,
                 teaser_mute=profane_intervals(segments, *teaser) if teaser else (),
                 hook_y=f"{SPLIT_TOP}-h/2" if split else str(HOOK_TOP),  # split: on the seam
+                teaser_filter=teaser_filter,
             )
             self._ffmpeg_runner(command)
             if not _is_valid_output(temporary_path):

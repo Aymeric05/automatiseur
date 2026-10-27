@@ -181,6 +181,33 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertEqual(_screen_window(700, 0, 400), 400)  # webcam on the left: just beside it
         self.assertEqual(_screen_window(300, 0, 400), 0)  # the center is under the webcam: shown anyway
 
+    @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
+    def test_each_shot_of_a_short_is_framed_on_its_own(self, gemini):
+        commands = []
+
+        def ffmpeg(command):
+            commands.append(" ".join(command))
+            fake_ffmpeg(command)
+
+        pipeline = self._pipeline(ffmpeg=ffmpeg)
+        pipeline.scene_finder = lambda vod_id, start, end: [start + 5]  # two shots per Short
+        pipeline.focus_finder = lambda vod_id, times: [{"gaming": False}, {"focus_x": 0.8, "gaming": False}] * (len(times) // 2)
+        result = pipeline.run(replace(self._acquisition(budget=2), game_name="Just Chatting"))
+        self.assertEqual(result.status, "completed", format_vod_automation_result(result))
+        framings = [command for command in commands if "concat=n=2:v=1:a=0" in command]
+        self.assertEqual(len(framings), 2)  # both Shorts: two shots joined
+        self.assertIn("0.800*iw-ow/2", framings[0])  # the second shot on the shared screen
+
+    def test_shots_filter_numbers_its_labels_and_cuts_at_each_shot(self):
+        from twitch_auto_clipper.vod_shorts import _build_shots_filter
+
+        graph = _build_shots_filter(
+            [{"from": 10.0, "focus_x": None}, {"from": 14.0, "focus_x": 0.5, "facecam": [0.0, 0.7, 0.2, 1.0]}],
+            10.0, 20.0, lambda x: "null")
+        self.assertTrue(graph.startswith("split=2[sh0][sh1];[sh0]trim=start=0.000:end=4.000"))
+        self.assertIn("[sh1]trim=start=4.000:end=11.000,setpts=PTS-STARTPTS,scale=1920:1080", graph)
+        self.assertIn("[s1pa]", graph)  # the split filter's labels, numbered per shot
+
     def test_split_subtitles_are_centered_on_the_seam(self):
         from twitch_auto_clipper.subtitles import generate_ass_subtitles
 

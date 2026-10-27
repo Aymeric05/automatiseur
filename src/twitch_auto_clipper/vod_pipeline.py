@@ -119,6 +119,7 @@ class VODAutomationPipeline:
         video_source: Callable[[VODAcquisitionResult], Path | str] | None = None,
         delete_sources_on_success: bool = False,
         focus_finder: Callable[[str, list[float]], list[dict[str, Any]]] | None = None,
+        scene_finder: Callable[[str, float, float], list[float]] | None = None,
         moment_trimmer: Callable[..., list[dict[str, Any] | None]] | None = None,
         reserve_gate: Callable[[dict[str, Any], str, str, int], bool] | None = None,
         still_checker: Callable[[str, float, float, float | None], float] | None = None,
@@ -132,6 +133,8 @@ class VODAutomationPipeline:
         self.delete_sources_on_success = delete_sources_on_success
         # Where to center each Short of a screen-sharing stream (see focus.find_focus).
         self.focus_finder = focus_finder
+        # Where the picture changes shot within a Short (see focus.scene_cuts); None: one framing.
+        self.scene_finder = scene_finder
         # Gemini's start and end of each Short (see trimming.trim_moments); None: heuristic bounds.
         self.moment_trimmer = moment_trimmer
         # Whether a moment can enter its channel's reserve (item, login, vod_id, budget):
@@ -383,34 +386,59 @@ class VODAutomationPipeline:
         return share > MAX_STILL_SHARE
 
     def _with_focus(self, vod_id: str, moments: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
-        """The moments with where to center their Short (``focus_x``) and whether they show
-        a video game (``gaming``); unchanged when unknown.
+        """The moments with where to center their Short (``focus_x``, ``facecam``) and whether
+        they show a video game (``gaming``); unchanged when unknown.
 
-        Gemini sees FOCUS_SAMPLES frames spread over each Short's final bounds: the
-        Short follows what most of them show (the median center of the screen
-        frames, or centered when most are camera shots), not a single instant.
+        When the picture changes shot within a Short (``scene_finder``: webcam full screen,
+        then a shared screen...), Gemini sees one frame per shot and each shot gets its own
+        framing (``framing``: one entry per shot, from its start). Otherwise it sees
+        FOCUS_SAMPLES frames over the Short, which follows what most of them show.
         """
+        shots = []
+        for moment in moments:
+            start, end = float(moment["start"]), float(moment["end"])
+            try:
+                cuts = self.scene_finder(vod_id, start, end) if self.scene_finder is not None else []
+            except Exception:  # Twitch unavailable: one framing for the whole Short
+                cuts = []
+            bounds = [start, *cuts, end]
+            shots.append(list(zip(bounds, bounds[1:])))
         times = [
-            float(moment["start"]) + share * (float(moment["end"]) - float(moment["start"]))
-            for moment in moments for share in FOCUS_SAMPLES
+            [(a + b) / 2 for a, b in moment_shots] if len(moment_shots) > 1
+            else [moment_shots[0][0] + share * (moment_shots[0][1] - moment_shots[0][0]) for share in FOCUS_SAMPLES]
+            for moment_shots in shots
         ]
         try:
-            found = self.focus_finder(vod_id, times)
+            found = self.focus_finder(vod_id, [t for moment_times in times for t in moment_times])
         except Exception:  # Twitch or Gemini unavailable: centered Shorts, as before
             return moments
-        focused = []
-        for index, moment in enumerate(moments):
-            frames = found[index * len(FOCUS_SAMPLES):(index + 1) * len(FOCUS_SAMPLES)]
+        focused, position = [], 0
+        for moment, moment_shots, moment_times in zip(moments, shots, times):
+            frames = found[position:position + len(moment_times)]
+            position += len(moment_times)
             info: dict[str, Any] = {}
-            centers = [frame["focus_x"] for frame in frames if "focus_x" in frame]
-            if len(centers) * 2 > len(frames):  # mostly a shared screen
-                info["focus_x"] = round(statistics.median(centers), 3)
-            cams = [frame["facecam"] for frame in frames if "facecam" in frame]
-            if "focus_x" in info and len(cams) * 2 > len(frames):  # the webcam over a shared screen
-                info["facecam"] = [round(statistics.median(cam[i] for cam in cams), 3) for i in range(4)]
-            votes = [frame["gaming"] for frame in frames if "gaming" in frame]
-            if votes:
-                info["gaming"] = votes.count(True) * 2 > len(votes)
+            if len(moment_shots) > 1:
+                info["framing"] = [
+                    {"from": round(a, 2), "focus_x": frame.get("focus_x"),
+                     "facecam": frame.get("facecam") if frame.get("focus_x") is not None else None}
+                    for (a, _), frame in zip(moment_shots, frames)
+                ]
+                longest = max(range(len(moment_shots)), key=lambda i: moment_shots[i][1] - moment_shots[i][0])
+                info.update({k: v for k, v in info["framing"][longest].items() if k != "from" and v is not None})
+                weights = [b - a for a, b in moment_shots]
+                gaming = sum(w for w, frame in zip(weights, frames) if frame.get("gaming") is True)
+                if any("gaming" in frame for frame in frames):
+                    info["gaming"] = gaming * 2 > sum(weights)
+            else:
+                centers = [frame["focus_x"] for frame in frames if "focus_x" in frame]
+                if len(centers) * 2 > len(frames):  # mostly a shared screen
+                    info["focus_x"] = round(statistics.median(centers), 3)
+                cams = [frame["facecam"] for frame in frames if "facecam" in frame]
+                if "focus_x" in info and len(cams) * 2 > len(frames):  # the webcam over a shared screen
+                    info["facecam"] = [round(statistics.median(cam[i] for cam in cams), 3) for i in range(4)]
+                votes = [frame["gaming"] for frame in frames if "gaming" in frame]
+                if votes:
+                    info["gaming"] = votes.count(True) * 2 > len(votes)
             focused.append({**moment, **info})
         return tuple(focused)
 

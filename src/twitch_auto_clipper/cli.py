@@ -18,7 +18,7 @@ from .audio_events import detect_emotions
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
 from .competitors import refresh_competitors, study_formats
-from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus, still_share
+from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus, scene_cuts, still_share
 from .sounds import refresh_library as refresh_sounds
 from .speakers import media_speech
 from . import tiktok
@@ -792,6 +792,7 @@ def main() -> int:
             delete_sources_on_success=True,  # audio and chat, once the VOD is completed
             # Screen-sharing streams: each Short centered on what matters, not on the middle.
             focus_finder=partial(find_focus, quota_dir=output_dir, daily_limit=daily_gemini),
+            scene_finder=scene_cuts,  # each shot of a Short framed on its own
             still_checker=still_share,  # a frozen picture (menu, still image) never makes a Short
             # Subtitles of the streamer and the people with them only, not of a watched video.
             speaker_finder=partial(media_speech, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini),

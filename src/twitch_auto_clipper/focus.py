@@ -9,6 +9,7 @@ windows; Gemini looks at low-res frames spread over each Short and says where it
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 import subprocess
 from typing import Any
@@ -169,3 +170,24 @@ def still_share(vod_id: str, start: float, end: float, focus_x: float | None = N
         return 0.0
     changes = np.abs(np.diff(frames, axis=0)).mean(axis=(1, 2))
     return float((changes < STILL_DIFFERENCE).mean())
+
+
+SCENE_THRESHOLD = 0.3  # FFmpeg scene score (0 to 1) from which the picture changes shot
+MIN_SCENE_SECONDS = 1.5  # shorter shots are framed with their neighbour
+
+
+def scene_cuts(vod_id: str, start: float, end: float) -> list[float]:
+    """The times (live seconds) where the picture changes shot between ``start`` and ``end``
+    (webcam full screen, then a shared screen...), so each shot gets its own framing."""
+    url = resolve_twitch_video_url(f"https://www.twitch.tv/videos/{vod_id}", max_height=FRAME_HEIGHT)
+    log = subprocess.run(
+        ["ffmpeg", "-v", "info", "-ss", str(start), "-t", str(end - start), "-i", url, "-an",
+         "-vf", f"scale=160:90,select='gt(scene,{SCENE_THRESHOLD})',showinfo", "-f", "null", "-"],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace", timeout=300,
+    ).stderr
+    cuts: list[float] = []
+    for offset in re.findall(r"pts_time:([\d.]+)", log):
+        moment = start + float(offset)
+        if moment - (cuts[-1] if cuts else start) >= MIN_SCENE_SECONDS and end - moment >= MIN_SCENE_SECONDS:
+            cuts.append(round(moment, 2))
+    return cuts
