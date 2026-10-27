@@ -266,6 +266,8 @@ class VODHighlightSelector:
                     "gemini_hook": evaluation.get("hook") or None,
                     "gemini_title": evaluation.get("title") or None,
                     "gemini_description": evaluation.get("description") or None,
+                    "gemini_music": evaluation.get("music"),
+                    "gemini_sound_effect": evaluation.get("sound_effect"),
                 }
             )
         return selected

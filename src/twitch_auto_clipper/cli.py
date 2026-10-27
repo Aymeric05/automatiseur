@@ -18,6 +18,7 @@ from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
 from .competitors import refresh_competitors, study_formats
 from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus, still_share
+from .sounds import refresh_library as refresh_sounds
 from .speakers import media_speech
 from .transcription import transcribe_video
 from .trimming import trim_moments
@@ -267,6 +268,7 @@ DEFAULT_DOWNLOAD_KBPS = 1000  # VOD download cap floor (~8 Mbit/s); DOWNLOAD_MAX
 SPEED_TEST_URL = "https://speed.cloudflare.com/__down?bytes=50000000"
 DOWNLOAD_SHARE = 0.10  # share of the bandwidth measured at start-up given to the VOD downloads
 VOD_WORKERS = 2  # VODs processed at the same time (the GPU transcribes one at a time)
+SOUNDS_DIR = DATA_DIR / "sounds"  # royalty-free music and effects, renewed weekly (see sounds.py)
 PREFETCH_AHEAD = VOD_WORKERS + 1  # VODs kept downloaded: those being processed and the next one
 DEFAULT_DAILY_UPLOADS = 10  # known to pass in 24 h; beyond, one try an hour until YouTube refuses
 DEFAULT_DAILY_GEMINI_REQUESTS = 20  # Gemini API free tier, per model and per day (each model)
@@ -733,7 +735,7 @@ def main() -> int:
                 model=args.gemini_model,
                 gemini_daily_limit=daily_gemini,
             ),
-            shorts_generator=VODShortsGenerator(output_dir),
+            shorts_generator=VODShortsGenerator(output_dir, sounds_dir=SOUNDS_DIR),
             output_dir=output_dir,
             video_source=_twitch_video,  # no full VOD video on disk
             delete_sources_on_success=True,  # audio and chat, once the VOD is completed
@@ -783,6 +785,13 @@ def main() -> int:
                 guide = f"Guide de fabrication non mis a jour : {error!r}"
             if guide:
                 report(guide)
+            if os.environ.get("FREESOUND_API_KEY"):
+                try:  # once a week: the most used royalty-free music and effects
+                    renewed = refresh_sounds(SOUNDS_DIR, os.environ["FREESOUND_API_KEY"])
+                except Exception as error:
+                    renewed = f"Sons non renouveles : {error!r}"
+                if renewed:
+                    report(renewed)
             succeeded = True
             for uploader in uploaders:
                 label = f"[{uploader.channel}] "

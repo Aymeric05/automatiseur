@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from . import sounds
 from .daily_quota import DailyQuota
 
 
@@ -57,6 +58,8 @@ EVALUATION_RESPONSE_FORMAT = {
                         "hook": {"type": "string"},
                         "title": {"type": "string"},
                         "description": {"type": "string"},
+                        "music": {"type": "string", "enum": ["none", *sounds.MUSIC]},
+                        "sound_effect": {"type": "string", "enum": ["none", *sounds.EFFECTS]},
                     },
                     "required": [
                         "candidate_id",
@@ -165,7 +168,12 @@ def _build_prompt(
         "pour que le spectateur reste jusqu'a la fin, en lien direct avec ce qui se passe "
         "dans le clip ; varie les formulations d'un candidat a l'autre. "
         "description est une ou deux phrases fun qui decrivent le clip et donnent envie de "
-        "le regarder, avec au moins 3 emojis bien choisis (dont un au debut). Ni hook, ni title, ni description ne doivent annoncer quelque "
+        "le regarder, avec au moins 3 emojis bien choisis (dont un au debut). "
+        f"music est l'ambiance d'une musique de fond instrumentale qui irait avec le clip "
+        f"({', '.join(sounds.MUSIC)}), ou none quand le clip a deja sa musique ou qu'elle "
+        f"generait. sound_effect est un effet sonore pour le moment fort ({', '.join(sounds.EFFECTS)}) "
+        "ou none : la plupart du temps none, seulement quand il renforce vraiment la chute "
+        "(au plus un clip sur trois). Ni hook, ni title, ni description ne doivent annoncer quelque "
         "chose qui n'arrive pas dans le clip, ni contenir de gros mot ou d'insulte. "
         "transcript est le texte du clip ; context_before et context_after sont ce qui "
         "est dit juste avant et apres : juge si le clip se comprend seul et forme un "
@@ -232,6 +240,9 @@ def _parse_response(response_text: str, candidate_ids: set[str]) -> list[dict[st
                 "description": description.strip()[:DESCRIPTION_MAX_LENGTH]
                 if isinstance(description, str)
                 else "",
+                # Optional too: only used by the Shorts that get sounds (see sounds.py).
+                "music": evaluation.get("music") if evaluation.get("music") in sounds.MUSIC else None,
+                "sound_effect": evaluation.get("sound_effect") if evaluation.get("sound_effect") in sounds.EFFECTS else None,
             }
         )
     return validated

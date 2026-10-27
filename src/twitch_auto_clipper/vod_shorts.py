@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from .candidate_clip import CandidateClipError, calculate_candidate_bounds
 from .profanity import censor, profane_intervals
+from . import sounds
 from .subtitles import FONTS_DIR, SubtitleGenerationError, generate_ass_subtitles, render_hook_image
 from .video import get_video_duration
 from .vod_highlights import VODHighlightSelectionResult
@@ -328,8 +329,12 @@ class VODShortsGenerator:
         duration_probe: Callable[[Path], float] | None = None,
         before: float = 0.5,  # candidates are sentence-aligned: keep a short breath only
         after: float = 1.0,
+        sounds_dir: Path | None = None,
     ) -> None:
         self.output_dir = output_dir
+        # Royalty-free music and effects (see sounds.py), added to the Shorts of an A/B test's
+        # "sound" variant; None: never.
+        self.sounds_dir = sounds_dir
         self._ffmpeg_runner = ffmpeg_runner or self._run_ffmpeg
         self._filter_builder = filter_builder or _build_vertical_filter_zoomed_out
         self._duration_probe = duration_probe or get_video_duration
@@ -510,6 +515,8 @@ class VODShortsGenerator:
                     f"FFmpeg n'a produit aucune video valide pour {candidate_id}."
                 )
             temporary_path.replace(output_path)
+            if self.sounds_dir is not None and item.get("sound_on"):
+                self._add_sounds(item, output_path, start, teaser)
         except (ShortsGenerationError, subprocess.CalledProcessError, OSError, ValueError) as error:
             # ValueError/OSError also cover a VOD stream that cannot be resolved.
             self._remove_quietly(temporary_path)
@@ -523,6 +530,15 @@ class VODShortsGenerator:
             "generated", start, end, subtitles=subtitles_path is not None, warning=warning,
             muted=bool(mute), cold_open=teaser is not None,
         )
+
+    def _add_sounds(self, item: dict[str, Any], output_path: Path, start: float, teaser: tuple[float, float] | None) -> None:
+        """Gemini's music mood under the voices, and its effect on the peak (once, in the teaser if any)."""
+        mood, effect_name = item.get("gemini_music"), item.get("gemini_sound_effect")
+        music = sounds.pick(self.sounds_dir, f"music_{mood}") if mood in sounds.MUSIC else None
+        effect = sounds.pick(self.sounds_dir, f"effect_{effect_name}") if effect_name in sounds.EFFECTS else None
+        peak = self._number(item.get("peak"))
+        effect_at = None if peak is None else peak - (teaser[0] if teaser else start)
+        sounds.add_sounds(output_path, music, effect, effect_at)
 
     @classmethod
     def _cold_open(cls, item: dict[str, Any], start: float, end: float) -> tuple[float, float] | None:

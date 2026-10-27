@@ -9,7 +9,8 @@ variants; the daily optimization loop reads the results and keeps the winner.
 Settings a test can change (variant "B" only):
 - ``selection_rules``: rules added to Gemini's moment selection (moment, hook, title);
 - ``trim_rules`` and ``ideal_seconds``: rules and target length for each Short's bounds;
-- ``cold_open``: false turns the cold open off.
+- ``cold_open``: false turns the cold open off;
+- ``sound``: true adds Gemini's background music and sound effect (see sounds.py).
 """
 
 from __future__ import annotations
