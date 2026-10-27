@@ -11,6 +11,7 @@ import subprocess
 import sys
 from threading import Event, Lock, Thread
 import time
+from typing import Any, Callable
 import urllib.request
 
 from .audio_events import detect_emotions
@@ -20,6 +21,7 @@ from .competitors import refresh_competitors, study_formats
 from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus, still_share
 from .sounds import refresh_library as refresh_sounds
 from .speakers import media_speech
+from . import tiktok
 from .transcription import transcribe_video
 from .trimming import trim_moments
 from .streamer_lists import load_streamer_list, load_top_streamers
@@ -198,6 +200,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fichier local du token OAuth.",
     )
     parser.add_argument(
+        "--authorize-tiktok",
+        action="store_true",
+        help="Autorise une fois l'envoi des Shorts PeakMoments en brouillon sur TikTok.",
+    )
+    parser.add_argument(
         "--authorize-irl-channel",
         action="store_true",
         help="Autorise une fois la publication sur la 2e chaine (IRL / Just Chatting).",
@@ -260,6 +267,7 @@ STREAMER_LISTS = {GAMING_CHANNEL: Path("top_streamers_gaming.txt"), IRL_CHANNEL:
 # The second channel (IRL / Just Chatting): its own authorization; YOUTUBE_IRL_CHANNEL_ID in .env.
 IRL_TOKEN_NAME = "youtube-token-irl.json"
 IRL_ANALYTICS_TOKEN_NAME = "youtube-analytics-token-irl.json"
+TIKTOK_TOKEN_NAME = "tiktok-token.json"  # the PeakMoments TikTok account (see tiktok.py)
 FAVORED_STREAMERS_FILE = Path("favored_streamers.txt")
 # No Short is ever made from these streamers (read again at each use: the app adds to it).
 BLOCKED_STREAMERS_FILE = Path("blocked_streamers.txt")
@@ -572,6 +580,16 @@ def main() -> int:
     if args.process_vod:
         return process_vod(args, parser)
 
+    if args.authorize_tiktok:
+        try:
+            tiktok.authorize(os.environ["TIKTOK_CLIENT_KEY"], os.environ["TIKTOK_CLIENT_SECRET"],
+                             args.youtube_token.with_name(TIKTOK_TOKEN_NAME))
+        except (KeyError, tiktok.TikTokError, OSError) as error:
+            print(f"Erreur : {error!r}", file=sys.stderr)
+            return 1
+        print("Compte TikTok autorise : les Shorts PeakMoments y seront envoyes en brouillon.")
+        return 0
+
     if args.authorize_irl_channel:
         try:
             channel_id, title = authorize_channel(
@@ -674,6 +692,7 @@ def main() -> int:
                 return 1
             def channel_uploader(
                 channel: str, token_path: Path, analytics_token_path: Path, channel_id: str, publishing: bool,
+                after_upload: Callable[[Path, Any], None] | None = None,
             ) -> VODShortsUploader:
                 """The same publisher for each channel: its Shorts, its list, its 10 uploads a day.
 
@@ -701,7 +720,19 @@ def main() -> int:
                         rank_reserve, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini
                     ) if publishing else None,
                     channel=channel,
+                    after_upload=after_upload,
                 )
+
+            tiktok_token = args.youtube_token.with_name(TIKTOK_TOKEN_NAME)
+
+            def send_to_tiktok(path: Path, metadata: Any) -> None:
+                """Each PeakMoments Short published on YouTube also goes to TikTok, as a draft."""
+                try:
+                    token = tiktok.access_token(os.environ["TIKTOK_CLIENT_KEY"], os.environ["TIKTOK_CLIENT_SECRET"], tiktok_token)
+                    tiktok.upload_draft(path, token)
+                    report(f"[tiktok] Brouillon envoye : {metadata.title}")
+                except Exception as error:
+                    report(f"[tiktok] Brouillon non envoye : {error}", True)
 
             uploaders.append(channel_uploader(
                 GAMING_CHANNEL, args.youtube_token, args.youtube_token.with_name(ANALYTICS_TOKEN_NAME),
@@ -725,6 +756,7 @@ def main() -> int:
             uploaders.append(channel_uploader(
                 IRL_CHANNEL, irl_token, args.youtube_token.with_name(IRL_ANALYTICS_TOKEN_NAME),
                 irl_channel_id, irl_publishing,
+                send_to_tiktok if os.environ.get("TIKTOK_CLIENT_KEY") and tiktok_token.exists() else None,
             ))
         automation = VODAutomationPipeline(
             processing_pipeline=VODProcessingPipeline(

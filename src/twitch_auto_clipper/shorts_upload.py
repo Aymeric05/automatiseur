@@ -107,6 +107,7 @@ class VODShortsUploader:
         channel: str = "gaming",
         publishing: bool = True,
         arbiter: Callable[[list[dict[str, Any]]], dict[str, float]] | None = None,
+        after_upload: Callable[[Path, ShortMetadata], None] | None = None,
     ) -> None:
         if privacy not in UPLOAD_PRIVACIES:
             raise ValueError(f"privacy must be one of {sorted(UPLOAD_PRIVACIES)}")
@@ -117,6 +118,8 @@ class VODShortsUploader:
         # The YouTube channel this publisher fills ("gaming" or "irl"): only its Shorts, with
         # its own state files (the gaming channel keeps the original names).
         self.channel = channel
+        # Called with each Short published on YouTube, before its file is deleted (the TikTok draft).
+        self.after_upload = after_upload
         # False until the channel is authorized: its reserve is kept up to date, nothing is uploaded.
         self.publishing = publishing
         prefix = "" if channel == "gaming" else f"{channel}_"
@@ -258,6 +261,11 @@ class VODShortsUploader:
                 video_id=video_id, url=url, title=metadata.title,
                 error=f"Upload confirme mais manifest non mis a jour : {error}",
             )
+        if self.after_upload is not None:
+            try:
+                self.after_upload(short.output_path, metadata)
+            except Exception:  # never blocks the YouTube publications
+                pass
         deleted = self._delete_local(short.output_path) if self.delete_after_upload else False
         return ShortUploadResult(
             short.candidate_id,
