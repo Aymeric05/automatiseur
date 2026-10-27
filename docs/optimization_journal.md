@@ -53,6 +53,9 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   ideal_seconds.
 - Production: World of Warcraft moments fully wasted this week (13 rendered, 0 kept in reserve,
   0 published) - one stream's worth so far, watching for a repeat before touching selection.
+- Production: Dota 2 wasted two weeks running (2026-10-26: 14/17 dropped; 2026-10-27: 22/29
+  dropped) but the 7-day windows overlap heavily - not independent proof yet, still watching.
+  (2026-10-28)
 - Gemini watch (2026-10-26, 5 hits/5 flops vs our best/worst + 3 quality-check Shorts): confirms
   immediate hook + fast cuts = hits. The 3 quality-check Shorts ALL had the same defect again
   (cut mid-word/mid-sentence) despite the 2026-10-25 fix. Real cause found (vod_pipeline.py,
@@ -131,6 +134,20 @@ ones, and moves them to the entries.
 | 2026-10-26 | Fix: a partial trim (end only, no start) no longer crashes the whole VOD (missing "start" key) | fewer VOD retries/losses | "erreur inattendue" / KeyError in the log | pending |
 
 ## Entries
+
+### 2026-10-28 - quota Gemini de nouveau sature, rien a trancher
+
+- Gaming : quota Gemini a zero sur les 5 modeles principaux, gemini-flash-lite-latest aussi a sa
+  limite (20/20) - verifie via les fichiers de quota, pas de nouvel appel tente. Aucun test au
+  seuil (titres A n=13/B n=6, longueur A n=13/B n=3, vods<6 partout) : rien a trancher, aucun
+  emplacement libre.
+- IRL : meme quota a zero. Tests sous le seuil (titres A n=19/B n=1, longueur A n=4/B n=0) : rien
+  a trancher, aucun emplacement libre.
+- Production (donnees seules) : Dota 2 toujours tres gaspille sur gaming (22/29 abandonnes cette
+  semaine, apres 14/17 la semaine passee) mais fenetres de 7 jours qui se chevauchent - pas une 2e
+  preuve independante, a surveiller encore. IRL : Just Chatting et Fortnite dans la norme cette
+  fois. Debit : 5 VOD/24h (objectif 20+), 40 en file, 75 abandonnees pour file pleine - meme
+  goulot (selection Gemini) deja remonte au proprietaire, toujours sans reponse.
 
 ### 2026-10-27 - quota Gemini a sec, pas d'analyse video possible
 
