@@ -19,6 +19,7 @@ from .twitch import resolve_twitch_video_url
 FOCUS_MODEL = "gemini-flash-lite-latest"  # spares the main model's quota for the selections
 FRAME_HEIGHT = 360  # low-res rendition: a few MB for all the frames of a VOD
 FRAME_SIZE = "480:270"
+MAX_FACECAM_WIDTH = 0.45  # wider than this share of the stream, it is no webcam overlay
 # Twitch categories filmed with a camera: their Shorts stay centered.
 IRL_CATEGORIES = frozenset({
     "irl", "travel & outdoors", "food & drink", "fitness & health", "pools, hot tubs, and beaches",
@@ -45,6 +46,7 @@ FOCUS_SCHEMA = {
                     "scene": {"type": "string", "enum": ["screen", "camera"]},
                     "box_2d": {"type": "array", "items": {"type": "number"}},
                     "gaming": {"type": "boolean"},
+                    "facecam_box": {"type": "array", "items": {"type": "number"}},
                 },
                 "required": ["index", "scene", "box_2d", "gaming"],
             },
@@ -68,8 +70,11 @@ PROMPT = (
     "ou une partie ou une competition de jeu video regardee ; false pour tout le reste : webcam, "
     "scene IRL, sketch ou roleplay hors jeu, podcast, discussion, site web, et toute video qui "
     "n'est pas un jeu, en particulier un vrai match de sport, une emission de tele ou un film "
-    "(des joueurs filmes par une camera, meme a un evenement e-sport). Retourne un JSON "
-    '{"frames":[{"index":1,"scene":"screen","box_2d":[0,0,1000,1000],"gaming":true}]}.'
+    "(des joueurs filmes par une camera, meme a un evenement e-sport). Quand scene vaut "
+    '"screen" et que la webcam du streamer est incrustee par-dessus (un cadre ou l\'on voit son '
+    "visage), facecam_box est la boite [ymin, xmin, ymax, xmax] (0 a 1000) de ce cadre webcam ; "
+    "liste vide sinon. Retourne un JSON "
+    '{"frames":[{"index":1,"scene":"screen","box_2d":[0,0,1000,1000],"gaming":true,"facecam_box":[]}]}.'
 )
 
 
@@ -127,6 +132,15 @@ def parse_focus(text: str, count: int) -> list[dict[str, Any]]:
             and 0 <= box[1] < box[3] <= 1000
         ):
             found[index - 1]["focus_x"] = round((box[1] + box[3]) / 2000, 3)
+            cam = item.get("facecam_box")
+            if (
+                isinstance(cam, list) and len(cam) == 4
+                and all(isinstance(value, (int, float)) for value in cam)
+                and 0 <= cam[0] < cam[2] <= 1000 and 0 <= cam[1] < cam[3] <= 1000
+                and cam[3] - cam[1] <= MAX_FACECAM_WIDTH * 1000  # an overlay, not a full camera shot
+            ):
+                # [left, top, right, bottom], 0 to 1 of the stream.
+                found[index - 1]["facecam"] = [cam[1] / 1000, cam[0] / 1000, cam[3] / 1000, cam[2] / 1000]
     return found
 
 

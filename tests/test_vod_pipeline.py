@@ -147,6 +147,25 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertIn("1 avec du mouvement", result.message)
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
+    def test_a_webcam_over_a_shared_screen_splits_the_short_with_subtitles_at_the_seam(self, gemini):
+        cam = {"focus_x": 0.6, "gaming": True, "facecam": [0.0, 0.7, 0.25, 1.0]}
+
+        def focus(vod_id, times):  # the first Short: webcam over the screen; the second: a camera shot
+            return [cam, cam, {"focus_x": 0.6, "gaming": True}, {"gaming": False}, {"gaming": False}, {"gaming": False}]
+
+        commands = self._render_with_focus(focus)
+        split = [command for command in commands if "vstack" in command]
+        self.assertEqual(len(split), 1)
+        self.assertIn("scale=1080:700", split[0])
+
+    def test_split_subtitles_are_centered_on_the_seam(self):
+        from twitch_auto_clipper.subtitles import generate_ass_subtitles
+
+        path = generate_ass_subtitles([{"words": [{"word": "wow", "start": 0.0, "end": 0.5}]}],
+                                      self.tmp / "s.ass", position=(540, 700))
+        self.assertIn(r"{\an5\pos(540,700)}wow", path.read_text(encoding="utf-8-sig"))
+
+    @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_screen_shorts_are_centered_on_what_matters(self, gemini):
         asked = []
 

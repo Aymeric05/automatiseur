@@ -147,6 +147,37 @@ def _build_vertical_filter_zoomed_out(input_path: Path | None = None, focus_x: f
     )
 
 
+SPLIT_TOP = 700  # split layout: height of the streamer's camera on top; the shared screen fills the rest
+SPLIT_SCREEN_WIDTH = 956  # of the 1920px stream shown under it, wider than the full-height crop (1080/1220 ratio)
+
+
+def split_layout(focus_x: Any, facecam: Any) -> bool:
+    """Whether a Short is split: the streamer's webcam on top, their shared screen under it."""
+    return focus_x is not None and isinstance(facecam, list) and len(facecam) == 4
+
+
+def _build_split_filter(focus_x: float, facecam: list[float]) -> str:
+    """The webcam overlay (``facecam``: left, top, right, bottom, 0 to 1) zoomed in on top,
+    the shared screen around ``focus_x`` under it, less zoomed than in a full-height Short.
+
+    Labels start with "sp": the cold open uses this filter twice and renames them once.
+    """
+    aspect = 1080 / SPLIT_TOP
+    left, top, right, bottom = (float(value) for value in facecam)
+    width = min(1920.0, max((right - left) * 1920, (bottom - top) * 1080 * aspect))
+    height = min(1080.0, width / aspect)
+    width = height * aspect
+    cam_x = min(max((left + right) / 2 * 1920 - width / 2, 0), 1920 - width)
+    cam_y = min(max((top + bottom) / 2 * 1080 - height / 2, 0), 1080 - height)
+    screen_x = min(max(float(focus_x) * 1920 - SPLIT_SCREEN_WIDTH / 2, 0), 1920 - SPLIT_SCREEN_WIDTH)
+    return (
+        "scale=1920:1080:flags=lanczos,split[spa][spb];"
+        f"[spa]crop={width:.0f}:{height:.0f}:{cam_x:.0f}:{cam_y:.0f},scale=1080:{SPLIT_TOP}:flags=lanczos[sptop];"
+        f"[spb]crop={SPLIT_SCREEN_WIDTH}:1080:{screen_x:.0f}:0,scale=1080:{1920 - SPLIT_TOP}:flags=lanczos[spbot];"
+        "[sptop][spbot]vstack,unsharp=5:5:0.6,setsar=1"
+    )
+
+
 def _subtitles_filter(subtitles_path: Path) -> str:
     subtitle_file = str(subtitles_path.resolve()).replace("\\", "/").replace(":", "\\:")
     fonts_dir = str(FONTS_DIR).replace("\\", "/").replace(":", "\\:")
@@ -239,7 +270,8 @@ def _build_cold_open_command(
                               "-i", str(source_path)]
     main_filter = vertical_filter + ("," + _subtitles_filter(subtitles_path) if subtitles_path else "")
     graph = (
-        f"[0:v]{vertical_filter}[tv];[0:a]{_mute_filter(teaser_mute)}[ta];"
+        # A split filter's labels would appear twice in the graph: the teaser's are renamed.
+        f"[0:v]{vertical_filter.replace('[sp', '[tsp')}[tv];[0:a]{_mute_filter(teaser_mute)}[ta];"
         f"[1:v]{main_filter}[mv];[1:a]{_mute_filter(mute)}[ma];"
         "[tv][ta][mv][ma]concat=n=2:v=1:a=1[cv][a]"
     )
@@ -441,7 +473,11 @@ class VODShortsGenerator:
 
         mute = profane_intervals(segments, start, end)
         teaser = self._cold_open(item, start, end)
-        subtitles_path, warning = self._write_subtitles(segments, output_path, start, end, item.get("media_speech"))
+        focus_x = self._number(item.get("focus_x"))
+        split = split_layout(focus_x, item.get("facecam"))
+        subtitles_path, warning = self._write_subtitles(
+            segments, output_path, start, end, item.get("media_speech"), (540, SPLIT_TOP) if split else None,
+        )
         hook_path, hook_warning = self._write_hook(item.get("gemini_hook"), output_path)
         warning = "; ".join(filter(None, (warning, hook_warning))) or None
         temporary_path = output_path.with_name(f"{output_path.stem}.tmp.mp4")
@@ -450,7 +486,8 @@ class VODShortsGenerator:
             source_path = source()
             command = _build_short_ffmpeg_command(
                 source_path, temporary_path, start, end,
-                self._filter_builder(source_path, self._number(item.get("focus_x"))), subtitles_path, hook_path,
+                _build_split_filter(focus_x, item["facecam"]) if split else self._filter_builder(source_path, focus_x),
+                subtitles_path, hook_path,
                 mute=mute, teaser=teaser,
                 teaser_mute=profane_intervals(segments, *teaser) if teaser else (),
             )
@@ -508,6 +545,7 @@ class VODShortsGenerator:
         start: float,
         end: float,
         media_speech: list[list[float]] | None = None,
+        position: tuple[int, int] | None = None,
     ) -> tuple[Path | None, str | None]:
         """The subtitles of what the streamer and the people with them say (not ``media_speech``)."""
         if not segments:
@@ -523,7 +561,7 @@ class VODShortsGenerator:
             ]
         subtitles_path = output_path.with_suffix(".ass")
         try:
-            generate_ass_subtitles(segments, subtitles_path, clip_start=start, clip_end=end)
+            generate_ass_subtitles(segments, subtitles_path, clip_start=start, clip_end=end, position=position)
         except (SubtitleGenerationError, OSError) as error:
             return None, f"sous-titres ignores : {error}"
         return subtitles_path, None

@@ -191,8 +191,12 @@ def generate_ass_subtitles(
     clip_start: float = 0.0,
     clip_end: float | None = None,
     max_words: int = 3,
+    position: tuple[int, int] | None = None,
 ) -> Path:
     """Write word-by-word ASS subtitles using real word timestamps.
+
+    ``position`` (x, y in the 1080x1920 Short) centers the line on that point
+    instead (the split layout puts it where the camera meets the screen).
 
     Words come in groups of ``max_words``; each word appears when it is said,
     the rest of its group already holding its place (invisible), so the line
@@ -207,6 +211,7 @@ def generate_ass_subtitles(
         clip_end = float("inf")
     words = _words_from_segments(segments, clip_start, clip_end)
     events: list[str] = []
+    placed = r"{\an5\pos(%d,%d)}" % position if position else ""
     for index in range(0, len(words), max_words):
         group = words[index : index + max_words]
         texts = [_subtitle_word(word["text"]) for word in group]
@@ -218,7 +223,7 @@ def generate_ass_subtitles(
             hidden = HIDDEN_WORDS % _join_words(texts[shown:]).replace(r"{\r}", r"{\r\alpha&HFF&}")
             text = _join_words(texts[:shown] + [hidden] if shown < len(group) else texts)
             events.append(
-                f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Default,,0,0,0,,{text}"
+                f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Default,,0,0,0,,{placed}{text}"
             )
 
     content = """[Script Info]

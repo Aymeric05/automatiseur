@@ -401,6 +401,9 @@ class VODAutomationPipeline:
             centers = [frame["focus_x"] for frame in frames if "focus_x" in frame]
             if len(centers) * 2 > len(frames):  # mostly a shared screen
                 info["focus_x"] = round(statistics.median(centers), 3)
+            cams = [frame["facecam"] for frame in frames if "facecam" in frame]
+            if "focus_x" in info and len(cams) * 2 > len(frames):  # the webcam over a shared screen
+                info["facecam"] = [round(statistics.median(cam[i] for cam in cams), 3) for i in range(4)]
             votes = [frame["gaming"] for frame in frames if "gaming" in frame]
             if votes:
                 info["gaming"] = votes.count(True) * 2 > len(votes)
