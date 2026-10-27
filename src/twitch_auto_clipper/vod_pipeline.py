@@ -25,7 +25,7 @@ from .competitors import format_guide
 from .focus import IRL_CATEGORIES, short_channel
 from .highlights import EXCITEMENT_DB, _overlap_ratio, expand_moment, split_sentences
 from .trimming import snap_ends
-from .profanity import has_slur
+from .profanity import PROFANITY, has_slur
 from .video import audio_levels
 from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata, clip_transcript_text
 from .vod_acquisition import (
@@ -61,6 +61,9 @@ GEMINI_WAIT = timedelta(minutes=30)
 # Asked for many moments, Gemini calls almost everything "interesting": below
 # this score (0-100) a moment is neither rendered nor published.
 MIN_GEMINI_SCORE = 60
+# A Short whose picture is still in more than this share of its frames is never rendered.
+MAX_STILL_SHARE = 0.5
+MAX_SWEARS = 3  # swear words in a moment beyond which it is dropped (muted too often)
 # Where in each Short (share of its length) Gemini looks to frame it.
 FOCUS_SAMPLES = (0.2, 0.5, 0.8)
 LEAD_IN_ANALYSIS_SECONDS = 20  # audio examined before a moment to find what triggers it
@@ -119,6 +122,7 @@ class VODAutomationPipeline:
         focus_finder: Callable[[str, list[float]], list[dict[str, Any]]] | None = None,
         moment_trimmer: Callable[..., list[dict[str, Any] | None]] | None = None,
         reserve_gate: Callable[[dict[str, Any], str, str, int], bool] | None = None,
+        still_checker: Callable[[str, float, float, float | None], float] | None = None,
     ) -> None:
         self.output_dir = output_dir
         self.processing_pipeline = processing_pipeline or VODProcessingPipeline(output_dir)
@@ -133,6 +137,8 @@ class VODAutomationPipeline:
         # Whether a moment can enter its channel's reserve (item, login, vod_id, budget):
         # one that would be deleted right away is never rendered.
         self.reserve_gate = reserve_gate
+        # Share of a Short's frames that do not move (see focus.still_share); None: not checked.
+        self.still_checker = still_checker
 
     def run(self, acquisition: VODAcquisitionResult) -> VODAutomationResult:
         result = self._run(acquisition)
@@ -245,6 +251,11 @@ class VODAutomationPipeline:
                     message="Aucun moment comprehensible seul pour un Short.",
                 )
 
+        # A moment full of swear words (often a watched video) is muted every few seconds.
+        selection = replace(selection, selected=tuple(
+            moment for moment in selection.selected if _swears(segments, moment) <= MAX_SWEARS
+        ))
+        funnel.append(f"{len(selection.selected)} sans trop de gros mots")
         if self.focus_finder is not None and processing.game_name.lower() not in IRL_CATEGORIES:
             selection = replace(selection, selected=self._with_focus(vod_id, selection.selected))
         # Video games go to one YouTube channel, everything else to the other.
@@ -265,6 +276,15 @@ class VODAutomationPipeline:
                 return VODAutomationResult(
                     vod_id, "completed", processing, selection,
                     message="Aucun moment assez bon pour entrer dans une reserve.",
+                )
+        if self.still_checker is not None:
+            selection = replace(selection, selected=tuple(
+                moment for moment in selection.selected if not self._frozen(vod_id, moment)
+            ))
+            funnel.append(f"{len(selection.selected)} avec du mouvement")
+            if not selection.selected:
+                return VODAutomationResult(
+                    vod_id, "completed", processing, selection, message="Aucun moment avec du mouvement a l'image.",
                 )
 
         # 4. Shorts generation.
@@ -342,6 +362,14 @@ class VODAutomationPipeline:
                 moment["peak"] = reaction_peak(moment, source_path, moment["start"], moment["end"])
             kept.append(moment)
         return tuple(without_near_duplicates(kept))
+
+    def _frozen(self, vod_id: str, moment: dict[str, Any]) -> bool:
+        """Whether the Short's picture barely moves (a menu, a still picture): never rendered."""
+        try:
+            share = self.still_checker(vod_id, float(moment["start"]), float(moment["end"]), moment.get("focus_x"))
+        except Exception:  # Twitch unavailable: the moment is kept, as before
+            return False
+        return share > MAX_STILL_SHARE
 
     def _with_focus(self, vod_id: str, moments: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
         """The moments with where to center their Short (``focus_x``) and whether they show
@@ -538,6 +566,15 @@ def cleanup_finished_vods(input_dir: Path, output_dir: Path, active_vod_ids: set
                 pass  # e.g. opened elsewhere on Windows: tried again next time
         done.append(vod_id)
     return done
+
+
+def _swears(segments: list[dict[str, Any]], moment: dict[str, Any]) -> int:
+    """Swear words said between the moment's start and end."""
+    start, end = float(moment["start"]), float(moment["end"])
+    return sum(
+        1 for segment in segments for word in segment.get("words") or []
+        if start <= float(word.get("start", -1)) < end and PROFANITY.search(str(word.get("word", "")))
+    )
 
 
 def process_due_vods(

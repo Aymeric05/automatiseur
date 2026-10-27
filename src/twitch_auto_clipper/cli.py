@@ -17,7 +17,7 @@ from .audio_events import detect_emotions
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
 from .competitors import refresh_competitors, study_formats
-from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus
+from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus, still_share
 from .transcription import transcribe_video
 from .trimming import trim_moments
 from .streamer_lists import load_streamer_list, load_top_streamers
@@ -738,6 +738,7 @@ def main() -> int:
             delete_sources_on_success=True,  # audio and chat, once the VOD is completed
             # Screen-sharing streams: each Short centered on what matters, not on the middle.
             focus_finder=partial(find_focus, quota_dir=output_dir, daily_limit=daily_gemini),
+            still_checker=still_share,  # a frozen picture (menu, still image) never makes a Short
             # Gemini picks where each Short starts (the context) and ends (the punchline).
             moment_trimmer=partial(trim_moments, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini),
             # A moment that would be pushed out of its channel's reserve right away is never rendered.

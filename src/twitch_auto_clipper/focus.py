@@ -128,3 +128,30 @@ def parse_focus(text: str, count: int) -> list[dict[str, Any]]:
         ):
             found[index - 1]["focus_x"] = round((box[1] + box[3]) / 2000, 3)
     return found
+
+
+STILL_DIFFERENCE = 0.5  # mean change (0-255 grey levels) between two frames a quarter second apart
+CROP_SHARE = 0.357  # width of the stream a Short shows (see vod_shorts: 1220 of 3413 pixels)
+
+
+def still_share(vod_id: str, start: float, end: float, focus_x: float | None = None) -> float:
+    """Share of the Short's frames that barely change from the one before (0: always moving).
+
+    Only the strip the Short shows is measured, at 4 frames a second in a tiny
+    grey picture: a frozen screen, a menu or a still picture comes close to 1.
+    """
+    import numpy as np
+
+    url = resolve_twitch_video_url(f"https://www.twitch.tv/videos/{vod_id}", max_height=FRAME_HEIGHT)
+    center = 0.5 if focus_x is None else min(max(focus_x, CROP_SHARE / 2), 1 - CROP_SHARE / 2)
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-ss", str(start), "-t", str(end - start), "-i", url,
+         "-vf", f"crop=iw*{CROP_SHARE}:ih:iw*{center - CROP_SHARE / 2:.3f}:0,scale=36:64,fps=4,format=gray",
+         "-f", "rawvideo", "-"],
+        stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=300,
+    ).stdout
+    frames = np.frombuffer(raw, np.uint8)[: len(raw) // (36 * 64) * 36 * 64].reshape(-1, 64, 36).astype(float)
+    if len(frames) < 2:
+        return 0.0
+    changes = np.abs(np.diff(frames, axis=0)).mean(axis=(1, 2))
+    return float((changes < STILL_DIFFERENCE).mean())
