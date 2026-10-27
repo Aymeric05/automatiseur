@@ -63,6 +63,12 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   snaps every end to a sentence boundary; the crash can no longer happen.
 
 ### PeakMoments (irl)
+- ohnepixel (owner's reference, Shorts at 2-14M views vs his weak ones at 60-80k, watched by
+  Gemini 2026-10-27): webcam on top ~35-40%, screen under it (now the app's split layout), text
+  at the seam, 1-3 big words per subtitle line, speech from the first frame, no pauses (jump
+  cuts); hits = guest/voice-chat dialogue, lore stories, trolling with a payoff; weak = solo
+  walkthroughs, silent moments, chaos without a story. Candidate tests: favor dialogue with
+  guests; cut the silences. (2026-10-27)
 - Their hits (6 channels, 58 Shorts) vs flops: hits ~28 s vs flops ~23 s; titles ~32 chars,
   60% emoji; ours 45 chars, 93% emoji, 31 s. (2026-10-23)
 - Weekly guide: open on the key line or question, very expressive moments, cut right after the
