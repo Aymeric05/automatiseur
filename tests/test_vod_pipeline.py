@@ -157,7 +157,13 @@ class VODAutomationPipelineTests(unittest.TestCase):
         split = [command for command in commands if "vstack" in command]
         self.assertEqual(len(split), 1)
         self.assertIn("scale=1080:700", split[0])
-        self.assertNotIn("_hook.png", split[0])  # no hook over the webcam
+
+    def test_the_split_hook_sits_on_the_seam(self):
+        from twitch_auto_clipper.vod_shorts import _build_short_ffmpeg_command
+
+        command = " ".join(_build_short_ffmpeg_command(
+            "in.mp4", Path("out.mp4"), 0.0, 5.0, "null", hook_path=Path("hook.png"), hook_y="700-h/2"))
+        self.assertIn("overlay=(W-w)/2:700-h/2", command)
 
     def test_the_screen_under_the_webcam_leaves_the_webcam_out_when_it_can(self):
         from twitch_auto_clipper.vod_shorts import _screen_window

@@ -149,6 +149,8 @@ def _build_vertical_filter_zoomed_out(input_path: Path | None = None, focus_x: f
 
 
 SPLIT_TOP = 700  # split layout: height of the streamer's camera on top; the shared screen fills the rest
+FACECAM_INSET = 0.005  # share of the stream trimmed off each side of the webcam box
+SPLIT_SUBTITLES_Y = 1500  # split layout: subtitles low in the middle of the screen part
 SPLIT_SCREEN_WIDTH = 956  # of the 1920px stream shown under it, wider than the full-height crop (1080/1220 ratio)
 
 
@@ -165,11 +167,14 @@ def _build_split_filter(focus_x: float, facecam: list[float]) -> str:
     """
     aspect = 1080 / SPLIT_TOP
     left, top, right, bottom = (float(value) for value in facecam)
-    width = min(1920.0, max((right - left) * 1920, (bottom - top) * 1080 * aspect))
-    height = min(1080.0, width / aspect)
-    width = height * aspect
-    cam_x = min(max((left + right) / 2 * 1920 - width / 2, 0), 1920 - width)
-    cam_y = min(max((top + bottom) / 2 * 1080 - height / 2, 0), 1080 - height)
+    # Inside the webcam frame only (a little inside: Gemini's box can spill over), cut to the
+    # top part's shape: the webcam fills the width, nothing of the stream around it shows.
+    cam_left, cam_top = (left + FACECAM_INSET) * 1920, (top + FACECAM_INSET) * 1080
+    cam_width, cam_height = (right - left - 2 * FACECAM_INSET) * 1920, (bottom - top - 2 * FACECAM_INSET) * 1080
+    width = min(cam_width, cam_height * aspect)
+    height = width / aspect
+    cam_x = cam_left + (cam_width - width) / 2
+    cam_y = cam_top + (cam_height - height) / 2
     screen_x = _screen_window(float(focus_x) * 1920, left * 1920, right * 1920)
     return (
         "scale=1920:1080:flags=lanczos,split[spa][spb];"
@@ -208,8 +213,11 @@ def _build_short_ffmpeg_command(
     mute: list[tuple[float, float]] | tuple[tuple[float, float], ...] = (),
     teaser: tuple[float, float] | None = None,
     teaser_mute: list[tuple[float, float]] | tuple[tuple[float, float], ...] = (),
+    hook_y: str = str(HOOK_TOP),
 ) -> list[str]:
     """Return the FFmpeg command list for generating one vertical Short.
+
+    ``hook_y`` places the hook's top edge (an FFmpeg expression; ``h`` is its height).
 
     ``mute`` lists the moments (seconds from ``start``) whose audio is silenced.
     ``teaser`` (start, end) is shown first, without subtitles (its swear words
@@ -218,7 +226,7 @@ def _build_short_ffmpeg_command(
     if teaser is not None:
         return _build_cold_open_command(
             source_path, output_path, start, end, vertical_filter, subtitles_path, hook_path,
-            mute, teaser, teaser_mute,
+            mute, teaser, teaser_mute, hook_y,
         )
     duration = end - start
     video_filter = vertical_filter
@@ -241,7 +249,7 @@ def _build_short_ffmpeg_command(
             command += ["-af", audio_filter]
     else:
         # The hook image stays on screen for the whole clip (overlay repeats its only frame).
-        graph = f"[0:v]{video_filter}[base];[base][1:v]overlay=(W-w)/2:{HOOK_TOP}[v]"
+        graph = f"[0:v]{video_filter}[base];[base][1:v]overlay=(W-w)/2:{hook_y}[v]"
         if audio_filter:
             graph += f";[0:a]{audio_filter}[a]"
         command += [
@@ -274,6 +282,7 @@ def _build_cold_open_command(
     mute: list[tuple[float, float]] | tuple[tuple[float, float], ...],
     teaser: tuple[float, float],
     teaser_mute: list[tuple[float, float]] | tuple[tuple[float, float], ...],
+    hook_y: str = str(HOOK_TOP),
 ) -> list[str]:
     """The Short preceded by its teaser: the same source read twice, then joined."""
     reading = ["-readrate", "1"] if str(source_path).startswith(("http://", "https://")) else []
@@ -292,7 +301,7 @@ def _build_cold_open_command(
         graph += ";[cv]null[v]"
     else:
         command += ["-i", str(hook_path)]
-        graph += f";[cv][2:v]overlay=(W-w)/2:{HOOK_TOP}[v]"
+        graph += f";[cv][2:v]overlay=(W-w)/2:{hook_y}[v]"
     return command + [
         "-filter_complex", graph, "-map", "[v]", "-map", "[a]",
         *VIDEO_ENCODER, *AUDIO_ENCODER, "-movflags", "+faststart", "-f", "mp4", str(output_path),
@@ -493,10 +502,9 @@ class VODShortsGenerator:
         focus_x = self._number(item.get("focus_x"))
         split = split_layout(focus_x, item.get("facecam"))
         subtitles_path, warning = self._write_subtitles(
-            segments, output_path, start, end, item.get("media_speech"), (540, SPLIT_TOP) if split else None,
+            segments, output_path, start, end, item.get("media_speech"), (540, SPLIT_SUBTITLES_Y) if split else None,
         )
-        # The split layout has no hook: the webcam fills the top of the Short.
-        hook_path, hook_warning = (None, None) if split else self._write_hook(item.get("gemini_hook"), output_path)
+        hook_path, hook_warning = self._write_hook(item.get("gemini_hook"), output_path)
         warning = "; ".join(filter(None, (warning, hook_warning))) or None
         temporary_path = output_path.with_name(f"{output_path.stem}.tmp.mp4")
         try:
@@ -508,6 +516,7 @@ class VODShortsGenerator:
                 subtitles_path, hook_path,
                 mute=mute, teaser=teaser,
                 teaser_mute=profane_intervals(segments, *teaser) if teaser else (),
+                hook_y=f"{SPLIT_TOP}-h/2" if split else str(HOOK_TOP),  # split: on the seam
             )
             self._ffmpeg_runner(command)
             if not _is_valid_output(temporary_path):
