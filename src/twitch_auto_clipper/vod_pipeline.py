@@ -123,6 +123,7 @@ class VODAutomationPipeline:
         moment_trimmer: Callable[..., list[dict[str, Any] | None]] | None = None,
         reserve_gate: Callable[[dict[str, Any], str, str, int], bool] | None = None,
         still_checker: Callable[[str, float, float, float | None], float] | None = None,
+        speaker_finder: Callable[[Path, list[dict[str, Any]], list[dict[str, Any]]], list[list[list[float]]]] | None = None,
     ) -> None:
         self.output_dir = output_dir
         self.processing_pipeline = processing_pipeline or VODProcessingPipeline(output_dir)
@@ -139,6 +140,9 @@ class VODAutomationPipeline:
         self.reserve_gate = reserve_gate
         # Share of a Short's frames that do not move (see focus.still_share); None: not checked.
         self.still_checker = still_checker
+        # Per moment, the spans said by a watched video or game: left out of the subtitles
+        # (see speakers.media_speech); None: every word is subtitled.
+        self.speaker_finder = speaker_finder
 
     def run(self, acquisition: VODAcquisitionResult) -> VODAutomationResult:
         result = self._run(acquisition)
@@ -286,6 +290,15 @@ class VODAutomationPipeline:
                 return VODAutomationResult(
                     vod_id, "completed", processing, selection, message="Aucun moment avec du mouvement a l'image.",
                 )
+        if self.speaker_finder is not None:
+            try:
+                spans = self.speaker_finder(source_path, list(selection.selected), sentences)
+            except Exception:  # Gemini unavailable: every word is subtitled, as before
+                spans = None
+            if spans:
+                selection = replace(selection, selected=tuple(
+                    {**moment, "media_speech": media} for moment, media in zip(selection.selected, spans)
+                ))
 
         # 4. Shorts generation.
         video_source = self.video_source

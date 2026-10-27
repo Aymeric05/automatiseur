@@ -18,6 +18,7 @@ from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
 from .competitors import refresh_competitors, study_formats
 from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus, still_share
+from .speakers import media_speech
 from .transcription import transcribe_video
 from .trimming import trim_moments
 from .streamer_lists import load_streamer_list, load_top_streamers
@@ -739,6 +740,8 @@ def main() -> int:
             # Screen-sharing streams: each Short centered on what matters, not on the middle.
             focus_finder=partial(find_focus, quota_dir=output_dir, daily_limit=daily_gemini),
             still_checker=still_share,  # a frozen picture (menu, still image) never makes a Short
+            # Subtitles of the streamer and the people with them only, not of a watched video.
+            speaker_finder=partial(media_speech, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini),
             # Gemini picks where each Short starts (the context) and ends (the punchline).
             moment_trimmer=partial(trim_moments, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini),
             # A moment that would be pushed out of its channel's reserve right away is never rendered.

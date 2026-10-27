@@ -441,7 +441,7 @@ class VODShortsGenerator:
 
         mute = profane_intervals(segments, start, end)
         teaser = self._cold_open(item, start, end)
-        subtitles_path, warning = self._write_subtitles(segments, output_path, start, end)
+        subtitles_path, warning = self._write_subtitles(segments, output_path, start, end, item.get("media_speech"))
         hook_path, hook_warning = self._write_hook(item.get("gemini_hook"), output_path)
         warning = "; ".join(filter(None, (warning, hook_warning))) or None
         temporary_path = output_path.with_name(f"{output_path.stem}.tmp.mp4")
@@ -507,9 +507,20 @@ class VODShortsGenerator:
         output_path: Path,
         start: float,
         end: float,
+        media_speech: list[list[float]] | None = None,
     ) -> tuple[Path | None, str | None]:
+        """The subtitles of what the streamer and the people with them say (not ``media_speech``)."""
         if not segments:
             return None, None
+        if media_speech:
+            def spoken_by_media(word: dict[str, Any]) -> bool:
+                middle = (float(word.get("start", 0)) + float(word.get("end", 0))) / 2
+                return any(span_start <= middle <= span_end for span_start, span_end in media_speech)
+
+            segments = [
+                {**segment, "words": [word for word in segment.get("words") or [] if not spoken_by_media(word)]}
+                for segment in segments
+            ]
         subtitles_path = output_path.with_suffix(".ass")
         try:
             generate_ass_subtitles(segments, subtitles_path, clip_start=start, clip_end=end)
