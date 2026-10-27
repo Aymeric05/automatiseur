@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Automatiseur - TikTok</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 48px auto; padding: 0 16px; color: #222; background: #fff; }
+  code { display: block; padding: 12px; background: #f3f3f3; border-radius: 6px; word-break: break-all; font-size: 15px; }
+  button { margin-top: 12px; padding: 8px 16px; font-size: 15px; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>Automatiseur</h1>
+<p id="message">Connexion TikTok en cours...</p>
+<code id="code" hidden></code>
+<button id="copy" hidden>Copier le code</button>
+<script>
+  // TikTok sends the user back here with ?code=...: the desktop app asks for it once.
+  const params = new URLSearchParams(location.search);
+  const code = params.get("code");
+  const message = document.getElementById("message");
+  if (code) {
+    message.textContent = "Compte TikTok autorise. Copiez ce code et collez-le dans la fenetre d'Automatiseur :";
+    const box = document.getElementById("code");
+    box.textContent = code; box.hidden = false;
+    const copy = document.getElementById("copy");
+    copy.hidden = false;
+    copy.onclick = () => navigator.clipboard.writeText(code).then(() => { copy.textContent = "Copie !"; });
+  } else {
+    message.textContent = "Autorisation refusee ou interrompue : " + (params.get("error_description") || params.get("error") || "aucun code recu") + ".";
+  }
+</script>
+</body>
+</html>
