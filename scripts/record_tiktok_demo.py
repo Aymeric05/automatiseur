@@ -19,12 +19,12 @@ ROOT = Path(__file__).resolve().parents[1]
 def pin_bottom(user32) -> None:
     """Keep the demo window on top, on the bottom third of the screen."""
     width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
-    for _ in range(50):
+    for _ in range(100):
         window = user32.FindWindowW(None, TITLE)
         if window:
             user32.SetWindowPos(window, -1, 0, height * 2 // 3, width, height // 3 - 40, 0x0040)  # HWND_TOPMOST
             return
-        time.sleep(0.2)
+        time.sleep(0.1)
 
 
 def main(video: str, output: Path) -> None:
@@ -35,13 +35,14 @@ def main(video: str, output: Path) -> None:
         stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     time.sleep(2)
-    demo = subprocess.Popen(["cmd.exe", "/c", str(ROOT / "scripts" / "tiktok_demo.cmd"), video],
+    # conhost: a classic console window (Windows Terminal would ignore the pinning).
+    demo = subprocess.Popen(["conhost.exe", "cmd.exe", "/c", str(ROOT / "scripts" / "tiktok_demo.cmd"), video],
                             cwd=ROOT, creationflags=subprocess.CREATE_NEW_CONSOLE)
     pin_bottom(ctypes.windll.user32)
     demo.wait()
     time.sleep(2)
     recorder.communicate(b"q", timeout=60)  # FFmpeg's own stop: the file is closed properly
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(raw), "-vf", "scale=1600:-2",
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "2", "-i", str(raw), "-vf", "scale=1600:-2",
                     "-c:v", "libx264", "-preset", "slow", "-crf", "26", "-movflags", "+faststart", str(output)],
                    check=True)
     raw.unlink()
