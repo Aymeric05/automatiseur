@@ -26,6 +26,7 @@ import webbrowser
 
 AUTHORIZE_URL = "https://www.tiktok.com/v2/auth/authorize/"
 TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
+USER_INFO_URL = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url"
 INBOX_INIT_URL = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
 REDIRECT_PORT = 8765
 REDIRECT_URI = f"http://localhost:{REDIRECT_PORT}/callback/"
@@ -93,6 +94,17 @@ def access_token(client_key: str, client_secret: str, token_path: Path) -> str:
     })
     _save(token_path, tokens)
     return tokens["access_token"]
+
+
+def display_name(token: str) -> str:
+    """The connected account's display name (scope user.info.basic), to show which one is linked."""
+    request = urllib.request.Request(USER_INFO_URL, headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            user = (json.load(response).get("data") or {}).get("user") or {}
+    except urllib.error.HTTPError as error:
+        raise TikTokError(f"Compte TikTok illisible : {error.read().decode(errors='replace')[:300]}") from error
+    return str(user.get("display_name") or "")
 
 
 def upload_draft(video: Path, token: str) -> str:

@@ -586,13 +586,15 @@ def main() -> int:
         return process_vod(args, parser)
 
     if args.authorize_tiktok:
+        token_path = args.youtube_token.with_name(TIKTOK_TOKEN_NAME)
         try:
-            tiktok.authorize(os.environ["TIKTOK_CLIENT_KEY"], os.environ["TIKTOK_CLIENT_SECRET"],
-                             args.youtube_token.with_name(TIKTOK_TOKEN_NAME))
+            tiktok.authorize(os.environ["TIKTOK_CLIENT_KEY"], os.environ["TIKTOK_CLIENT_SECRET"], token_path)
+            name = tiktok.display_name(tiktok.access_token(
+                os.environ["TIKTOK_CLIENT_KEY"], os.environ["TIKTOK_CLIENT_SECRET"], token_path))
         except (KeyError, tiktok.TikTokError, OSError) as error:
             print(f"Erreur : {error!r}", file=sys.stderr)
             return 1
-        print("Compte TikTok autorise : les Shorts PeakMoments y seront envoyes en brouillon.")
+        print(f"TikTok account connected: {name}. Its new short videos will be sent there as drafts.")
         return 0
 
     if args.send_tiktok_draft:
@@ -603,7 +605,8 @@ def main() -> int:
         except (KeyError, tiktok.TikTokError, OSError) as error:
             print(f"Erreur : {error!r}", file=sys.stderr)
             return 1
-        print(f"Brouillon envoye sur TikTok ({publish_id}) : ouvrez la boite de reception de l'appli TikTok.")
+        print(f"Video uploaded to the TikTok inbox as a draft (publish id {publish_id}).")
+        print("The creator gets a notification in the TikTok app to edit and post it.")
         return 0
 
     if args.authorize_irl_channel:
