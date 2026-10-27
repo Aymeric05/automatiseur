@@ -107,6 +107,7 @@ class TwitchVODAcquisitionManager:
         self._processed_vod_ids: set[str] = set()
         self._jobs: dict[str, dict[str, Any]] = {}
         self._prefetching: set[str] = set()  # stream ids being downloaded ahead (see prefetch)
+        self._claimed: set[str] = set()  # stream ids a worker is processing (several workers run)
         self._abandoned: dict[str, dict[str, Any]] = {}
         self._load_state()
 
@@ -189,9 +190,15 @@ class TwitchVODAcquisitionManager:
             )
         for *_, stream_id in due:
             with self._lock:
-                job = dict(self._jobs.get(stream_id) or {})
+                job = {} if stream_id in self._claimed else dict(self._jobs.get(stream_id) or {})
+                if job:  # another worker never takes it until record_automation
+                    self._claimed.add(stream_id)
             if job:
-                yield replace(self._acquire(stream_id, job), peak_viewers=_peak(job))
+                result = replace(self._acquire(stream_id, job), peak_viewers=_peak(job))
+                if result.status not in {"downloaded", "already_downloaded"}:
+                    with self._lock:
+                        self._claimed.discard(stream_id)  # already rescheduled or closed
+                yield result
 
     def prefetch(self, ahead: int, extra: Callable[[str], Any] | None = None) -> VODAcquisitionResult | None:
         """Download the next due VOD's audio, then ``extra(vod_id)`` (its chat), while the worker is busy.
@@ -238,6 +245,7 @@ class TwitchVODAcquisitionManager:
     ) -> str:
         """Close or reschedule a job after the pipeline; returns its new state."""
         with self._lock:
+            self._claimed.discard(stream_id)
             job = self._jobs.get(stream_id)
             if job is None:
                 return "done"

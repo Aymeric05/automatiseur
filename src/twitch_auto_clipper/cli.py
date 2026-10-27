@@ -18,6 +18,7 @@ from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
 from .competitors import refresh_competitors, study_formats
 from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus
+from .transcription import transcribe_video
 from .trimming import trim_moments
 from .streamer_lists import load_streamer_list, load_top_streamers
 from .gemini_evaluation import (
@@ -264,9 +265,19 @@ PUBLISH_RETRY_SECONDS = 600.0  # pause after a failed upload (a network drop, a 
 DEFAULT_DOWNLOAD_KBPS = 1000  # VOD download cap floor (~8 Mbit/s); DOWNLOAD_MAX_KBPS overrides the measure
 SPEED_TEST_URL = "https://speed.cloudflare.com/__down?bytes=50000000"
 DOWNLOAD_SHARE = 0.10  # share of the bandwidth measured at start-up given to the VOD downloads
-PREFETCH_AHEAD = 2  # VODs kept downloaded: the one being processed and the next one
+VOD_WORKERS = 2  # VODs processed at the same time (the GPU transcribes one at a time)
+PREFETCH_AHEAD = VOD_WORKERS + 1  # VODs kept downloaded: those being processed and the next one
 DEFAULT_DAILY_UPLOADS = 10  # known to pass in 24 h; beyond, one try an hour until YouTube refuses
 DEFAULT_DAILY_GEMINI_REQUESTS = 20  # Gemini API free tier, per model and per day (each model)
+
+
+_transcription_lock = Lock()
+
+
+def transcribe_one_at_a_time(*args, **kwargs):
+    """``transcribe_video``, one VOD at a time: two models would not fit in the GPU's memory."""
+    with _transcription_lock:
+        return transcribe_video(*args, **kwargs)
 
 
 def measured_download_kbps(default: int) -> int:
@@ -713,7 +724,9 @@ def main() -> int:
                 irl_channel_id, irl_publishing,
             ))
         automation = VODAutomationPipeline(
-            processing_pipeline=VODProcessingPipeline(output_dir, emotion_detector=detect_emotions),
+            processing_pipeline=VODProcessingPipeline(
+                output_dir, emotion_detector=detect_emotions, transcriber=transcribe_one_at_a_time,
+            ),
             highlight_selector=VODHighlightSelector(
                 output_dir,
                 model=args.gemini_model,
@@ -840,7 +853,8 @@ def main() -> int:
                 while not stop.is_set():
                     stop.wait(PUBLISH_IDLE_SECONDS if publish_next() else PUBLISH_RETRY_SECONDS)
 
-            Thread(target=work, name="vod-worker", daemon=True).start()
+            for number in range(VOD_WORKERS):
+                Thread(target=work, name=f"vod-worker-{number + 1}", daemon=True).start()
             Thread(target=prefetch, name="vod-prefetch", daemon=True).start()
             if uploaders:
                 Thread(target=publish, name="shorts-publisher", daemon=True).start()

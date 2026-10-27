@@ -155,6 +155,19 @@ class VODAcquisitionTests(unittest.TestCase):
         (self.root / "input" / "vod-a_audio.mp4").unlink()  # the worker's cleanup
         self.assertEqual(manager.prefetch(2).stream_id, "c")
 
+    def test_two_workers_never_take_the_same_vod(self) -> None:
+        self.client.find_vod_for_stream.side_effect = lambda broadcaster, stream_id: vod(f"vod-{stream_id}", stream_id)
+        manager = self.manager()
+        for stream_id in ("a", "b"):
+            manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(stream_id),)))
+            manager.prefetch(3)
+        first, second = manager.acquire_due(download=False), manager.acquire_due(download=False)
+        taken = [next(first).stream_id, next(second).stream_id]
+        self.assertEqual(sorted(taken), ["a", "b"])
+        self.assertEqual(list(manager.acquire_due(download=False)), [])  # both still being processed
+        manager.record_automation(taken[0], f"vod-{taken[0]}", "error")  # retried later: free again
+        self.assertEqual(manager.record_automation(taken[1], f"vod-{taken[1]}", "completed"), "done")
+
     def test_top_streamer_gets_twenty_moments_and_carries_its_peak(self) -> None:
         manager = TwitchVODAcquisitionManager(
             api_client=self.client, input_dir=self.root / "input", state_path=self.root / "state" / "vods.json",
