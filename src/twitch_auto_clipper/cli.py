@@ -200,6 +200,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fichier local du token OAuth.",
     )
     parser.add_argument(
+        "--send-tiktok-draft",
+        type=Path,
+        help="Envoie cette video en brouillon sur le compte TikTok autorise (test, demonstration).",
+    )
+    parser.add_argument(
         "--authorize-tiktok",
         action="store_true",
         help="Autorise une fois l'envoi des Shorts PeakMoments en brouillon sur TikTok.",
@@ -588,6 +593,17 @@ def main() -> int:
             print(f"Erreur : {error!r}", file=sys.stderr)
             return 1
         print("Compte TikTok autorise : les Shorts PeakMoments y seront envoyes en brouillon.")
+        return 0
+
+    if args.send_tiktok_draft:
+        try:
+            token = tiktok.access_token(os.environ["TIKTOK_CLIENT_KEY"], os.environ["TIKTOK_CLIENT_SECRET"],
+                                        args.youtube_token.with_name(TIKTOK_TOKEN_NAME))
+            publish_id = tiktok.upload_draft(args.send_tiktok_draft, token)
+        except (KeyError, tiktok.TikTokError, OSError) as error:
+            print(f"Erreur : {error!r}", file=sys.stderr)
+            return 1
+        print(f"Brouillon envoye sur TikTok ({publish_id}) : ouvrez la boite de reception de l'appli TikTok.")
         return 0
 
     if args.authorize_irl_channel:
