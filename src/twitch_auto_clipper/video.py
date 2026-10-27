@@ -5,6 +5,7 @@ import re
 import subprocess
 
 from .framing import build_vertical_filter
+from .subtitles import FONTS_DIR
 
 
 def audio_levels(input_path: Path, start: float, seconds: int) -> list[float]:
@@ -74,7 +75,8 @@ def build_ffmpeg_command(
     vertical_filter = build_vertical_filter(input_path)
     if subtitles_path is not None:
         subtitle_file = str(subtitles_path.resolve()).replace("\\", "/").replace(":", "\\:")
-        vertical_filter += f",subtitles='{subtitle_file}'"
+        fonts_dir = str(FONTS_DIR).replace("\\", "/").replace(":", "\\:")
+        vertical_filter += f",subtitles='{subtitle_file}':fontsdir='{fonts_dir}'"
     return [
         "ffmpeg",
         "-y",

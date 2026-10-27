@@ -32,10 +32,11 @@ class SubtitleTests(unittest.TestCase):
             )
             content = output_path.read_text(encoding="utf-8-sig")
 
-        self.assertIn("Dialogue: 0,0:00:00.00,0:00:01.70,Default", content)
-        self.assertIn("Hello world this", content)
-        self.assertIn("Dialogue: 0,0:00:01.80,0:00:02.40,Default", content)
-        self.assertIn("works", content)
+        # Word by word: the words not said yet hold their place, invisible.
+        self.assertIn(r"Dialogue: 0,0:00:00.00,0:00:00.60,Default,,0,0,0,,Hello {\alpha&HFF&}world this", content)
+        self.assertIn(r"Dialogue: 0,0:00:00.60,0:00:01.30,Default,,0,0,0,,Hello world {\alpha&HFF&}this", content)
+        self.assertIn("Dialogue: 0,0:00:01.30,0:00:01.70,Default,,0,0,0,,Hello world this", content)
+        self.assertIn("Dialogue: 0,0:00:01.80,0:00:02.40,Default,,0,0,0,,works", content)
 
     def test_generate_ass_ignores_words_outside_clip(self) -> None:
         segments = [

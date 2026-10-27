@@ -10,12 +10,16 @@ from .profanity import PROFANITY
 
 # libass override tags: the word is drawn heavily blurred (unreadable), then the style is restored.
 BLURRED_WORD = r"{\bord0\shad0\blur18}%s{\r}"
+# Words of the group not said yet: drawn fully transparent, so the line keeps its place.
+HIDDEN_WORDS = r"{\alpha&HFF&}%s"
+# Fonts shipped with the app (Bangers, for the hook and the subtitles).
+FONTS_DIR = Path(__file__).resolve().parents[2] / "assets" / "fonts"
 
 
 # Gill Sans Ultra Bold (installed with Office), else Impact, else Arial Bold.
 # Bangers (Google Fonts, SIL Open Font License), shipped with the app; Windows fonts as fallback.
 HOOK_FONTS = (
-    str(Path(__file__).resolve().parents[2] / "assets" / "fonts" / "Bangers-Regular.ttf"),
+    str(FONTS_DIR / "Bangers-Regular.ttf"),
     "ARLRDBD.TTF", "arialbd.ttf",
 )
 HOOK_FONT_SIZE = 84  # Bangers is narrow: a bit bigger for the same presence
@@ -186,9 +190,14 @@ def generate_ass_subtitles(
     output_path: Path,
     clip_start: float = 0.0,
     clip_end: float | None = None,
-    max_words: int = 4,
+    max_words: int = 3,
 ) -> Path:
-    """Write readable ASS subtitle groups using real word timestamps."""
+    """Write word-by-word ASS subtitles using real word timestamps.
+
+    Words come in groups of ``max_words``; each word appears when it is said,
+    the rest of its group already holding its place (invisible), so the line
+    never moves. The line sits a little below the middle of the Short.
+    """
     if clip_start < 0 or (clip_end is not None and clip_end <= clip_start):
         raise SubtitleGenerationError("Les bornes du clip sont invalides.")
     if max_words < 1:
@@ -200,12 +209,17 @@ def generate_ass_subtitles(
     events: list[str] = []
     for index in range(0, len(words), max_words):
         group = words[index : index + max_words]
-        start = group[0]["start"]
-        end = max(start + 0.05, group[-1]["end"])
-        text = _join_words([_subtitle_word(word["text"]) for word in group])
-        events.append(
-            f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Default,,0,0,0,,{text}"
-        )
+        texts = [_subtitle_word(word["text"]) for word in group]
+        for shown, word in enumerate(group, start=1):
+            start = word["start"]
+            end = group[shown]["start"] if shown < len(group) else group[-1]["end"]
+            end = max(start + 0.05, end)
+            # {\r} after a blurred swear word would reset the transparency: hidden again after it.
+            hidden = HIDDEN_WORDS % _join_words(texts[shown:]).replace(r"{\r}", r"{\r\alpha&HFF&}")
+            text = _join_words(texts[:shown] + [hidden] if shown < len(group) else texts)
+            events.append(
+                f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Default,,0,0,0,,{text}"
+            )
 
     content = """[Script Info]
 ScriptType: v4.00+
@@ -215,7 +229,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,72,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,80,80,180,1
+Style: Default,Bangers,124,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,2,0,1,5,2,2,80,80,760,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

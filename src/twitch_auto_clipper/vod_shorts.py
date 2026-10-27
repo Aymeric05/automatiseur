@@ -11,7 +11,7 @@ from typing import Any, Callable
 
 from .candidate_clip import CandidateClipError, calculate_candidate_bounds
 from .profanity import censor, profane_intervals
-from .subtitles import SubtitleGenerationError, generate_ass_subtitles, render_hook_image
+from .subtitles import FONTS_DIR, SubtitleGenerationError, generate_ass_subtitles, render_hook_image
 from .video import get_video_duration
 from .vod_highlights import VODHighlightSelectionResult
 
@@ -149,7 +149,8 @@ def _build_vertical_filter_zoomed_out(input_path: Path | None = None, focus_x: f
 
 def _subtitles_filter(subtitles_path: Path) -> str:
     subtitle_file = str(subtitles_path.resolve()).replace("\\", "/").replace(":", "\\:")
-    return f"subtitles='{subtitle_file}'"
+    fonts_dir = str(FONTS_DIR).replace("\\", "/").replace(":", "\\:")
+    return f"subtitles='{subtitle_file}':fontsdir='{fonts_dir}'"
 
 
 def _build_short_ffmpeg_command(
