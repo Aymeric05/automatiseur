@@ -157,6 +157,14 @@ class VODAutomationPipelineTests(unittest.TestCase):
         split = [command for command in commands if "vstack" in command]
         self.assertEqual(len(split), 1)
         self.assertIn("scale=1080:700", split[0])
+        self.assertNotIn("_hook.png", split[0])  # no hook over the webcam
+
+    def test_the_screen_under_the_webcam_leaves_the_webcam_out_when_it_can(self):
+        from twitch_auto_clipper.vod_shorts import _screen_window
+
+        self.assertEqual(_screen_window(960, 1500, 1920), 482)  # webcam far right: centered
+        self.assertEqual(_screen_window(700, 0, 400), 400)  # webcam on the left: just beside it
+        self.assertEqual(_screen_window(300, 0, 400), 0)  # the center is under the webcam: shown anyway
 
     def test_split_subtitles_are_centered_on_the_seam(self):
         from twitch_auto_clipper.subtitles import generate_ass_subtitles

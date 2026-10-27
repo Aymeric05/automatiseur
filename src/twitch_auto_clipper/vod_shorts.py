@@ -169,13 +169,25 @@ def _build_split_filter(focus_x: float, facecam: list[float]) -> str:
     width = height * aspect
     cam_x = min(max((left + right) / 2 * 1920 - width / 2, 0), 1920 - width)
     cam_y = min(max((top + bottom) / 2 * 1080 - height / 2, 0), 1080 - height)
-    screen_x = min(max(float(focus_x) * 1920 - SPLIT_SCREEN_WIDTH / 2, 0), 1920 - SPLIT_SCREEN_WIDTH)
+    screen_x = _screen_window(float(focus_x) * 1920, left * 1920, right * 1920)
     return (
         "scale=1920:1080:flags=lanczos,split[spa][spb];"
         f"[spa]crop={width:.0f}:{height:.0f}:{cam_x:.0f}:{cam_y:.0f},scale=1080:{SPLIT_TOP}:flags=lanczos[sptop];"
         f"[spb]crop={SPLIT_SCREEN_WIDTH}:1080:{screen_x:.0f}:0,scale=1080:{1920 - SPLIT_TOP}:flags=lanczos[spbot];"
         "[sptop][spbot]vstack,unsharp=5:5:0.6,setsar=1"
     )
+
+
+def _screen_window(center: float, cam_left: float, cam_right: float) -> float:
+    """Left edge of the screen shown under the webcam: around ``center``, beside the
+    webcam overlay when that still shows the center, so the face is not shown twice."""
+    highest = 1920 - SPLIT_SCREEN_WIDTH
+    centered = min(max(center - SPLIT_SCREEN_WIDTH / 2, 0), highest)
+    if cam_right <= centered or cam_left >= centered + SPLIT_SCREEN_WIDTH:
+        return centered  # the webcam is not in it
+    beside = [x for x in (cam_right, cam_left - SPLIT_SCREEN_WIDTH)
+              if 0 <= x <= highest and x <= center <= x + SPLIT_SCREEN_WIDTH]
+    return min(beside, key=lambda x: abs(x + SPLIT_SCREEN_WIDTH / 2 - center), default=centered)
 
 
 def _subtitles_filter(subtitles_path: Path) -> str:
@@ -478,7 +490,8 @@ class VODShortsGenerator:
         subtitles_path, warning = self._write_subtitles(
             segments, output_path, start, end, item.get("media_speech"), (540, SPLIT_TOP) if split else None,
         )
-        hook_path, hook_warning = self._write_hook(item.get("gemini_hook"), output_path)
+        # The split layout has no hook: the webcam fills the top of the Short.
+        hook_path, hook_warning = (None, None) if split else self._write_hook(item.get("gemini_hook"), output_path)
         warning = "; ".join(filter(None, (warning, hook_warning))) or None
         temporary_path = output_path.with_name(f"{output_path.stem}.tmp.mp4")
         try:
