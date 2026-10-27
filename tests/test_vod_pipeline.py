@@ -146,13 +146,6 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertEqual(len(result.shorts.shorts), 1)
         self.assertIn("1 avec du mouvement", result.message)
 
-    def test_swear_words_are_counted_within_the_moment_only(self):
-        from twitch_auto_clipper.vod_pipeline import _swears
-
-        segments = [{"words": [{"word": " fuck", "start": 1.0}, {"word": " shit!", "start": 2.0},
-                               {"word": " nice", "start": 3.0}, {"word": " fuck", "start": 9.0}]}]
-        self.assertEqual(_swears(segments, {"start": 0.0, "end": 5.0}), 2)
-
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_screen_shorts_are_centered_on_what_matters(self, gemini):
         asked = []

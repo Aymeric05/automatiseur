@@ -25,7 +25,7 @@ from .competitors import format_guide
 from .focus import IRL_CATEGORIES, short_channel
 from .highlights import EXCITEMENT_DB, _overlap_ratio, expand_moment, split_sentences
 from .trimming import snap_ends
-from .profanity import PROFANITY, has_slur
+from .profanity import has_slur
 from .video import audio_levels
 from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata, clip_transcript_text
 from .vod_acquisition import (
@@ -63,7 +63,6 @@ GEMINI_WAIT = timedelta(minutes=30)
 MIN_GEMINI_SCORE = 60
 # A Short whose picture is still in more than this share of its frames is never rendered.
 MAX_STILL_SHARE = 0.5
-MAX_SWEARS = 3  # swear words in a moment beyond which it is dropped (muted too often)
 # Where in each Short (share of its length) Gemini looks to frame it.
 FOCUS_SAMPLES = (0.2, 0.5, 0.8)
 LEAD_IN_ANALYSIS_SECONDS = 20  # audio examined before a moment to find what triggers it
@@ -255,11 +254,6 @@ class VODAutomationPipeline:
                     message="Aucun moment comprehensible seul pour un Short.",
                 )
 
-        # A moment full of swear words (often a watched video) is muted every few seconds.
-        selection = replace(selection, selected=tuple(
-            moment for moment in selection.selected if _swears(segments, moment) <= MAX_SWEARS
-        ))
-        funnel.append(f"{len(selection.selected)} sans trop de gros mots")
         if self.focus_finder is not None and processing.game_name.lower() not in IRL_CATEGORIES:
             selection = replace(selection, selected=self._with_focus(vod_id, selection.selected))
         # Video games go to one YouTube channel, everything else to the other.
@@ -579,15 +573,6 @@ def cleanup_finished_vods(input_dir: Path, output_dir: Path, active_vod_ids: set
                 pass  # e.g. opened elsewhere on Windows: tried again next time
         done.append(vod_id)
     return done
-
-
-def _swears(segments: list[dict[str, Any]], moment: dict[str, Any]) -> int:
-    """Swear words said between the moment's start and end."""
-    start, end = float(moment["start"]), float(moment["end"])
-    return sum(
-        1 for segment in segments for word in segment.get("words") or []
-        if start <= float(word.get("start", -1)) < end and PROFANITY.search(str(word.get("word", "")))
-    )
 
 
 def process_due_vods(
