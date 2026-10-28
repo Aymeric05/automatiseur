@@ -105,16 +105,7 @@ numbers, risks, how to undo) and in its daily summary. The owner answers by writ
 at the start of the line (or tells Claude); the next run applies the OK ones, drops the NON
 ones, and moves them to the entries.
 
-- (proposal) Word-by-word subtitles in the middle of the screen, as on the IRL clip channels
-  that do best. Why: seen on the top Shorts of Kai Cenat Live and Hasanabi Clips. Risk: changes
-  how every new Short looks; could do worse. Undo: one setting. Waiting for data first.
-- (proposal) Process more than one VOD at a time (currently a single worker, one VOD fully at a
-  time). Why: only 5 VODs rendered in 24 h (goal ~20+), 53 jobs queued, 69 dropped for "file
-  pleine" in 24 h; on VOD 2908180885 the download+transcript were ready in ~5 min but ~3h25 passed
-  between the chat step and the Gemini selection step (highlights) - the bottleneck is there, not
-  the download bandwidth. Risk: touches the core worker/queue architecture, could add instability
-  or burn through the shared Gemini daily quota faster. Undo: none done yet, this needs a design
-  call first.
+(none)
 
 ## Changes under evaluation
 
@@ -134,6 +125,20 @@ ones, and moves them to the entries.
 | 2026-10-26 | Fix: a partial trim (end only, no start) no longer crashes the whole VOD (missing "start" key) | fewer VOD retries/losses | "erreur inattendue" / KeyError in the log | pending |
 
 ## Entries
+
+### 2026-10-28 - changes made in the owner's conversation (not by the loop)
+
+- Accepted by the owner and done on 10-27: word-by-word subtitles (Bangers, a little below the
+  middle), two VODs processed at a time, prefetch of the next VOD, download cap from the measured
+  bandwidth. Also: split layout (webcam on top, screen below) when a webcam sits over a shared
+  screen; a framing per shot; frozen pictures never rendered; subtitles only of the streamer and
+  the people with them; a moment about a video game goes to LiveActions!; every Short declared in
+  English; PeakMoments Shorts also sent to TikTok as drafts.
+- Waste fixed on 10-28: the prefetch kept downloading while VODs waited for Gemini (9.7 GB of
+  audio, some expired unprocessed); renders limited to moments entering the top 15 (82 gaming
+  renders a day for 10 uploads); speakers request only when a watched video is heard; reserve
+  comparison every 12 h. Gemini refusals are logged with their quota id and retry delay
+  (data/output/gemini_refusals.log): check it before concluding the quota is the bottleneck.
 
 ### 2026-10-28 - quota Gemini de nouveau sature, rien a trancher
 
