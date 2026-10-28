@@ -252,6 +252,17 @@ def _parse_response(response_text: str, candidate_ids: set[str]) -> list[dict[st
     return validated
 
 
+def _note_refusal(quota_dir: Path, model: str, message: str) -> None:
+    """Keep Google's last refusals (gemini_refusals.log, a few KB): which limit, for diagnosis."""
+    path = quota_dir / "gemini_refusals.log"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()[-49:] if path.exists() else []
+        lines.append(f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M} {model}: {message[:400]}")
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _generate_json(
     prompt: Any,  # text, or a list of text and images
     schema: dict[str, Any],
@@ -300,12 +311,15 @@ def _generate_json(
             if quota is not None and not any(marker in message for marker in TRANSIENT_MARKERS):
                 quota.record_use()
             if any(marker in message for marker in QUOTA_ERROR_MARKERS) and quota is not None:
-                if "perday" in message:  # e.g. GenerateRequestsPerDayPerProjectPerModel-FreeTier
-                    quota.mark_exhausted()  # no more requests to this model today
-                else:  # a per-minute limit (tokens or requests): back after Google's delay
-                    delay = re.search(r"retrydelay['\"]?\s*:\s*['\"]?(\d+)s", message)
-                    pauses.append(datetime.now(timezone.utc) + timedelta(seconds=int(delay.group(1)) + 5 if delay else 60))
+                # Google says how long to wait: a short delay is a per-minute limit (the model
+                # pauses), a long or missing one the daily quota (closed until tomorrow).
+                delay = re.search(r"retrydelay['\"]?\s*:\s*['\"]?(\d+)s", message)
+                if delay and int(delay.group(1)) < 3600:
+                    pauses.append(datetime.now(timezone.utc) + timedelta(seconds=int(delay.group(1)) + 5))
                     quota.pause(pauses[-1])
+                else:
+                    quota.mark_exhausted()
+                _note_refusal(quota_dir, name, message)
             elif not any(marker in message for marker in TRANSIENT_MARKERS):
                 raise GeminiEvaluationError(f"Echec de l'appel Gemini : {error}") from error
             last_error = error  # overloaded or out of quota: try the next model
