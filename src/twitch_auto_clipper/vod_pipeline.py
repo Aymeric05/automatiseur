@@ -291,7 +291,8 @@ class VODAutomationPipeline:
                 return VODAutomationResult(
                     vod_id, "completed", processing, selection, message="Aucun moment avec du mouvement a l'image.",
                 )
-        if self.speaker_finder is not None:
+        # Only when a watched video speaks in one of the moments: a Gemini request saved otherwise.
+        if self.speaker_finder is not None and any(m.get("gemini_watched_media") is not False for m in selection.selected):
             try:
                 spans = self.speaker_finder(source_path, list(selection.selected), sentences)
             except Exception:  # Gemini unavailable: every word is subtitled, as before

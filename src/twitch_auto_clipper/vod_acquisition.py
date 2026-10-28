@@ -205,14 +205,15 @@ class TwitchVODAcquisitionManager:
 
         The network waits no longer for the transcription and rendering, nor these
         for the network. At most ``ahead`` VODs stay downloaded (the one being
-        processed included, not those waiting for Gemini). Returns None when there
+        processed and those waiting for Gemini included). Returns None when there
         is nothing to download.
         """
         now = self._clock()
         with self._lock:
             self._purge_locked(now)
-            # A VOD waiting for Gemini keeps its audio but no longer holds a place.
-            if sum(self._started(job) and _parse(job["next_attempt_at"]) <= now for job in self._jobs.values()) >= ahead:
+            # Every downloaded VOD holds a place, those waiting for Gemini too: when Gemini is
+            # saturated, nothing more is downloaded (the audio would only wait, or expire).
+            if sum(self._started(job) for job in self._jobs.values()) >= ahead:
                 return None
             due = sorted(
                 (*self._priority(stream_id, job), stream_id) for stream_id, job in self._jobs.items()

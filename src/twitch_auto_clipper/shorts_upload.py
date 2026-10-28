@@ -25,6 +25,9 @@ QUOTA_ERROR_REASONS = ("quotaExceeded", "uploadLimitExceeded", "dailyLimitExceed
 # YouTube allows in 24 hours) and backups, ready to go when the computer is
 # turned on before new Shorts are rendered. Worse ones are deleted at once.
 RESERVE_SIZE = 30
+# A moment is rendered only if it would rank among the best RENDER_RANK: the ones below are
+# almost always pushed out by better Shorts before being published (82 renders a day for 10).
+RENDER_RANK = 15
 # Only the best of a real choice goes out: below this many ready Shorts, wait for more
 # (an unused upload slot is not lost: it stays free until used).
 RESERVE_MIN_TO_PUBLISH = 10
@@ -34,7 +37,7 @@ RESERVE_MAX_AGE = timedelta(days=14)  # older Shorts leave the reserve
 PROFANITY_PENALTY = 10
 PUBLICATION_HOUR = timedelta(hours=1)
 # Gemini compares the reserve's Shorts side by side when it changed, at most this often.
-ARBITRATION_INTERVAL = timedelta(hours=3)
+ARBITRATION_INTERVAL = timedelta(hours=12)  # a Gemini request each time: the daily quota is small
 STATISTICS_INTERVAL = timedelta(hours=6)  # views of the published Shorts, read 4 times a day
 # Views kept at these ages (days), to compare Shorts published on different days.
 VIEW_SNAPSHOT_DAYS = (1, 3, 7)
@@ -391,12 +394,12 @@ class VODShortsUploader:
     def would_enter_reserve(
         self, moment: dict[str, Any], login: str, vod_id: str, clip_budget: int, game: str = "",
     ) -> bool:
-        """Whether a moment, once rendered, would rank among this channel's best ``RESERVE_SIZE``.
+        """Whether a moment, once rendered, would rank among this channel's best ``RENDER_RANK``.
 
         One that would be deleted right away is never rendered.
         """
         ready = self._ready_shorts()
-        if len(ready) < RESERVE_SIZE:
+        if len(ready) < RENDER_RANK:
             return True
         key = self._rank_key(ready)
         ready.sort(key=key, reverse=True)
@@ -413,7 +416,7 @@ class VODShortsUploader:
             metadata=ShortMetadata(title="", description=""),
             game=game,
         )
-        return key(candidate) > key(ready[RESERVE_SIZE - 1])
+        return key(candidate) > key(ready[RENDER_RANK - 1])
 
     def _rank_bonus(self, login: str) -> int:
         rank = self.streamer_ranks.get(login)

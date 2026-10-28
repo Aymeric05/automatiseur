@@ -260,7 +260,7 @@ class PublishNextTests(unittest.TestCase):
     def test_below_the_top_30_nothing_is_kept_nor_rendered(self):
         from twitch_auto_clipper import shorts_upload
 
-        with patch.object(shorts_upload, "RESERVE_SIZE", 2):
+        with patch.object(shorts_upload, "RESERVE_SIZE", 2), patch.object(shorts_upload, "RENDER_RANK", 2):
             self._vod("good", [90, 80])
             self._vod("weak", [40])
             uploader = VODShortsUploader(self.tmp, uploader=self._upload, publishing=False)
@@ -406,12 +406,12 @@ class PublishNextTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self._vod("c", [80])
         uploader.publish_next()
-        self.assertEqual(len(calls), 1)  # changed, but compared less than 3 hours ago
+        self.assertEqual(len(calls), 1)  # changed, but compared less than 12 hours ago
         self._vod("d", [60])
         self._vod("e", [50])
-        now[0] += timedelta(hours=3)
+        now[0] += timedelta(hours=12)
         uploader.publish_next()
-        self.assertEqual(len(calls), 2)  # changed and 3 hours later: compared again
+        self.assertEqual(len(calls), 2)  # changed and 12 hours later: compared again
 
     def test_the_first_streamers_of_the_list_win_at_a_similar_quality(self):
         self._vod("second", [80])  # list rank 2: +10

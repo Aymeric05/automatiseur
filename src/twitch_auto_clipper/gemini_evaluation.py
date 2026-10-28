@@ -59,6 +59,7 @@ EVALUATION_RESPONSE_FORMAT = {
                         "title": {"type": "string"},
                         "description": {"type": "string"},
                         "video_game": {"type": "boolean"},
+                        "watched_media": {"type": "boolean"},
                         "music": {"type": "string", "enum": ["none", *sounds.MUSIC]},
                         "sound_effect": {"type": "string", "enum": ["none", *sounds.EFFECTS]},
                     },
@@ -170,6 +171,8 @@ def _build_prompt(
         "dans le clip ; varie les formulations d'un candidat a l'autre. "
         "description est une ou deux phrases fun qui decrivent le clip et donnent envie de "
         "le regarder, avec au moins 3 emojis bien choisis (dont un au debut). "
+        "watched_media vaut true quand on entend dans le clip une video, une emission ou un "
+        "clip que le streamer regarde (d'autres voix que la sienne et celles de son entourage). "
         "video_game vaut true quand le sujet du clip est un jeu video (une partie jouee, ou un "
         "jeu, une partie ou une video de jeu regardee et commentee), false sinon. "
         f"music est l'ambiance d'une musique de fond instrumentale qui irait avec le clip "
@@ -244,6 +247,7 @@ def _parse_response(response_text: str, candidate_ids: set[str]) -> list[dict[st
                 if isinstance(description, str)
                 else "",
                 "video_game": evaluation.get("video_game") is True,
+                "watched_media": evaluation.get("watched_media") is not False,  # unknown: checked
                 # Optional too: only used by the Shorts that get sounds (see sounds.py).
                 "music": evaluation.get("music") if evaluation.get("music") in sounds.MUSIC else None,
                 "sound_effect": evaluation.get("sound_effect") if evaluation.get("sound_effect") in sounds.EFFECTS else None,
@@ -257,7 +261,8 @@ def _note_refusal(quota_dir: Path, model: str, message: str) -> None:
     path = quota_dir / "gemini_refusals.log"
     try:
         lines = path.read_text(encoding="utf-8").splitlines()[-49:] if path.exists() else []
-        lines.append(f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M} {model}: {message[:400]}")
+        details = re.findall(r"(quotaid|quotavalue|retrydelay)['\"]?\s*:\s*['\"]?([\w.-]+)", message)
+        lines.append(f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M} {model}: {details or message[:300]}")
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     except OSError:
         pass

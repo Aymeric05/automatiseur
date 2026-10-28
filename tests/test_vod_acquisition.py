@@ -155,6 +155,18 @@ class VODAcquisitionTests(unittest.TestCase):
         (self.root / "input" / "vod-a_audio.mp4").unlink()  # the worker's cleanup
         self.assertEqual(manager.prefetch(2).stream_id, "c")
 
+    def test_nothing_more_is_downloaded_while_vods_wait_for_gemini(self) -> None:
+        self.client.find_vod_for_stream.side_effect = lambda broadcaster, stream_id: vod(f"vod-{stream_id}", stream_id)
+        manager = self.manager()
+        for stream_id in ("a", "b", "c"):
+            manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(stream_id),)))
+        manager.prefetch(2)
+        manager.prefetch(2)
+        for stream_id in ("a", "b"):  # Gemini saturated: both sent back to wait
+            manager.record_automation(stream_id, f"vod-{stream_id}", "waiting_gemini",
+                                      retry_at=self.clock.now + timedelta(hours=10))
+        self.assertIsNone(manager.prefetch(2))  # their audio holds the places
+
     def test_two_workers_never_take_the_same_vod(self) -> None:
         self.client.find_vod_for_stream.side_effect = lambda broadcaster, stream_id: vod(f"vod-{stream_id}", stream_id)
         manager = self.manager()
