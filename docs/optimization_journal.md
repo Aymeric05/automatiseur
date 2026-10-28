@@ -33,6 +33,10 @@ Shorts and channels), the date seen first and last. Strengthen, weaken or remove
 evidence comes; turn a strong line into an A/B test, then into the app's default.
 
 ### LiveActions! (gaming)
+- Production (2026-10-29, Gemini bloque, donnees seules) : Shorts 25-40s quasi tout perdus (1
+  publie / 69 produits, 9 en reserve, 59 abandonnes), meme sens que le test gaming_length_v1 en
+  cours. GTA V toujours faible (3 publies / 34 rendus, coherent avec le -0.6 appris) - a surveiller
+  encore, slots de test pleins.
 - Their hits (top third, 10 channels, 96 Shorts) vs flops: titles ~40 chars, 25% with emoji;
   ours 45 chars, 76-88% with emoji. Lengths: theirs median ~74 s (long Shorts up to 3 min), ours 31 s.
   (2026-10-23)
@@ -66,6 +70,10 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   snaps every end to a sentence boundary; the crash can no longer happen.
 
 ### PeakMoments (irl)
+- Production (2026-10-29, Gemini bloque, donnees seules) : Just Chatting tire toujours l'essentiel
+  des Shorts publies (9/30) ; les Shorts <25s n'ont aucun abandon (6 publies/6 reserve/0 abandonne,
+  12 produits) - meilleur taux de reussite de toutes les longueurs, a surveiller face au test
+  irl_length_v1 (qui pousse vers plus long).
 - ohnepixel (owner's reference, Shorts at 2-14M views vs his weak ones at 60-80k, watched by
   Gemini 2026-10-27): webcam on top ~35-40%, screen under it (now the app's split layout), text
   at the seam, 1-3 big words per subtitle line, speech from the first frame, no pauses (jump
@@ -105,7 +113,14 @@ numbers, risks, how to undo) and in its daily summary. The owner answers by writ
 at the start of the line (or tells Claude); the next run applies the OK ones, drops the NON
 ones, and moves them to the entries.
 
-(none)
+- Passer l'API Gemini en tier payant (console Google AI) : 4e jour de suite ou les 6 modeles
+  (120 requetes/jour au total) sont satures avant la fin de journee - 68 VOD renvoyees en attente
+  de Gemini aujourd'hui, 7 VOD rendues/24h contre un objectif de 20+, 53 jobs abandonnes pour file
+  pleine. Deja verifie que ce n'est pas le telechargement (DOWNLOAD_SHARE) ni une erreur de code
+  (modeles pas sous leur limite, vraiment satures). Utilite : plus de VOD traitees = plus de
+  candidats = top 30 plus fort, sur les deux chaines. Risque : cout selon l'usage (a verifier sur
+  la console Google, pas consulte par la boucle). Annulation : repasser la cle API en tier gratuit
+  a tout moment, aucun changement de code necessaire.
 
 ## Changes under evaluation
 
@@ -125,6 +140,19 @@ ones, and moves them to the entries.
 | 2026-10-26 | Fix: a partial trim (end only, no start) no longer crashes the whole VOD (missing "start" key) | fewer VOD retries/losses | "erreur inattendue" / KeyError in the log | pending |
 
 ## Entries
+
+### 2026-10-29 - quota Gemini sature un 4e jour, rien a trancher
+
+- Gaming : analyse video impossible (6 modeles satures, verifie via les fichiers de quota avant
+  tout appel). Tests sous le seuil (titres A n=15/B n=13, longueur A n=15/B n=10, vods=6-7) : rien
+  a trancher, 2 slots pleins. Production (donnees seules) : Shorts 25-40s quasi tout perdus (1
+  publie/69), GTA V toujours faible (3/34) - voir Knowledge.
+- IRL : meme blocage Gemini. Tests sous le seuil (titres A n=21 vods=3/B n=8 vods=3, longueur A
+  n=13 vods=4/B n=0) : rien a trancher, 2 slots pleins. Production : Just Chatting toujours
+  dominant (9/30 publies), Shorts <25s sans aucun abandon - voir Knowledge.
+- Debit : 7 VOD/24h (objectif 20+), 40 en file, 68 renvoyees en attente de Gemini aujourd'hui - pas
+  un bug (modeles vraiment satures, pas sous leur limite). Proposition ajoutee : passer Gemini en
+  tier payant (voir "Waiting for the owner").
 
 ### 2026-10-28 - changes made in the owner's conversation (not by the loop)
 
@@ -242,15 +270,10 @@ ones, and moves them to the entries.
   sans, surtout plus anciens. Echantillon trop petit et periode differente (confondu).
 - Regle ajoutee : >= 20 Shorts par groupe ET comparer des Shorts de la meme periode.
 
-### 2026-10-23 - pas assez de nouvelles donnees
+### earlier (2026-10-23)
 
-- Gaming toujours a 66 mesures, IRL a 0 : 0 nouveau mesure depuis la derniere entree, rien a trancher.
-
-### 2026-10-23 - baseline
-
-- Gaming: 66 measured Shorts. Learned: <25 s +0.3, >40 s -0.3, chat moments +0.2,
-  cold open -0.3 (early). PeakMoments: no measured Shorts yet.
-- Competitors: 10 gaming channels (290 Shorts), 6 IRL channels (176 Shorts). Ideal length
-  from the format guide: gaming 15-45 s, IRL 15-25 s.
-- Open idea, waiting for the owner: word-by-word subtitles in the middle of the screen
-  (seen on the IRL channels that do best); it changes how the Shorts look.
+- Baseline : gaming 66 Shorts mesures (learned <25s +0.3, >40s -0.3, chat +0.2, cold open -0.3
+  tot), IRL 0 mesure. Concurrents : 10 chaines gaming (290 Shorts), 6 chaines IRL (176 Shorts),
+  longueur ideale du guide : gaming 15-45s, IRL 15-25s. Idee ouverte envoyee au proprietaire :
+  sous-titres mot-par-mot au milieu de l'ecran (vu sur les meilleures chaines IRL).
+- Puis : 0 nouvelle mesure, rien a trancher.
