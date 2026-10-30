@@ -70,7 +70,8 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   ideal_seconds.
 - Production: Dota 2 wasted two weeks running (2026-10-26: 14/17 dropped; 2026-10-27: 22/29
   dropped) but the 7-day windows overlap heavily - not independent proof yet, still watching.
-  (2026-10-28; absent from the 2026-10-30 top groups, sample too thin to update)
+  (2026-10-28; absent from the 2026-10-30 top groups, sample too thin to update) Reversed on
+  2026-10-31 (2 publies/12 reserve/6 abandonnes sur 20) - ligne cloturee, plus un probleme.
 - Gemini watch (2026-10-26, 5 hits/5 flops vs our best/worst + 3 quality-check Shorts): confirms
   immediate hook + fast cuts = hits. The 3 quality-check Shorts ALL had the same defect again
   (cut mid-word/mid-sentence) despite the 2026-10-25 fix. Real cause found (vod_pipeline.py,
@@ -79,6 +80,8 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   moment's end (no usable start), the next step crashed the whole VOD on a missing "start" key
   (log: "KeyError('start')", 3x on VOD 2907583164). Both fixed: a failed trim call now still
   snaps every end to a sentence boundary; the crash can no longer happen.
+- Production (2026-10-31, quota Gemini epuise, donnees seules) : Fortnite tres gaspille (3
+  publies/1 reserve/18 abandonnes sur 22) - un seul jour, fenetre a confirmer avant d'agir.
 
 ### PeakMoments (irl)
 - Gemini watch (2026-10-30, 5 hits/5 flops concurrents + notre meilleur/pire + 2 controle qualite) :
@@ -122,6 +125,9 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   third of 6 channels now 45 s vs bottom third 33 s vs ours 30.6 s - same direction as the
   2026-10-23 reading (28 s vs 23 s), on the 2nd free test slot. Test started: longer Shorts,
   30-50 s (irl_length_v1).
+- Production (2026-10-31, quota Gemini epuise, donnees seules) : Just Chatting toujours
+  dominant (21 publies/17 reserve/14 abandonnes), longueur >40s se tient bien (7 publies/10
+  reserve/8 abandonnes) - va dans le sens du test irl_length_v1 en cours.
 
 ## Waiting for the owner
 
@@ -158,6 +164,19 @@ ones, and moves them to the entries.
 | 2026-10-30 | Fix: when Gemini's trim answer for a moment is rejected or missing, its start is now also recalee on a sentence boundary (only the end was before) | fewer "no context at start" / early cuts | Gemini quality-check defects on our Shorts | pending |
 
 ## Entries
+
+### 2026-10-31 - quota Gemini epuise en fin de journee, rien a trancher
+
+- Gaming : quota epuise avant l'etude (5 modeles fermes par Google, flash-lite-latest a son
+  plafond du jour) - pas d'analyse video possible. Tests sous le seuil (titres A n=23 vods=11/B
+  n=17 vods=8, longueur A n=20 vods=8/B n=17 vods=9) : rien a trancher, 2 slots pleins. Production
+  (donnees seules) : Fortnite tres gaspille aujourd'hui (3/22, un seul jour) ; Dota 2 se redresse
+  et sort de la surveillance (voir Knowledge).
+- IRL : meme blocage Gemini. Tests sous le seuil (titres A n=34 vods=5/B n=9 vods=3, longueur A
+  n=19 vods=4/B n=8 vods=2) : rien a trancher, 2 slots pleins. Production : Just Chatting toujours
+  dominant, longueur >40s se tient bien - va dans le sens du test irl_length_v1 en cours.
+- App verifiee saine (aucun python.exe en trop, log sans erreur recente) ; aucun changement de
+  code ou config ce run, pas de redemarrage necessaire.
 
 ### 2026-10-30 - panne reseau (pas Gemini), vraie cause de la coupe retrouvee
 
