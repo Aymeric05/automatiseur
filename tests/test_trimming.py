@@ -27,6 +27,12 @@ class TrimTests(unittest.TestCase):
         moments = [{"start": 10.0, "end": 18.0}]
         self.assertEqual(parse_trims("not json", moments, SENTENCES), [{}])
 
+    def test_fallback_start_is_pulled_back_to_its_sentence_start(self):
+        # A moment Gemini could not answer for keeps its raw start: it must not open
+        # mid-sentence (no context) any more than it may end mid-sentence.
+        moments = [{"start": 32.0, "end": 40.0}]
+        self.assertEqual(parse_trims("not json", moments, SENTENCES), [{"start": 30.0, "end": 48.0}])
+
     def test_experiment_max_seconds_allows_longer_shorts(self):
         # gaming_length_v1 (ideal_seconds up to 90s): a 70s answer must not be
         # rejected by the default 58s cap when a higher max_seconds is passed.
@@ -38,13 +44,13 @@ class TrimTests(unittest.TestCase):
         self.assertEqual(trims[0], {"start": 10.0, "end": 78.0, "trim_reason": "long arc"})
 
 
-    def test_snap_ends_pushes_mid_sentence_ends_forward(self):
+    def test_snap_ends_pushes_mid_sentence_bounds_to_sentence_edges(self):
         # When Gemini's trim call fails outright, a moment must not keep a raw
-        # mid-sentence end: it still snaps to the next sentence boundary.
-        moments = [{"start": 30.0, "end": 40.0}, {"start": 10.0, "end": 18.0}]
+        # mid-sentence start or end: both snap to a sentence boundary.
+        moments = [{"start": 32.0, "end": 40.0}, {"start": 10.0, "end": 18.0}]
         snapped = snap_ends(moments, SENTENCES)
-        self.assertEqual(snapped[0]["end"], 48.0)
-        self.assertEqual(snapped[1], moments[1])  # already on a sentence end: untouched
+        self.assertEqual((snapped[0]["start"], snapped[0]["end"]), (30.0, 48.0))
+        self.assertEqual(snapped[1], moments[1])  # already on sentence boundaries: untouched
 
 
 if __name__ == "__main__":

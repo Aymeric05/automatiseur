@@ -91,18 +91,33 @@ def trim_moments(
     return parse_trims(text, moments, sentences, max_seconds)
 
 
-def snap_ends(moments: list[dict[str, Any]], sentences: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Each moment's ``end`` pushed forward to the next sentence end, so it never cuts mid-sentence.
+def _enclosing_start(value: float, sentences: list[dict[str, Any]]) -> float:
+    """``value`` pulled back to the start of the sentence it falls inside, else left alone."""
+    for sentence in sentences:
+        if sentence["start"] <= value < sentence["end"]:
+            return float(sentence["start"])
+    return value
 
+
+def snap_ends(moments: list[dict[str, Any]], sentences: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each moment's ``start``/``end`` snapped to a sentence boundary, so it never cuts mid-sentence.
+
+    ``end`` is pushed forward to the next sentence end, ``start`` pulled back to the start of
+    the sentence it falls inside (never later: that would drop the context already captured).
     Used when Gemini's trim could not be reached at all (quota, network): without it, a moment
-    kept its raw heuristic end, unsnapped.
+    kept its raw heuristic bounds, unsnapped.
     """
     ends = sorted(s["end"] for s in sentences)
     snapped = []
     for moment in moments:
+        start = float(moment.get("start", 0))
         end = float(moment.get("end", 0))
+        new_start = _enclosing_start(start, sentences)
         new_end = next((value for value in ends if value >= end - 0.05), end)
-        snapped.append({**moment, "end": round(new_end, 2)} if new_end != end else moment)
+        if new_start != start or new_end != end:
+            snapped.append({**moment, "start": round(new_start, 2), "end": round(new_end, 2)})
+        else:
+            snapped.append(moment)
     return snapped
 
 
@@ -123,13 +138,22 @@ def parse_trims(
     ends = sorted(s["end"] for s in sentences)
 
     def snap_fallback_ends() -> None:
+        # A moment Gemini left out or answered badly: never left at a raw, unsnapped start
+        # either (it must not open mid-sentence, without the context of its own sentence).
         for index, moment in enumerate(moments):
             if found[index] is None or found[index]:
                 continue
+            start = float(moment.get("start", 0))
             end = float(moment.get("end", 0))
-            snapped = next((value for value in ends if value >= end - 0.05), end)
-            if snapped != end:
-                found[index] = {"end": round(snapped, 2)}
+            new_start = _enclosing_start(start, sentences)
+            snapped_end = next((value for value in ends if value >= end - 0.05), end)
+            fallback: dict[str, Any] = {}
+            if new_start != start:
+                fallback["start"] = round(new_start, 2)
+            if snapped_end != end:
+                fallback["end"] = round(snapped_end, 2)
+            if fallback:
+                found[index] = fallback
 
     try:
         answers = json.loads(text).get("moments")
