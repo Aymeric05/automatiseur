@@ -82,6 +82,23 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   snaps every end to a sentence boundary; the crash can no longer happen.
 - Production (2026-10-31, quota Gemini epuise, donnees seules) : Fortnite tres gaspille (3
   publies/1 reserve/18 abandonnes sur 22) - un seul jour, fenetre a confirmer avant d'agir.
+- Gemini watch (2026-11-01, 5 hits/5 flops concurrents + notre meilleur/pire + 3 controle
+  qualite) : hits = accroche visuelle/reaction forte <3s, rythme dynamique 30-60s, chute nette ;
+  flops = pas d'accroche, contexte long/confus, duree etiree, fin plate. Notre meilleur proche
+  des hits, notre pire rejoint les flops (accroche confuse, manque de contexte). 2 des 3 Shorts
+  de controle qualite avaient un defaut (fin coupee en plein mot/son coupe net ; fin au mauvais
+  moment) - meme classe de bug que les 3 correctifs precedents (10-25/26/30) ; code revu
+  (trimming.py) sans trouver de nouvelle faille dans les chemins de secours - suspicion
+  maintenant sur la segmentation en phrases de la transcription elle-meme (hors de portee d'un
+  correctif de trim), a confirmer.
+- Verdict A/B gaming_title_style_v1 (2026-11-01, seuil atteint : A n=31/vods=13, B n=21/vods=9) :
+  retention B 66.5 vs A 64.4 (ecart trop faible), perf egal - pas clairement meilleur, test
+  retire, titres inchanges. Nuance la ligne "concurrents titres courts/peu d'emoji" ci-dessus :
+  la correlation ne se confirme pas chez nous en A/B.
+- Verdict A/B gaming_length_v1 (2026-11-01, seuil atteint : A n=26/vods=9, B n=22/vods=11) :
+  retention B 69.3 vs A 61.7 (+7.6 pts), perf egal - B (45-90s) devient le defaut du code pour
+  gaming (experiments.py DEFAULTS), test retire. Coexiste avec le poids appris negatif pour
+  length=>40s (signal different : classement predictif vs retention mesuree) - a surveiller.
 
 ### PeakMoments (irl)
 - Gemini watch (2026-10-30, 5 hits/5 flops concurrents + notre meilleur/pire + 2 controle qualite) :
@@ -128,6 +145,14 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
 - Production (2026-10-31, quota Gemini epuise, donnees seules) : Just Chatting toujours
   dominant (21 publies/17 reserve/14 abandonnes), longueur >40s se tient bien (7 publies/10
   reserve/8 abandonnes) - va dans le sens du test irl_length_v1 en cours.
+- Gemini watch (2026-11-01, 5 hits/5 flops concurrents + notre meilleur/pire + 3 controle
+  qualite) : hits = accroche choc/son fort <2s, contexte instantane (texte/visuel), 15-30s,
+  forte intensite emotionnelle, chute nette ; flops = monologues lents, pas de punchline, fin
+  monotone. Notre meilleur colle aux hits (P7Jp8979Qjo), notre pire rejoint les flops (moment
+  long et monotone). LES 3 Shorts de controle qualite avaient le meme defaut (fin coupee trop
+  tot/en plein mot) - 4e+ occurrence malgre 3 correctifs (10-25/26/30), meme constat qu'en
+  gaming aujourd'hui (voir Knowledge gaming) : suspicion sur la segmentation en phrases de la
+  transcription plutot qu'un chemin de code non corrige.
 
 ## Waiting for the owner
 
@@ -155,15 +180,30 @@ ones, and moves them to the entries.
 | 2026-10-23 | Gemini score reweighted by how well it predicts results | | gemini_weight | 0.89 on gaming (2026-10-23) |
 | 2026-10-23 | Competitor format guide (competitors.py, weekly) used in selection, bounds, hooks, titles | Shorts made like the ones that work elsewhere | retention_pct and views of Shorts made after it vs before | pending |
 | 2026-10-22 | Sharper encoding (CRF 18, Lanczos, sharpening), Twitch source quality | better-looking Shorts | retention_pct | pending |
-| 2026-10-23 | A/B gaming_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | pending (0 measured) |
-| 2026-10-23 | A/B irl_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | pending (0 measured) |
-| 2026-10-24 | A/B gaming_length_v1: longer Shorts (45-90s vs guide's 15-45s) | retention/views closer to competitor hits (median 74s) | retention_pct, views_3d of B vs A | pending (0 measured) |
+| 2026-10-23 | A/B gaming_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | **not better** (2026-11-01, B retention 66.5 vs A 64.4), removed |
+| 2026-10-23 | A/B irl_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | pending (B n=17 vods=6, under threshold) |
+| 2026-10-24 | A/B gaming_length_v1: longer Shorts (45-90s vs guide's 15-45s) | retention/views closer to competitor hits (median 74s) | retention_pct, views_3d of B vs A | **B wins** (2026-11-01, retention 69.3 vs 61.7) - now default (experiments.py DEFAULTS), removed |
 | 2026-10-26 | A/B irl_length_v1: longer Shorts (30-50s vs guide's 15-25s) | retention/views closer to competitor hits (top third 45s) | retention_pct, views_3d of B vs A | pending (0 measured) |
 | 2026-10-26 | Fix: a failed Gemini trim call (quota/network) still snaps every moment's end to a sentence boundary, instead of keeping the raw un-snapped end | fewer mid-word/mid-sentence cuts | Gemini quality-check defects on our Shorts | pending |
 | 2026-10-26 | Fix: a partial trim (end only, no start) no longer crashes the whole VOD (missing "start" key) | fewer VOD retries/losses | "erreur inattendue" / KeyError in the log | pending |
 | 2026-10-30 | Fix: when Gemini's trim answer for a moment is rejected or missing, its start is now also recalee on a sentence boundary (only the end was before) | fewer "no context at start" / early cuts | Gemini quality-check defects on our Shorts | pending |
 
 ## Entries
+
+### 2026-11-01 - 2 verdicts gaming (Shorts longs adoptes), bug de coupe toujours non resolu
+
+- Gaming : Gemini a revu 5 hits/5 flops concurrents + notre meilleur/pire + 3 Shorts recents
+  (voir Knowledge - 2 defauts de coupe, meme classe que les correctifs precedents, cause encore
+  non trouvee). 2 tests au seuil : gaming_title_style_v1 pas clairement meilleur (retire,
+  titres inchanges) ; gaming_length_v1 gagne nettement en retention (B 69.3 vs A 61.7) -
+  devient le defaut (45-90s, experiments.py). 2 emplacements de test libres, aucune piste assez
+  forte pour l'instant. Gemini loin d'etre sature aujourd'hui (7 appels sur 120 possibles) -
+  contrairement aux jours precedents, le debit n'est pas bloque par Gemini.
+- IRL : memes verifications ; les 3 Shorts de controle qualite ont TOUS le meme defaut de coupe
+  trop tot que gaming (voir Knowledge). Tests irl_title_style_v1 et irl_length_v1 toujours sous
+  le seuil (vods<6 cote B). Pas de nouveau test.
+- App verifiee saine (log sans trace d'erreur fatale) ; code change (experiments.py,
+  config/experiments.json), tests ok (345 passed), commit + push + redemarrage.
 
 ### 2026-10-31 - quota Gemini epuise en fin de journee, rien a trancher
 
@@ -270,46 +310,16 @@ ones, and moves them to the entries.
   file pleine, 14 pour trop ancien. Meme goulot deja remonte au proprietaire (etape chat ->
   selection Gemini) ; proposition de paralleliser toujours en attente.
 
-### 2026-10-25 - bug de coupe recidive sur gaming_length_v1
+### earlier (2026-10-23 to 2026-10-25)
 
-- Gaming : Gemini a revu 5 hits/5 flops concurrents + nos 2 extremes + 3 Shorts recents : confirme
-  accroche immediate + contexte rapide + montage nerveux. 2 Shorts sur 3 recents avaient un defaut
-  (fin coupee en plein mot, debut sans contexte). Cause trouvee : le plafond fixe de 58s dans
-  trimming.py rejetait les bornes plus longues de Gemini pour le test gaming_length_v1 (ideal
-  45-90s), et retombait sur l'ancienne fin non recalee. Corrige (le plafond suit maintenant
-  ideal_seconds du test) + teste. Tests titres et longueur toujours a 0 mesure.
-- IRL : memes verifications, aucun defaut sur les 3 Shorts recents. Production : Just Chatting
-  tire l'essentiel des Shorts publies (14/34), Fortnite surtout abandonne (1/8) mais echantillon
-  trop petit. Pas de nouveau test.
-- Debit : toujours 6 VOD rendues en 24h (objectif 20+), 40 en file, 61 abandonnees pour file
-  pleine, 18 pour trop ancien. Meme goulot qu'avant (etape chat -> selection Gemini, pas le
-  telechargement) ; proposition de paralleliser toujours en attente du proprietaire.
-
-### 2026-10-24 - modele Gemini mort + debit en panne
-
-- Gaming : Gemini a revu nos 3 Shorts recents (aucun defaut, la correction d'hier tient) et nos 2
-  extremes vs 5 hits/5 flops concurrents (confirme accroche immediate + montage nerveux). Test
-  lance : Shorts plus longs 45-90s (gaming_length_v1), vu l'ecart avec les chaines de clips
-  (mediane 74s, jusqu'a 3 min). Tests titres toujours a 0 mesure, prochain point apres mesures.
-- IRL : memes verifications (3 Shorts recents sans defaut, confirmations accroche/rythme) ; pas de
-  nouveau test, aucune ligne assez forte. Test titres toujours a 0 mesure.
-- Bug corrige (gemini_evaluation.py) : gemini-2.5-flash renvoie 404 pour tout le monde depuis peu
-  et cette erreur n'etait pas traitee comme transitoire -> l'appel Gemini s'arretait net au lieu
-  d'essayer le modele suivant (erreurs NOT_FOUND/UNAVAILABLE du log). Modele retire de la liste de
-  secours. Aussi corrige : scripts/optimization_report.py plantait sur les titres avec emoji.
-  Commit + redemarrage app.
-- Debit : seulement 5 VOD rendues en 24h (objectif ~20+), 53 jobs en file, 69 abandonnees pour
-  file pleine. Pas un probleme de telechargement (audio+transcript prets en ~5 min) : ~3h25
-  d'ecart observe entre le chat et la selection Gemini sur une VOD. Proposition envoyee au
-  proprietaire (paralleliser le traitement des VOD) : voir "Waiting for the owner".
-
-### earlier (2026-10-23)
-
-- Baseline : gaming 66 Shorts mesures (learned <25s +0.3, >40s -0.3, chat +0.2, cold open -0.3
-  tot), IRL 0 mesure. Concurrents : 10 chaines gaming (290 Shorts), 6 chaines IRL (176 Shorts),
-  longueur ideale du guide : gaming 15-45s, IRL 15-25s. Tests titres lances sur les deux chaines
-  (gaming_title_style_v1, irl_title_style_v1) apres un premier Gemini watch (accroche immediate +
-  montage nerveux = hits ; 1 Short gaming sur 3 coupe en plein mot). Regle ajoutee : >= 20 Shorts
-  par groupe ET meme periode pour comparer (evite un biais vu sur le cold open).
-- Bug corrige (trimming.py) : fin heuristique jamais recalee sur une vraie fin de phrase quand
-  Gemini ne renvoyait rien d'utilisable -> coupe en plein mot. Corrige (recalage systematique).
+- Baseline (10-23) : gaming 66 Shorts mesures (learned <25s +0.3, >40s -0.3, chat +0.2, cold
+  open -0.3 tot), IRL 0 mesure ; 10 chaines gaming (290 Shorts), 6 chaines IRL (176 Shorts) ;
+  longueur ideale du guide gaming 15-45s, IRL 15-25s. Tests titres lances sur les deux chaines
+  apres un premier Gemini watch (accroche immediate + montage nerveux = hits). Regle ajoutee :
+  >= 20 Shorts par groupe ET meme periode pour comparer.
+  Test gaming_length_v1 lance le 10-24 (longueur 45-90s, vu l'ecart avec les chaines de clips :
+  mediane 74s). Trois bugs de coupe en plein mot trouves et corriges ces jours-la (trimming.py :
+  fin heuristique jamais recalee sans reponse Gemini ; plafond 58s qui rejetait les bornes du
+  test gaming_length_v1) ; gemini-2.5-flash (404 permanent) retire de la liste de secours.
+- Debit : 5-6 VOD rendues/24h (objectif 20+) ces jours-la, 40-53 en file, 60-70 abandonnees pour
+  file pleine - goulot (chat -> selection Gemini) deja remonte au proprietaire (paralleliser).

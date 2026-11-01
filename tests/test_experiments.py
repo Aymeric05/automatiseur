@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from twitch_auto_clipper.experiments import for_vod, rules_text, variant
+from twitch_auto_clipper.experiments import DEFAULTS, for_vod, rules_text, variant
 
 
 class ExperimentTests(unittest.TestCase):
@@ -25,6 +25,15 @@ class ExperimentTests(unittest.TestCase):
             self.assertEqual(for_vod("1", "irl", Path(directory) / "missing.json"), ({}, {}))
         self.assertIn("Titles under 35", rules_text(["Titles under 35 characters."]))
         self.assertEqual(rules_text([]), "")
+
+    def test_a_channel_default_from_a_concluded_test_applies_even_without_a_running_test(self):
+        # gaming_length_v1 concluded (2026-11-01): longer Shorts are now the gaming default.
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "missing.json"
+            variants, settings = for_vod("1", "gaming", config)
+            self.assertEqual(variants, {})
+            self.assertEqual(settings, DEFAULTS["gaming"])
+            self.assertEqual(for_vod("1", "irl", config), ({}, {}))  # no default for irl
 
 
 if __name__ == "__main__":

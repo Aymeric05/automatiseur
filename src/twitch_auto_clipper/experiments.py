@@ -22,6 +22,13 @@ from typing import Any
 
 CONFIG = Path(__file__).resolve().parents[2] / "config" / "experiments.json"
 
+# Permanent settings adopted from a concluded A/B test's winning "b" (see optimization_journal.md).
+DEFAULTS: dict[str, dict[str, Any]] = {
+    # gaming_length_v1 (2026-10-24 to 2026-11-01): longer Shorts retained clearly better
+    # (69.3% vs 61.7%, perf tied) once both variants reached 20+ measured Shorts.
+    "gaming": {"ideal_seconds": [45, 90]},
+}
+
 
 def running(channel: str, path: Path = CONFIG) -> list[dict[str, Any]]:
     try:
@@ -37,7 +44,7 @@ def variant(test_id: str, vod_id: str) -> str:
 
 def for_vod(vod_id: str, channel: str, path: Path = CONFIG) -> tuple[dict[str, str], dict[str, Any]]:
     """This VOD's variant in each running test of the channel, and the settings of its "B" tests."""
-    variants, settings = {}, {}
+    variants, settings = {}, dict(DEFAULTS.get(channel, {}))
     for test in running(channel, path):
         variants[test["id"]] = variant(test["id"], vod_id)
         if variants[test["id"]] == "B":
