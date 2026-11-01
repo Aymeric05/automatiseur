@@ -99,6 +99,17 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   retention B 69.3 vs A 61.7 (+7.6 pts), perf egal - B (45-90s) devient le defaut du code pour
   gaming (experiments.py DEFAULTS), test retire. Coexiste avec le poids appris negatif pour
   length=>40s (signal different : classement predictif vs retention mesuree) - a surveiller.
+- Gemini watch (2026-11-01 soir, quota quasi epuise - seul flash-lite-latest disponible) : 5
+  flops concurrents (aucun hit non-vu disponible) + notre meilleur/pire + 3 controle qualite :
+  flops = debut calme, plan fixe long, sujet sans impact visuel immediat ; notre meilleur
+  (d_epm9yXRAE) colle au patron des hits deja connus (suspense immediat, chute nette), notre pire
+  (gXkhw-Aatls) demarre lentement comme les flops. AUCUN defaut sur les 3 Shorts de controle
+  qualite - 1ere fois depuis le 25/10 (4 runs avec defaut avant) ; a confirmer un 2e jour avant de
+  clore la piste "segmentation de la transcription" suspectee le 11-01.
+- Production (2026-11-01 soir, meme jour que l'adoption du defaut 45-90s) : len=<25s publie bien
+  (6pub/3res/15drop) et Grand Theft Auto V aussi (7pub/4res/15drop), ce qui va a l'encontre du
+  defaut tout juste adopte - un seul jour juste apres le changement (les Shorts en cours de
+  pipeline suivent encore l'ancien reglage), pas une preuve independante, a resurveiller demain.
 
 ### PeakMoments (irl)
 - Gemini watch (2026-10-30, 5 hits/5 flops concurrents + notre meilleur/pire + 2 controle qualite) :
@@ -153,6 +164,10 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   tot/en plein mot) - 4e+ occurrence malgre 3 correctifs (10-25/26/30), meme constat qu'en
   gaming aujourd'hui (voir Knowledge gaming) : suspicion sur la segmentation en phrases de la
   transcription plutot qu'un chemin de code non corrige.
+- Gemini watch (2026-11-01 soir) : impossible, le quota du jour s'est epuise pendant l'appel
+  gaming (seul flash-lite-latest restait, un seul appel) - aucune analyse video IRL ce run.
+  Verdicts A/B : irl_title_style_v1 toujours sous le seuil (B n=17/vods=6, <20 mesures) ;
+  irl_length_v1 toujours sous le seuil (A vods=5, <6 VOD) - rien a trancher, 2 slots pleins.
 
 ## Waiting for the owner
 
@@ -189,6 +204,20 @@ ones, and moves them to the entries.
 | 2026-10-30 | Fix: when Gemini's trim answer for a moment is rejected or missing, its start is now also recalee on a sentence boundary (only the end was before) | fewer "no context at start" / early cuts | Gemini quality-check defects on our Shorts | pending |
 
 ## Entries
+
+### 2026-11-02 - quota Gemini epuise apres 1 seul appel, aucun defaut gaming pour la 1ere fois
+
+- Gaming : 1 seul appel Gemini possible (quota quasi a sec, flash-lite-latest seul dispo) - 5
+  flops concurrents (pas de hit non-vu) + notre meilleur/pire + 3 controle qualite. AUCUN defaut
+  de coupe cette fois (voir Knowledge), a confirmer demain. 2 emplacements de test libres, aucune
+  piste assez forte (production du jour contredit juste le defaut 45-90s tout juste adopte,
+  normal 1 jour apres le changement). Rien a coder.
+- IRL : quota epuise avant l'etude IRL (consomme par l'appel gaming) - aucune analyse video.
+  irl_title_style_v1 et irl_length_v1 toujours sous le seuil (vods/mesures insuffisants). Pas de
+  nouveau test.
+- Debit : 12 VOD/24h (objectif 20+), 0 VOD renvoyee en attente de Gemini aujourd'hui (pas le
+  goulot cette fois) ; abandons surtout "trop ancien" (17) et file pleine (11). Proposition Gemini
+  payant toujours en attente de l'accord du proprietaire. Aucun changement de code/config ce run.
 
 ### 2026-11-01 - 2 verdicts gaming (Shorts longs adoptes), bug de coupe toujours non resolu
 
