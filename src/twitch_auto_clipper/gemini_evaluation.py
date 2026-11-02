@@ -18,10 +18,11 @@ GEMINI_TIMEOUT_MS = 300_000
 # requests: these models are tried next, each with its own free quota (20 a day),
 # full flash models first, the lighter "lite" one last. One without a free quota
 # is refused by Google and skipped for the day.
-GEMINI_FALLBACK_MODELS = (
-    "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-flash-latest",
-    "gemini-flash-lite-latest",
-)
+GEMINI_FALLBACK_MODELS = ("gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-flash-latest")
+# The light model has its own daily quota: framing, speakers and the reserve comparison use it
+# alone, so they never take the main models' requests from the selection and the trimming
+# (where each Short starts and ends: the priority).
+LIGHT_MODEL = "gemini-flash-lite-latest"
 TRANSIENT_MARKERS = ("503", "500", "unavailable", "internal", "deadline", "high demand")
 HOOK_MAX_LENGTH = 80
 TITLE_MAX_LENGTH = 90

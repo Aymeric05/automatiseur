@@ -17,7 +17,7 @@ import urllib.request
 from .audio_events import detect_emotions
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
-from .competitors import refresh_competitors, study_formats
+from .competitors import refresh_competitors
 from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus, scene_cuts, still_share
 from .speakers import media_speech
 from . import tiktok
@@ -25,8 +25,7 @@ from .transcription import transcribe_video
 from .trimming import trim_moments
 from .streamer_lists import load_streamer_list, load_top_streamers
 from .gemini_evaluation import (
-    GEMINI_FALLBACK_MODELS,
-    _generate_json,
+    LIGHT_MODEL,
     GeminiEvaluationError,
     load_json,
     rank_reserve,
@@ -734,7 +733,8 @@ def main() -> int:
                         token_path=analytics_token_path,
                     ) if publishing else None,
                     arbiter=partial(
-                        rank_reserve, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini
+                        rank_reserve, model=LIGHT_MODEL, quota_dir=output_dir, daily_limit=daily_gemini,
+                        fallback_models=(),
                     ) if publishing else None,
                     channel=channel,
                     after_upload=after_upload,
@@ -793,7 +793,7 @@ def main() -> int:
             scene_finder=scene_cuts,  # each shot of a Short framed on its own
             still_checker=still_share,  # a frozen picture (menu, still image) never makes a Short
             # Subtitles of the streamer and the people with them only, not of a watched video.
-            speaker_finder=partial(media_speech, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini),
+            speaker_finder=partial(media_speech, model=LIGHT_MODEL, quota_dir=output_dir, daily_limit=daily_gemini),
             # Gemini picks where each Short starts (the context) and ends (the punchline).
             moment_trimmer=partial(trim_moments, model=args.gemini_model, quota_dir=output_dir, daily_limit=daily_gemini),
             # A moment that would be pushed out of its channel's reserve right away is never rendered.
@@ -827,14 +827,6 @@ def main() -> int:
                 competitors = f"Chaines de clips non analysees : {error!r}"
             if competitors:
                 report(competitors)
-            try:  # once a week: Gemini watches their best and worst Shorts (how they are made)
-                guide = study_formats(output_dir, lambda contents, schema: _generate_json(
-                    contents, schema, args.gemini_model, output_dir, daily_gemini, GEMINI_FALLBACK_MODELS
-                ))
-            except Exception as error:
-                guide = f"Guide de fabrication non mis a jour : {error!r}"
-            if guide:
-                report(guide)
             succeeded = True
             for uploader in uploaders:
                 label = f"[{uploader.channel}] "

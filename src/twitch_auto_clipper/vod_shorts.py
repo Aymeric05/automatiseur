@@ -91,6 +91,7 @@ class VODShortResult:
     channel: str = "gaming"  # the YouTube channel it goes to: "gaming" or "irl"
     experiments: dict[str, str] | None = None  # A/B test variants of its VOD (see experiments.py)
     bounds: str = "heuristic"  # "gemini" when Gemini picked its start and end (trimming.py)
+    spoken: str | None = None  # what is said in it: the loop checks it starts and ends with its subject
 
     @property
     def key(self) -> str:
@@ -331,6 +332,15 @@ def _build_cold_open_command(
     ]
 
 
+def _spoken(segments: list[dict[str, Any]] | None, start: float, end: float) -> str:
+    """The words said between ``start`` and ``end`` (at most 1500 characters)."""
+    words = [
+        str(word.get("word", "")).strip() for segment in segments or [] for word in segment.get("words") or []
+        if start <= float(word.get("start", -1)) < end
+    ]
+    return " ".join(word for word in words if word)[:1500]
+
+
 def _is_valid_output(path: Path) -> bool:
     """Return True when a non-empty output file already exists."""
     try:
@@ -568,7 +578,7 @@ class VODShortsGenerator:
 
         return result(
             "generated", start, end, subtitles=subtitles_path is not None, warning=warning,
-            muted=bool(mute), cold_open=teaser is not None,
+            muted=bool(mute), cold_open=teaser is not None, spoken=_spoken(segments, start, end),
         )
 
     @classmethod
@@ -725,6 +735,8 @@ class VODShortsGenerator:
                     "channel": short.channel,
                     "experiments": short.experiments,
                     "bounds": short.bounds,
+                    "spoken": short.spoken if short.status == "generated"
+                    else (existing.get(short.key) or {}).get("spoken"),
                     "cold_open": short.cold_open if short.status == "generated"
                     else bool((existing.get(short.key) or {}).get("cold_open")),
                     "rendered_at": (existing.get(short.key) or {}).get("rendered_at")

@@ -14,7 +14,7 @@ from typing import Any
 
 from .gemini_evaluation import GEMINI_FALLBACK_MODELS, _generate_json
 
-WINDOW_SECONDS = 35.0  # sentences shown before and after each moment
+WINDOW_SECONDS = 45.0  # sentences shown before and after each moment (enough to reach the conclusion)
 MIN_SECONDS = 15.0
 MAX_SECONDS = 58.0  # a Short stays under a minute, cold open included
 TRIM_SCHEMA = {
@@ -51,7 +51,7 @@ def trim_moments(
 ) -> list[dict[str, Any] | None]:
     """Per moment, its new ``start``/``end`` (and ``trim_reason``), or None when Gemini finds
     it cannot be understood alone. One request for all the moments of a VOD. ``guide``: how
-    the Shorts that work on the big clip channels are made (see competitors.study_formats)."""
+    the Shorts that work on the big clip channels are made (format_guide.json, written by the daily optimization loop)."""
     guide = guide or {}
     low, high = guide.get("ideal_seconds") or (MIN_SECONDS, MAX_SECONDS)
     max_seconds = max(MAX_SECONDS, high)  # an experiment's ideal_seconds may ask for longer Shorts
@@ -74,15 +74,18 @@ def trim_moments(
         + "Chaque moment ci-dessous deviendra un YouTube Short. sentences liste les phrases "
         "dites autour du moment, [debut, fin, texte] en secondes. Pour chaque moment, choisis "
         "start (le debut d'une phrase de la liste) et end (la fin d'une phrase de la liste) pour "
-        "que le Short se comprenne seul et soit satisfaisant : il commence juste assez tot pour "
-        "donner le contexte (ce qui declenche la situation, la question posee, le debut de "
-        "l'histoire), sans longue introduction inutile, et il finit sur la chute, la reponse ou la "
-        f"fin de la reaction, jamais au milieu d'une phrase ni d'une histoire. Duree entre "
-        f"{MIN_SECONDS:.0f} et {max_seconds:.0f} secondes, le plus court possible tant que c'est "
-        f"complet, idealement entre {low:.0f} et {high:.0f} secondes. "
+        "que le Short raconte un sujet complet. Priorite absolue : il commence au debut du sujet "
+        "(ce qui declenche la situation, la question posee, le debut de l'histoire), sans longue "
+        "introduction inutile, et il ne s'arrete qu'une fois le sujet conclu : la reponse a la "
+        "question, la chute de l'histoire, le resultat de l'action et la reaction qui suit. Lis "
+        "les phrases qui suivent le moment pour trouver cette conclusion : si le sujet continue, "
+        "end va plus loin. Jamais au milieu d'une phrase, d'une explication ou d'une histoire. "
+        f"Duree entre {MIN_SECONDS:.0f} et {max_seconds:.0f} secondes, idealement entre {low:.0f} "
+        f"et {high:.0f} secondes, mais un Short complet passe toujours avant un Short court. "
         + "".join(f"Regle observee sur les Shorts qui marchent : {rule} " for rule in guide.get("rules", []))
         + "complete vaut false si, meme avec les meilleures bornes, le moment ne se "
-        "comprend pas sans le reste du live ou n'a pas de vraie chute. reason explique en une "
+        "comprend pas sans le reste du live, n'a pas de vraie chute, ou si sa conclusion arrive "
+        f"au-dela de {max_seconds:.0f} secondes. reason explique en une "
         'phrase courte. Retourne un JSON {"moments":[{"id":"m1","start":0,"end":0,'
         '"complete":true,"reason":"..."}]} avec exactement les id fournis.\n\n'
         + json.dumps(context, ensure_ascii=False)

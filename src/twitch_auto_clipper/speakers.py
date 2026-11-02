@@ -13,7 +13,7 @@ from pathlib import Path
 import subprocess
 from typing import Any
 
-from .gemini_evaluation import GEMINI_FALLBACK_MODELS, _generate_json
+from .gemini_evaluation import _generate_json
 
 MARGIN_SECONDS = 2.0  # audio heard before and after the moment (the Short's render margins)
 AUDIO_BITRATE = "48k"  # mono MP3: about 6 KB a second, 20 moments fit in one request
@@ -56,7 +56,7 @@ def media_speech(
     model: str,
     quota_dir: Path | None = None,
     daily_limit: int = 20,
-    fallback_models: tuple[str, ...] = GEMINI_FALLBACK_MODELS,
+    fallback_models: tuple[str, ...] = (),  # the light model only (see gemini_evaluation.LIGHT_MODEL)
 ) -> list[list[list[float]]]:
     """Per moment, the spans [start, end] (live seconds) said by a watched video or game."""
     from google.genai import types

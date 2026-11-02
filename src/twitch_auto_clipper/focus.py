@@ -14,10 +14,10 @@ from pathlib import Path
 import subprocess
 from typing import Any
 
-from .gemini_evaluation import GEMINI_FALLBACK_MODELS, _generate_json
+from .gemini_evaluation import LIGHT_MODEL, _generate_json
 from .twitch import resolve_twitch_video_url
 
-FOCUS_MODEL = "gemini-flash-lite-latest"  # spares the main model's quota for the selections
+FOCUS_MODEL = LIGHT_MODEL  # spares the main models' quota for the selections and the trimming
 FRAME_HEIGHT = 360  # low-res rendition: a few MB for all the frames of a VOD
 FRAME_SIZE = "480:270"
 MAX_FACECAM_WIDTH = 0.45  # wider than this share of the stream, it is no webcam overlay
@@ -92,7 +92,7 @@ def find_focus(
     model: str = FOCUS_MODEL,
     quota_dir: Path | None = None,
     daily_limit: int = 20,
-    fallback_models: tuple[str, ...] = GEMINI_FALLBACK_MODELS,
+    fallback_models: tuple[str, ...] = (),  # the light model only (see gemini_evaluation.LIGHT_MODEL)
 ) -> list[dict[str, Any]]:
     """What each time of the VOD shows, in one request (see ``parse_focus``)."""
     from google.genai import types

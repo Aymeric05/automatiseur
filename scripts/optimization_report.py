@@ -173,3 +173,18 @@ waiting = sum("Gemini indisponible" in line for line in lines)
 print("gemini today: " + ", ".join(f"{name} {q.get('used')}{' CLOSED' if q.get('exhausted') else ''}{' paused' if q.get('paused_until') else ''}"
                                    for name, q in sorted(gemini.items()) if q.get("day") == max(v.get("day", "") for v in gemini.values()))
       + f" | VODs sent back to wait for Gemini (log): {waiting}")
+
+# Coherence check (read by Claude in the loop): does each recent Short start with its subject
+# and end once it is concluded? Its first and last words, from the manifests.
+print("\n## coherence: first / last words of the last rendered Shorts")
+rendered = []
+for manifest in OUTPUT.glob("*_processing.json"):
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    for short in (data.get("generated_shorts") or {}).values():
+        if short.get("spoken") and short.get("rendered_at"):
+            rendered.append((short["rendered_at"], short.get("channel") or "gaming", short))
+for channel in ("gaming", "irl"):
+    for _, _, short in sorted((r for r in rendered if r[1] == channel), key=lambda r: r[0])[-4:]:
+        words = short["spoken"].split()
+        print(f"{channel} {short['file'][:30]} ({round(short['end'] - short['start'])} s) | "
+              f"START: {' '.join(words[:18])} ... END: {' '.join(words[-28:])}")

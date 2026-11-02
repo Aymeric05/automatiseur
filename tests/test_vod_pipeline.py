@@ -125,6 +125,7 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertEqual([short["bounds"] for short in self._manifest()["generated_shorts"].values()], ["gemini"])
         self.assertIn("entonnoir : 2 retenus, 1 complets", result.message)
         self.assertTrue(all(short["rendered_at"] for short in self._manifest()["generated_shorts"].values()))
+        self.assertTrue(all(short["spoken"] for short in self._manifest()["generated_shorts"].values()))  # its words, for the loop
 
     def test_trim_with_only_a_fallback_end_does_not_crash(self):
         # A moment Gemini's trim call only partially fixed (end snapped to a sentence
