@@ -33,6 +33,9 @@ Shorts and channels), the date seen first and last. Strengthen, weaken or remove
 evidence comes; turn a strong line into an A/B test, then into the app's default.
 
 ### LiveActions! (gaming)
+- Coherence (2026-11-03) : 4 derniers Shorts verifies, tous concluent proprement (chute/reaction
+  avant la fin) - le trimming "sujet complet" du 11-02 tient bien cote gaming. Dota 2 toujours tres
+  gaspille (0 publie/5 reserve/27 abandonnes) - memes causes que precedemment, aucune piste neuve.
 - Fix (2026-11-02, hors boucle, commit dfdf63e) : trimming reecrit pour demarrer et finir sur un
   sujet complet (debut du declencheur, fin apres reponse/chute/reaction), avec 45s de phrases
   visibles apres le moment - repond directement a la suspicion de segmentation du 11-01. Chaque
@@ -122,6 +125,22 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   pipeline suivent encore l'ancien reglage), pas une preuve independante, a resurveiller demain.
 
 ### PeakMoments (irl)
+- Bug trouve et corrige (2026-11-03) : 2 des 3 derniers Shorts (coherence du rapport) se coupent
+  en plein mot/pensee ("...I was becoming like", "...Some") malgre le trimming "sujet complet" du
+  11-02 - 6e occurrence de ce defaut depuis le 10-25 malgre 3 correctifs trim deja faits. Cause
+  reelle trouvee dans split_sentences (highlights.py) : une phrase sans ponctuation finale
+  (hesitation, silence qui traine en plein milieu d'une idee) coupait une nouvelle "phrase" des
+  qu'une pause depassait 1.5s, meme si le locuteur n'avait pas fini sa pensee - le trim/Gemini
+  s'arrete alors sur cette fausse frontiere. Corrige (SENTENCE_JOIN_GAP reste 1.5s pour une phrase
+  deja ponctuee, mais une phrase inachevee tolere une pause jusqu'a 4s) + teste. A confirmer sur le
+  controle qualite de demain.
+- Verdicts A/B (2026-11-03, seuil atteint pour les deux) : irl_title_style_v1 (A n=42/vods=7,
+  retention 64.2 ; B n=24/vods=8, retention 43.9) et irl_length_v1 (A n=27/vods=7, retention 53.0,
+  perf 0.3 ; B n=23/vods=6, retention 53.7, perf 0.0) - aucun des deux B pas clairement meilleur,
+  tests retires, reglages A inchanges. 2 emplacements de test liberes.
+- Nouveau test (2026-11-03) : irl_dialogue_v1 - favorise un moment avec dialogue/invite et chute
+  claire, evite le solo silencieux, d'apres la ligne ohnepixel du 2026-10-27 (ses Shorts a 2-14M
+  vues vs 60-80k pour les faibles) jamais testee jusqu'ici, slot desormais libre.
 - Fix (2026-11-02, hors boucle, commit dfdf63e) : meme reecriture du trimming que gaming
   (debut/fin sur sujet complet) ; a verifier au prochain run des que des Shorts avec le champ
   "spoken" seront rendus.
@@ -189,14 +208,14 @@ numbers, risks, how to undo) and in its daily summary. The owner answers by writ
 at the start of the line (or tells Claude); the next run applies the OK ones, drops the NON
 ones, and moves them to the entries.
 
-- Passer l'API Gemini en tier payant (console Google AI) : 4e jour de suite ou les 6 modeles
-  (120 requetes/jour au total) sont satures avant la fin de journee - 68 VOD renvoyees en attente
-  de Gemini aujourd'hui, 7 VOD rendues/24h contre un objectif de 20+, 53 jobs abandonnes pour file
-  pleine. Deja verifie que ce n'est pas le telechargement (DOWNLOAD_SHARE) ni une erreur de code
-  (modeles pas sous leur limite, vraiment satures). Utilite : plus de VOD traitees = plus de
-  candidats = top 30 plus fort, sur les deux chaines. Risque : cout selon l'usage (a verifier sur
-  la console Google, pas consulte par la boucle). Annulation : repasser la cle API en tier gratuit
-  a tout moment, aucun changement de code necessaire.
+- Passer l'API Gemini en tier payant (console Google AI) : 5e jour de suite ou les modeles flash
+  sont satures avant la fin de journee - aujourd'hui 20 VOD renvoyees en attente de Gemini, 5 VOD
+  rendues/24h contre un objectif de 20+, 49 jobs abandonnes pour file pleine. Deja verifie que ce
+  n'est pas le telechargement (DOWNLOAD_SHARE) ni une erreur de code (modeles pas sous leur
+  limite, vraiment satures). Utilite : plus de VOD traitees = plus de candidats = top 30 plus
+  fort, sur les deux chaines. Risque : cout selon l'usage (a verifier sur la console Google, pas
+  consulte par la boucle). Annulation : repasser la cle API en tier gratuit a tout moment, aucun
+  changement de code necessaire.
 
 ## Changes under evaluation
 
@@ -209,15 +228,33 @@ ones, and moves them to the entries.
 | 2026-10-23 | Competitor format guide (competitors.py, weekly) used in selection, bounds, hooks, titles | Shorts made like the ones that work elsewhere | retention_pct and views of Shorts made after it vs before | pending |
 | 2026-10-22 | Sharper encoding (CRF 18, Lanczos, sharpening), Twitch source quality | better-looking Shorts | retention_pct | pending |
 | 2026-10-23 | A/B gaming_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | **not better** (2026-11-01, B retention 66.5 vs A 64.4), removed |
-| 2026-10-23 | A/B irl_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | pending (B n=17 vods=6, under threshold) |
+| 2026-10-23 | A/B irl_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | **not better** (2026-11-03, A retention 64.2 vs B 43.9), removed |
 | 2026-10-24 | A/B gaming_length_v1: longer Shorts (45-90s vs guide's 15-45s) | retention/views closer to competitor hits (median 74s) | retention_pct, views_3d of B vs A | **B wins** (2026-11-01, retention 69.3 vs 61.7) - now default (experiments.py DEFAULTS), removed |
-| 2026-10-26 | A/B irl_length_v1: longer Shorts (30-50s vs guide's 15-25s) | retention/views closer to competitor hits (top third 45s) | retention_pct, views_3d of B vs A | pending (0 measured) |
+| 2026-10-26 | A/B irl_length_v1: longer Shorts (30-50s vs guide's 15-25s) | retention/views closer to competitor hits (top third 45s) | retention_pct, views_3d of B vs A | **not better** (2026-11-03, A retention 53.0 vs B 53.7, perf A 0.3 vs B 0.0), removed |
+| 2026-11-03 | A/B irl_dialogue_v1: favorise dialogue/invite avec chute claire, evite le solo silencieux (ohnepixel) | retention/views plus proches des hits | retention_pct, views_3d of B vs A | pending (0 measured) |
+| 2026-11-03 | Fix (highlights.py): une phrase sans ponctuation finale (hesitation, silence qui traine) peut maintenant se continuer au-dela d'une pause de 1.5s (jusqu'a 4s) au lieu de se couper en phrase separee | moins de Shorts coupes en plein mot/pensee (irl, 2 des 3 derniers controle qualite) | coherence du rapport (debut/fin), controle qualite | pending |
 | 2026-10-26 | Fix: a failed Gemini trim call (quota/network) still snaps every moment's end to a sentence boundary, instead of keeping the raw un-snapped end | fewer mid-word/mid-sentence cuts | Gemini quality-check defects on our Shorts | pending |
 | 2026-10-26 | Fix: a partial trim (end only, no start) no longer crashes the whole VOD (missing "start" key) | fewer VOD retries/losses | "erreur inattendue" / KeyError in the log | pending |
 | 2026-10-30 | Fix: when Gemini's trim answer for a moment is rejected or missing, its start is now also recalee on a sentence boundary (only the end was before) | fewer "no context at start" / early cuts | Gemini quality-check defects on our Shorts | pending |
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-03 - bug de coupe en plein mot/pensee enfin identifie (irl), 2 verdicts A/B irl + nouveau test
+
+- Gaming : 4 derniers Shorts tous coherents (debut/fin propres) - le trimming "sujet complet" du
+  11-02 tient. Dota 2 toujours gaspille (0/5/27), aucune piste neuve. 2 emplacements de test
+  libres, aucune ligne de Knowledge assez forte ce run.
+- IRL : coherence montre 2 Shorts sur 3 coupes en plein mot/pensee malgre le trimming du 11-02 -
+  cause reelle trouvee (highlights.py, split_sentences) : une phrase sans ponctuation finale se
+  coupait des qu'une pause depassait 1.5s, meme pensee inachevee. Corrige (pause toleree jusqu'a
+  4s pour une phrase inachevee) + teste, pytest ok. Verdicts A/B : irl_title_style_v1 et
+  irl_length_v1 tous deux au seuil, aucun B pas clairement meilleur, tests retires (A inchange).
+  Nouveau test sur un emplacement libre : irl_dialogue_v1 (favorise dialogue/invite, evite le solo
+  silencieux, ligne ohnepixel du 27/10 jamais testee).
+- Debit : 5 VOD/24h (objectif 20+, en baisse), 20 VOD renvoyees en attente de Gemini, 49 abandons
+  pour file pleine - 5e jour de suite, meme goulot deja remonte au proprietaire (proposition tier
+  payant toujours en attente). Code change : fix split_sentences + test ; commit et redemarrage.
 
 ### 2026-11-02 (bis) - nouveau trimming "sujet complet" deploye hors boucle, verification en attente de donnees
 
@@ -335,36 +372,17 @@ ones, and moves them to the entries.
   fois. Debit : 5 VOD/24h (objectif 20+), 40 en file, 75 abandonnees pour file pleine - meme
   goulot (selection Gemini) deja remonte au proprietaire, toujours sans reponse.
 
-### 2026-10-27 - quota Gemini a sec, pas d'analyse video possible
+### 2026-10-26 au 2026-10-27 (resume)
 
-- Gaming : analyse Gemini impossible (quota du jour atteint sur les 5 modeles, y compris
-  gemini-flash-lite-latest). Tests toujours sous le seuil (titres A n=7/B n=5, longueur A n=6/B n=3,
-  vods<6) : rien a trancher. 2 tests deja en cours, aucun emplacement libre.
-- IRL : meme blocage Gemini (verifie une fois, quota deja a zero pour tous les modeles, pas
-  reessaye sur IRL). Tests sous le seuil (titres A n=11/B n=0, longueur 0 mesure des deux cotes).
-  2 tests deja en cours, aucun emplacement libre.
-- Production (donnees seules, pas de confirmation Gemini) : gaming, les Shorts >40s publient mieux
-  (12/55=22%) que 25-40s (8/63=13%) et <25s (8/45=18%) - va dans le sens du test longueur en cours,
-  rien a changer. Dota 2 tres gaspille (14/17 abandonnes) - a surveiller. IRL : NMS Boxing quasi
-  tout abandonne (16/18) et Fortnite toujours tres abandonne (7/8, comme le 25/10) - fenetres de 7
-  jours qui se chevauchent, pas encore une 2e preuve independante ; a surveiller. Debit : 11 VOD/24h
-  (objectif 20+), 39 en file, 44 abandonnees pour file pleine - meme goulot deja remonte au
-  proprietaire (quota Gemini quotidien plein aujourd'hui confirme que l'etape de selection est bien
-  le frein, pas le telechargement). Rien a coder.
-
-### 2026-10-26 - vraie cause de la coupe en plein mot + VOD qui plantaient
-
-- Gaming : Gemini a revu 5 hits/5 flops concurrents + nos extremes + 3 Shorts recents : les 3
-  recents avaient encore une fin coupee en plein mot malgre le correctif d'hier. Vraie cause
-  trouvee : quand l'appel Gemini de recadrage echoue completement (quota, reseau), les moments
-  gardaient leur fin brute non recalee ; et quand Gemini ne renvoyait qu'une fin recalee (pas de
-  debut utilisable), l'etape suivante plantait toute la VOD (KeyError 'start', vu 3 fois dans le
-  log sur une meme VOD). Les deux corriges + testes (pytest ok). World of Warcraft : toujours les
-  memes 13 moments perdus de la semaine, pas un nouvel episode, rien a changer encore.
-- IRL : memes verifications, aucun defaut sur 2 Shorts sur 3 (1 sous-titres desynchronises,
-  episode isole). Concurrents : tiers du haut desormais 45s vs tiers du bas 33s vs nos 31s, meme
-  sens que le 23/10 (28s vs 23s). Test lance sur le 2e emplacement libre : Shorts plus longs
-  30-50s (irl_length_v1).
+- Gaming : vraie cause trouvee pour les coupes en plein mot (appel Gemini de recadrage en echec =
+  fin brute non recalee ; KeyError 'start' sur VOD plantees) - les deux corriges + testes. Shorts
+  >40s publient mieux (22%) que 25-40s (13%) et <25s (18%), dans le sens du test longueur en cours.
+  Dota 2 et WoW gaspilles, a surveiller. Quota Gemini sature le 27 (rien a trancher).
+- IRL : aucun defaut de coupe sur cette periode. Concurrents : tiers du haut 45s vs bas 33s vs nos
+  31s - test Shorts plus longs 30-50s lance (irl_length_v1). Fortnite/NMS Boxing tres abandonnes,
+  fenetres qui se chevauchent, a surveiller.
+- Debit : 11 VOD/24h (objectif 20+), goulot deja identifie comme le quota Gemini, pas le
+  telechargement.
 - Debit : seulement 2 VOD rendues en 24h (objectif 20+, hier 6), 40 en file, 63 abandonnees pour
   file pleine, 14 pour trop ancien. Meme goulot deja remonte au proprietaire (etape chat ->
   selection Gemini) ; proposition de paralleliser toujours en attente.

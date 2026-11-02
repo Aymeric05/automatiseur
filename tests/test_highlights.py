@@ -78,6 +78,14 @@ class HighlightTests(unittest.TestCase):
         self.assertEqual([(s["start"], s["end"]) for s in sentences], [(0.0, 5.0), (5.2, 6.0), (9.0, 10.0)])
         self.assertEqual(sentences[0]["text"], "I think it's fine to question a character's like where her head's at.")
 
+    def test_unfinished_sentence_merges_across_a_longer_pause(self) -> None:
+        sentences = split_sentences([
+            {"start": 0.0, "end": 3.0, "text": "I was becoming like"},
+            {"start": 6.0, "end": 8.0, "text": "a furnace in there, it was awful."},
+        ])
+        self.assertEqual([(s["start"], s["end"]) for s in sentences], [(0.0, 8.0)])
+        self.assertEqual(sentences[0]["text"], "I was becoming like a furnace in there, it was awful.")
+
     def test_candidate_starts_at_the_sentence_start_not_mid_sentence(self) -> None:
         segments = [
             {"start": 0.0, "end": 4.0, "text": "What if because what she's doing to him is"},

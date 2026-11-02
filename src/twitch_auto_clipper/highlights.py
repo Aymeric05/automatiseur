@@ -37,6 +37,8 @@ REACTION_PHRASES = (
 TOPIC_OPENERS = ("okay so", "ok so", "anyway", "wait", "so basically", "guys", "chat")
 
 SENTENCE_JOIN_GAP = 1.5  # merge Whisper segments into one sentence below this pause
+UNFINISHED_JOIN_GAP = 4.0  # longer pause tolerated when the previous sentence has no terminal
+# punctuation (trailing off, filler pause): an artificial split here cuts the Short mid-thought
 CONTEXT_GAP = 1.5  # previous sentence is kept as lead-in context below this pause
 MIN_CANDIDATE_SECONDS = 12.0
 MAX_CANDIDATE_SECONDS = 40.0
@@ -73,10 +75,12 @@ def split_sentences(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if end <= start or not text:
             continue
         previous = sentences[-1] if sentences else None
+        unfinished = previous is not None and previous["text"][-1] not in ".!?"
+        max_gap = UNFINISHED_JOIN_GAP if unfinished else SENTENCE_JOIN_GAP
         if (
             previous is not None
-            and start - previous["end"] < SENTENCE_JOIN_GAP
-            and (previous["text"][-1] not in ".!?" or text[0].islower())
+            and start - previous["end"] < max_gap
+            and (unfinished or text[0].islower())
         ):
             previous["end"] = end
             previous["text"] = f"{previous['text']} {text}"
