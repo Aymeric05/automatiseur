@@ -33,6 +33,16 @@ Shorts and channels), the date seen first and last. Strengthen, weaken or remove
 evidence comes; turn a strong line into an A/B test, then into the app's default.
 
 ### LiveActions! (gaming)
+- Fix (2026-11-02, hors boucle, commit dfdf63e) : trimming reecrit pour demarrer et finir sur un
+  sujet complet (debut du declencheur, fin apres reponse/chute/reaction), avec 45s de phrases
+  visibles apres le moment - repond directement a la suspicion de segmentation du 11-01. Chaque
+  Short garde desormais ses mots parles (spoken) ; le rapport affiche debut/fin (section
+  coherence) pour verification automatique. Aucune donnee encore (aucun Short rendu avec ce champ
+  depuis le commit) - a verifier au prochain run.
+- Production (2026-11-02) : Grand Theft Auto V se redresse nettement (7 publies/4 reserve/15
+  abandonnes) apres plusieurs semaines faibles (poids appris -0.5) - un seul jour, a confirmer
+  avant de toucher le poids. Dota 2 toujours tres gaspille (3 publies/15 reserve/34 abandonnes),
+  meme surveillance.
 - Gemini watch (2026-10-30, 5 hits/5 flops concurrents + notre meilleur/pire + 3 controle qualite) :
   hits = accroche forte (texte+visuel) des 3 premieres secondes, 15-45s, cadrage serre
   visage+reaction avec gros sous-titres synchro, chute nette et explicite ; notre meilleur suit
@@ -112,6 +122,9 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   pipeline suivent encore l'ancien reglage), pas une preuve independante, a resurveiller demain.
 
 ### PeakMoments (irl)
+- Fix (2026-11-02, hors boucle, commit dfdf63e) : meme reecriture du trimming que gaming
+  (debut/fin sur sujet complet) ; a verifier au prochain run des que des Shorts avec le champ
+  "spoken" seront rendus.
 - Gemini watch (2026-10-30, 5 hits/5 flops concurrents + notre meilleur/pire + 2 controle qualite) :
   hits = accroche immediate (<2s) pile sur l'element declencheur, 15-30s, montage dynamique
   (effets/zooms), chute nette juste apres la resolution, titres emotionnels/intrigants ; notre
@@ -202,8 +215,25 @@ ones, and moves them to the entries.
 | 2026-10-26 | Fix: a failed Gemini trim call (quota/network) still snaps every moment's end to a sentence boundary, instead of keeping the raw un-snapped end | fewer mid-word/mid-sentence cuts | Gemini quality-check defects on our Shorts | pending |
 | 2026-10-26 | Fix: a partial trim (end only, no start) no longer crashes the whole VOD (missing "start" key) | fewer VOD retries/losses | "erreur inattendue" / KeyError in the log | pending |
 | 2026-10-30 | Fix: when Gemini's trim answer for a moment is rejected or missing, its start is now also recalee on a sentence boundary (only the end was before) | fewer "no context at start" / early cuts | Gemini quality-check defects on our Shorts | pending |
+| 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-02 (bis) - nouveau trimming "sujet complet" deploye hors boucle, verification en attente de donnees
+
+- Gaming : gros changement de code pousse par le proprietaire dans la nuit (commit dfdf63e, hors
+  de cette boucle) - trimming reecrit pour demarrer et finir sur un sujet complet, chaque Short
+  garde ses mots parles, le rapport affiche desormais debut/fin (section coherence) pour
+  verification automatique. Aucun Short rendu avec ce champ pour l'instant - a verifier demain.
+  GTA V se redresse en production (7 publies/4 reserve/15 abandonnes, contredit le poids appris
+  -0.5, un seul jour) ; Dota 2 toujours tres gaspille (3/15/34). 2 emplacements de test libres,
+  aucune piste assez forte ce run (guide concurrents etudie il y a 3 jours, pas encore une semaine).
+- IRL : meme nouveau trimming a verifier demain. Tests irl_title_style_v1 (A n=41/vods=7, B
+  n=17/vods=6) et irl_length_v1 (A vods=5, B vods=6) toujours sous le seuil - A nettement devant B
+  sur le titre (retention 64.2 vs 43.8) mais pas encore mesurable. Pas de nouveau test.
+- Debit : 12 VOD/24h (objectif 20+), quota Gemini de nouveau quasi ferme (8 VOD renvoyees en
+  attente, seul flash-lite-latest encore ouvert). Proposition Gemini payant toujours en attente de
+  l'accord du proprietaire. Aucun changement de code/config ce run.
 
 ### 2026-11-02 - quota Gemini epuise apres 1 seul appel, aucun defaut gaming pour la 1ere fois
 
