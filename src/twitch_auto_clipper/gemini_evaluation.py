@@ -9,7 +9,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-from . import sounds
 from .daily_quota import DailyQuota
 
 
@@ -60,8 +59,6 @@ EVALUATION_RESPONSE_FORMAT = {
                         "description": {"type": "string"},
                         "video_game": {"type": "boolean"},
                         "watched_media": {"type": "boolean"},
-                        "music": {"type": "string", "enum": ["none", *sounds.MUSIC]},
-                        "sound_effect": {"type": "string", "enum": ["none", *sounds.EFFECTS]},
                     },
                     "required": [
                         "candidate_id",
@@ -175,11 +172,7 @@ def _build_prompt(
         "clip que le streamer regarde (d'autres voix que la sienne et celles de son entourage). "
         "video_game vaut true quand le sujet du clip est un jeu video (une partie jouee, ou un "
         "jeu, une partie ou une video de jeu regardee et commentee), false sinon. "
-        f"music est l'ambiance d'une musique de fond instrumentale qui irait avec le clip "
-        f"({', '.join(sounds.MUSIC)}), ou none quand le clip a deja sa musique ou qu'elle "
-        f"generait. sound_effect est un effet sonore pour le moment fort ({', '.join(sounds.EFFECTS)}) "
-        "ou none : la plupart du temps none, seulement quand il renforce vraiment la chute "
-        "(au plus un clip sur trois). Ni hook, ni title, ni description ne doivent annoncer quelque "
+        "Ni hook, ni title, ni description ne doivent annoncer quelque "
         "chose qui n'arrive pas dans le clip, ni contenir de gros mot ou d'insulte. "
         "transcript est le texte du clip ; context_before et context_after sont ce qui "
         "est dit juste avant et apres : juge si le clip se comprend seul et forme un "
@@ -248,9 +241,6 @@ def _parse_response(response_text: str, candidate_ids: set[str]) -> list[dict[st
                 else "",
                 "video_game": evaluation.get("video_game") is True,
                 "watched_media": evaluation.get("watched_media") is not False,  # unknown: checked
-                # Optional too: only used by the Shorts that get sounds (see sounds.py).
-                "music": evaluation.get("music") if evaluation.get("music") in sounds.MUSIC else None,
-                "sound_effect": evaluation.get("sound_effect") if evaluation.get("sound_effect") in sounds.EFFECTS else None,
             }
         )
     return validated

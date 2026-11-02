@@ -267,7 +267,6 @@ class VODAutomationPipeline:
                     True if moment.get("gemini_video_game") is True else moment.get("gaming"), processing.game_name,
                 ),
                 "experiments": test_variants, "cold_open_off": test_settings.get("cold_open") is False,
-                "sound_on": test_settings.get("sound") is True,
             }
             for moment in selection.selected
         ))
