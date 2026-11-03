@@ -9,10 +9,11 @@ from typing import Any
 from .profanity import PROFANITY
 
 # libass override tags: the word is drawn heavily blurred (unreadable), then the style is restored.
-BLURRED_WORD = r"{\bord0\shad0\blur18}%s{\r}"
-# Words of the group not said yet: drawn fully transparent, so the line keeps its place.
-HIDDEN_WORDS = r"{\alpha&HFF&}%s"
-# Fonts shipped with the app (Bangers, for the hook and the subtitles).
+BLURRED_WORD = r"{\bord0\shad0\blur18}%s{\bord9\shad3\blur0}"  # back to the style, the bounce kept
+# A group pops in: 60 % and blurred, 115 % after 70 ms, its size after 160 ms (libass tags).
+BOUNCE = r"{\fscx60\fscy60\blur4\t(0,70,\fscx115\fscy115\blur0)\t(70,160,\fscx100\fscy100)}"
+MAX_HOLD_SECONDS = 0.6  # a group stays at most this long after its last word
+# Fonts shipped with the app (Bangers for the hook, Poppins ExtraBold for the subtitles; both OFL).
 FONTS_DIR = Path(__file__).resolve().parents[2] / "assets" / "fonts"
 
 
@@ -193,14 +194,14 @@ def generate_ass_subtitles(
     max_words: int = 3,
     position: tuple[int, int] | None = None,
 ) -> Path:
-    """Write word-by-word ASS subtitles using real word timestamps.
+    """Write ASS subtitles in small groups of words, using real word timestamps.
 
     ``position`` (x, y in the 1080x1920 Short) centers the line on that point
     instead (the split layout puts it where the camera meets the screen).
 
-    Words come in groups of ``max_words``; each word appears when it is said,
-    the rest of its group already holding its place (invisible), so the line
-    never moves. The line sits a little below the middle of the Short.
+    Each group of ``max_words`` appears whole when its first word is said, with a
+    small bounce (``BOUNCE``: small and blurred, a bit too big, then its size), in
+    lowercase white with a thick dark outline, a little below the middle.
     """
     if clip_start < 0 or (clip_end is not None and clip_end <= clip_start):
         raise SubtitleGenerationError("Les bornes du clip sont invalides.")
@@ -214,17 +215,14 @@ def generate_ass_subtitles(
     placed = r"{\an5\pos(%d,%d)}" % position if position else ""
     for index in range(0, len(words), max_words):
         group = words[index : index + max_words]
-        texts = [_subtitle_word(word["text"]) for word in group]
-        for shown, word in enumerate(group, start=1):
-            start = word["start"]
-            end = group[shown]["start"] if shown < len(group) else group[-1]["end"]
-            end = max(start + 0.05, end)
-            # {\r} after a blurred swear word would reset the transparency: hidden again after it.
-            hidden = HIDDEN_WORDS % _join_words(texts[shown:]).replace(r"{\r}", r"{\r\alpha&HFF&}")
-            text = _join_words(texts[:shown] + [hidden] if shown < len(group) else texts)
-            events.append(
-                f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Default,,0,0,0,,{placed}{text}"
-            )
+        start = group[0]["start"]
+        # Shown until the next group starts (no flicker between groups), at most a pause later.
+        following = words[index + max_words]["start"] if index + max_words < len(words) else group[-1]["end"]
+        end = max(start + 0.05, min(following, group[-1]["end"] + MAX_HOLD_SECONDS))
+        text = _join_words([_subtitle_word(word["text"].lower()) for word in group])
+        events.append(
+            f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Default,,0,0,0,,{placed}{BOUNCE}{text}"
+        )
 
     content = """[Script Info]
 ScriptType: v4.00+
@@ -234,7 +232,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Bangers,124,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,2,0,1,5,2,2,80,80,760,1
+Style: Default,Poppins ExtraBold,112,&H00FFFFFF,&H00FFFFFF,&H00000000,&H70000000,0,0,0,0,100,100,0,0,1,9,3,2,80,80,760,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

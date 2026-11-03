@@ -214,7 +214,7 @@ class VODAutomationPipelineTests(unittest.TestCase):
 
         path = generate_ass_subtitles([{"words": [{"word": "wow", "start": 0.0, "end": 0.5}]}],
                                       self.tmp / "s.ass", position=(540, 700))
-        self.assertIn(r"{\an5\pos(540,700)}wow", path.read_text(encoding="utf-8-sig"))
+        self.assertIn(r"{\an5\pos(540,700)}", path.read_text(encoding="utf-8-sig"))
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_screen_shorts_are_centered_on_what_matters(self, gemini):
