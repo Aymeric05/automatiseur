@@ -33,9 +33,15 @@ Shorts and channels), the date seen first and last. Strengthen, weaken or remove
 evidence comes; turn a strong line into an A/B test, then into the app's default.
 
 ### LiveActions! (gaming)
-- Coherence (2026-11-03) : 4 derniers Shorts verifies, tous concluent proprement (chute/reaction
-  avant la fin) - le trimming "sujet complet" du 11-02 tient bien cote gaming. Dota 2 toujours tres
-  gaspille (0 publie/5 reserve/27 abandonnes) - memes causes que precedemment, aucune piste neuve.
+- Coherence (2026-11-04) : 2 des 4 derniers Shorts defaillants (un termine en pleine question "I
+  wouldn't be able to jump boost", un autre commence en plein mot "worry." et finit en pleine liste
+  de remerciements donateurs "St. Dom,") - trim_reason absent sur les deux (chemin de secours sans
+  Gemini, pas le prompt "sujet complet"). Coincide avec une saturation Gemini extreme aujourd'hui
+  (presque tous les modeles CLOSED, 1 seul VOD rendu/24h contre 5 hier) - probablement la cause
+  (le chemin de secours ne fait que caler sur une frontiere de phrase, jamais sur une conclusion de
+  sujet), pas un nouveau bug de code distinct. A reverifier un jour sans saturation avant de
+  retoucher trimming.py. Dota 2 toujours tres gaspille (2 publie/3 reserve/27 abandonnes) - memes
+  causes que precedemment, aucune piste neuve.
 - Fix (2026-11-02, hors boucle, commit dfdf63e) : trimming reecrit pour demarrer et finir sur un
   sujet complet (debut du declencheur, fin apres reponse/chute/reaction), avec 45s de phrases
   visibles apres le moment - repond directement a la suspicion de segmentation du 11-01. Chaque
@@ -125,6 +131,10 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   pipeline suivent encore l'ancien reglage), pas une preuve independante, a resurveiller demain.
 
 ### PeakMoments (irl)
+- Coherence (2026-11-04) : 1 des 2 derniers Shorts coupe en pleine phrase ("...to fucking
+  November", trim_reason absent, chemin de secours). L'autre conclut proprement (chute "go get a
+  forklift"). Meme hypothese que gaming aujourd'hui : saturation Gemini extreme (1 VOD rendu/24h),
+  pas une rechute du fix split_sentences du 11-03 - a confirmer un jour sans saturation.
 - Bug trouve et corrige (2026-11-03) : 2 des 3 derniers Shorts (coherence du rapport) se coupent
   en plein mot/pensee ("...I was becoming like", "...Some") malgre le trimming "sujet complet" du
   11-02 - 6e occurrence de ce defaut depuis le 10-25 malgre 3 correctifs trim deja faits. Cause
@@ -208,9 +218,11 @@ numbers, risks, how to undo) and in its daily summary. The owner answers by writ
 at the start of the line (or tells Claude); the next run applies the OK ones, drops the NON
 ones, and moves them to the entries.
 
-- Passer l'API Gemini en tier payant (console Google AI) : 5e jour de suite ou les modeles flash
-  sont satures avant la fin de journee - aujourd'hui 20 VOD renvoyees en attente de Gemini, 5 VOD
-  rendues/24h contre un objectif de 20+, 49 jobs abandonnes pour file pleine. Deja verifie que ce
+- Passer l'API Gemini en tier payant (console Google AI) : 6e jour de suite ou les modeles flash
+  sont satures avant la fin de journee - aujourd'hui pire qu'hier (presque tous les modeles
+  CLOSED/paused, seul gemini-flash-lite-latest repond), 38 VOD renvoyees en attente de Gemini, 1
+  seul VOD rendu/24h contre un objectif de 20+ (etait 5 hier), 72 jobs abandonnes pour file pleine.
+  Deja verifie que ce
   n'est pas le telechargement (DOWNLOAD_SHARE) ni une erreur de code (modeles pas sous leur
   limite, vraiment satures). Utilite : plus de VOD traitees = plus de candidats = top 30 plus
   fort, sur les deux chaines. Risque : cout selon l'usage (a verifier sur la console Google, pas
@@ -239,6 +251,19 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-04 - defauts de coherence probablement lies a la saturation Gemini extreme du jour
+
+- Gaming : 2 des 4 derniers Shorts defaillants (fin en pleine question, debut/fin en pleine liste
+  de dons) - trim_reason absent sur les deux, chemin de secours sans Gemini. Dota 2 toujours
+  gaspille (2/3/27), aucune piste neuve. 2 emplacements de test libres, rien d'assez fort.
+- IRL : 1 des 2 derniers Shorts coupe en pleine phrase (meme chemin de secours), l'autre conclut
+  bien. Test irl_dialogue_v1 toujours a 0 mesure (seuil non atteint). 1 emplacement libre, rien
+  d'assez fort.
+- Debit : 1 VOD/24h (objectif 20+, pire qu'hier/5), quasi tous les modeles Gemini CLOSED, 38 VOD
+  renvoyees en attente - 6e jour de suite, proposition tier payant mise a jour avec ces chiffres,
+  toujours en attente de l'OK du proprietaire. Aucun changement de code ce run (cause probable =
+  saturation, pas un bug de trimming confirme) - a reverifier un jour calme.
 
 ### 2026-11-03 - bug de coupe en plein mot/pensee enfin identifie (irl), 2 verdicts A/B irl + nouveau test
 
@@ -358,21 +383,7 @@ ones, and moves them to the entries.
   comparison every 12 h. Gemini refusals are logged with their quota id and retry delay
   (data/output/gemini_refusals.log): check it before concluding the quota is the bottleneck.
 
-### 2026-10-28 - quota Gemini de nouveau sature, rien a trancher
-
-- Gaming : quota Gemini a zero sur les 5 modeles principaux, gemini-flash-lite-latest aussi a sa
-  limite (20/20) - verifie via les fichiers de quota, pas de nouvel appel tente. Aucun test au
-  seuil (titres A n=13/B n=6, longueur A n=13/B n=3, vods<6 partout) : rien a trancher, aucun
-  emplacement libre.
-- IRL : meme quota a zero. Tests sous le seuil (titres A n=19/B n=1, longueur A n=4/B n=0) : rien
-  a trancher, aucun emplacement libre.
-- Production (donnees seules) : Dota 2 toujours tres gaspille sur gaming (22/29 abandonnes cette
-  semaine, apres 14/17 la semaine passee) mais fenetres de 7 jours qui se chevauchent - pas une 2e
-  preuve independante, a surveiller encore. IRL : Just Chatting et Fortnite dans la norme cette
-  fois. Debit : 5 VOD/24h (objectif 20+), 40 en file, 75 abandonnees pour file pleine - meme
-  goulot (selection Gemini) deja remonte au proprietaire, toujours sans reponse.
-
-### 2026-10-26 au 2026-10-27 (resume)
+### 2026-10-26 au 2026-10-28 (resume)
 
 - Gaming : vraie cause trouvee pour les coupes en plein mot (appel Gemini de recadrage en echec =
   fin brute non recalee ; KeyError 'start' sur VOD plantees) - les deux corriges + testes. Shorts
@@ -386,6 +397,8 @@ ones, and moves them to the entries.
 - Debit : seulement 2 VOD rendues en 24h (objectif 20+, hier 6), 40 en file, 63 abandonnees pour
   file pleine, 14 pour trop ancien. Meme goulot deja remonte au proprietaire (etape chat ->
   selection Gemini) ; proposition de paralleliser toujours en attente.
+- Le 28 : quota Gemini de nouveau a zero (5 modeles + lite-latest), rien a trancher nulle part
+  (tous les tests sous le seuil). Dota 2 toujours tres gaspille (22/29), IRL dans la norme.
 
 ### earlier (2026-10-23 to 2026-10-25)
 
