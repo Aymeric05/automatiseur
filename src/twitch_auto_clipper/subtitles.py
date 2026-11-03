@@ -201,7 +201,8 @@ def generate_ass_subtitles(
 
     Each group of ``max_words`` appears whole when its first word is said, with a
     small bounce (``BOUNCE``: small and blurred, a bit too big, then its size), in
-    lowercase white with a thick dark outline, a little below the middle.
+    lowercase white with a thick dark outline, low on the Short (above YouTube's and TikTok's
+    buttons and caption, which cover the bottom fifth).
     """
     if clip_start < 0 or (clip_end is not None and clip_end <= clip_start):
         raise SubtitleGenerationError("Les bornes du clip sont invalides.")
@@ -232,7 +233,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Poppins ExtraBold,112,&H00FFFFFF,&H00FFFFFF,&H00000000,&H70000000,0,0,0,0,100,100,0,0,1,9,3,2,80,80,760,1
+Style: Default,Poppins ExtraBold,112,&H00FFFFFF,&H00FFFFFF,&H00000000,&H70000000,0,0,0,0,100,100,0,0,1,9,3,2,80,80,400,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
