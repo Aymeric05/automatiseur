@@ -33,6 +33,14 @@ Shorts and channels), the date seen first and last. Strengthen, weaken or remove
 evidence comes; turn a strong line into an A/B test, then into the app's default.
 
 ### LiveActions! (gaming)
+- Coherence (2026-11-05) : 1 des 4 derniers Shorts defaillant (finit sur une anticipation non
+  resolue "Here we go. Here we go. Here we go", pas de chute) ; les 3 autres se terminent sur une
+  reaction/chute nette. Saturation Gemini toujours tres forte aujourd'hui (7e jour de suite,
+  UNAVAILABLE/RESOURCE/quota atteint dans les logs) - meme hypothese que le 11-04 (chemin de
+  secours sans Gemini qui cale sur une frontiere de phrase, pas sur une conclusion de sujet), pas
+  un nouveau bug de code. Toujours pas de jour calme pour trancher. 2 emplacements de test libres,
+  aucune ligne de Knowledge assez forte aujourd'hui (pas d'etude concurrents, guide vieux de 6
+  jours, pas encore du).
 - Coherence (2026-11-04) : 2 des 4 derniers Shorts defaillants (un termine en pleine question "I
   wouldn't be able to jump boost", un autre commence en plein mot "worry." et finit en pleine liste
   de remerciements donateurs "St. Dom,") - trim_reason absent sur les deux (chemin de secours sans
@@ -131,6 +139,12 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   pipeline suivent encore l'ancien reglage), pas une preuve independante, a resurveiller demain.
 
 ### PeakMoments (irl)
+- Coherence (2026-11-05) : 2 des 4 derniers Shorts defaillants (un coupe en plein mot "Hold on,
+  my iMessages off... Hold on. All", un autre finit sur une question posee aux viewers sans
+  reponse "What is your wing stop order? Tell the viewers") ; les 2 autres concluent proprement.
+  Meme hypothese que gaming aujourd'hui : saturation Gemini (7e jour de suite), pas une rechute du
+  fix split_sentences du 11-03. irl_dialogue_v1 toujours a 0 mesure. 1 emplacement de test libre,
+  rien d'assez fort (pas d'etude concurrents ce run).
 - Coherence (2026-11-04) : 1 des 2 derniers Shorts coupe en pleine phrase ("...to fucking
   November", trim_reason absent, chemin de secours). L'autre conclut proprement (chute "go get a
   forklift"). Meme hypothese que gaming aujourd'hui : saturation Gemini extreme (1 VOD rendu/24h),
@@ -218,16 +232,14 @@ numbers, risks, how to undo) and in its daily summary. The owner answers by writ
 at the start of the line (or tells Claude); the next run applies the OK ones, drops the NON
 ones, and moves them to the entries.
 
-- Passer l'API Gemini en tier payant (console Google AI) : 6e jour de suite ou les modeles flash
-  sont satures avant la fin de journee - aujourd'hui pire qu'hier (presque tous les modeles
-  CLOSED/paused, seul gemini-flash-lite-latest repond), 38 VOD renvoyees en attente de Gemini, 1
-  seul VOD rendu/24h contre un objectif de 20+ (etait 5 hier), 72 jobs abandonnes pour file pleine.
-  Deja verifie que ce
-  n'est pas le telechargement (DOWNLOAD_SHARE) ni une erreur de code (modeles pas sous leur
-  limite, vraiment satures). Utilite : plus de VOD traitees = plus de candidats = top 30 plus
-  fort, sur les deux chaines. Risque : cout selon l'usage (a verifier sur la console Google, pas
-  consulte par la boucle). Annulation : repasser la cle API en tier gratuit a tout moment, aucun
-  changement de code necessaire.
+- Passer l'API Gemini en tier payant (console Google AI) : 7e jour de suite ou les modeles flash
+  sont satures avant la fin de journee - un peu mieux qu'hier (2 VOD rendues/24h contre 1 hier,
+  28 VOD renvoyees en attente contre 38, 42 jobs abandonnes pour file pleine contre 72) mais
+  toujours tres loin de l'objectif 20+/24h. Deja verifie que ce n'est pas le telechargement
+  (DOWNLOAD_SHARE) ni une erreur de code (modeles pas sous leur limite, vraiment satures). Utilite :
+  plus de VOD traitees = plus de candidats = top 30 plus fort, sur les deux chaines. Risque : cout
+  selon l'usage (a verifier sur la console Google, pas consulte par la boucle). Annulation :
+  repasser la cle API en tier gratuit a tout moment, aucun changement de code necessaire.
 
 ## Changes under evaluation
 
@@ -251,6 +263,17 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-05 - saturation Gemini 7e jour de suite, coherence toujours touchee des deux cotes
+
+- Gaming : 1 des 4 derniers Shorts defaillant (fin sur anticipation non resolue, pas de chute) -
+  meme hypothese saturation que le 11-04. Dota 2 toujours surveille, rien de neuf. 2 emplacements
+  de test libres, rien d'assez fort (pas d'etude concurrents ce run, guide a J+6).
+- IRL : 2 des 4 derniers Shorts defaillants (coupe en plein mot, fin sur question sans reponse) -
+  meme hypothese. Test irl_dialogue_v1 toujours a 0 mesure. 1 emplacement libre, rien d'assez fort.
+- Debit : 2 VOD/24h (objectif 20+), un peu mieux qu'hier (1) mais toujours tres loin - 7e jour de
+  suite, proposition tier payant mise a jour, toujours en attente de l'OK du proprietaire. Aucun
+  changement de code (cause = saturation confirmee par les logs, pas un bug).
 
 ### 2026-11-04 - defauts de coherence probablement lies a la saturation Gemini extreme du jour
 
