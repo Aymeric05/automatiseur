@@ -172,12 +172,19 @@ class VODAutomationPipelineTests(unittest.TestCase):
     def test_a_moment_whose_picture_does_not_move_is_never_rendered(self, gemini):
         pipeline = self._pipeline()
         checked = []
-        pipeline.still_checker = lambda vod_id, start, end, focus_x: checked.append(start) or (0.9 if len(checked) == 1 else 0.1)
-        result = pipeline.run(self._acquisition(budget=2))
+        pipeline.still_checker = lambda vod_id, start, end, focus_x, facecam: checked.append(start) or (0.9 if len(checked) == 1 else 0.1)
+        result = pipeline.run(self._acquisition(budget=2))  # a game stream
         self.assertEqual(result.status, "completed", format_vod_automation_result(result))
         self.assertEqual(len(checked), 2)
         self.assertEqual(len(result.shorts.shorts), 1)
         self.assertIn("1 avec du mouvement", result.message)
+
+    def test_a_stream_on_camera_is_never_checked_for_a_frozen_picture(self):
+        from twitch_auto_clipper.vod_pipeline import VODAutomationPipeline
+
+        pipeline = VODAutomationPipeline(still_checker=lambda *args: 1.0)
+        self.assertFalse(pipeline._frozen("v", {"start": 0, "end": 30, "channel": "irl"}))
+        self.assertTrue(pipeline._frozen("v", {"start": 0, "end": 30, "channel": "gaming"}))
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_a_webcam_over_a_shared_screen_splits_the_short_with_subtitles_at_the_seam(self, gemini):

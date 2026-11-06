@@ -134,7 +134,7 @@ class VODAutomationPipeline:
         scene_finder: Callable[[str, float, float], list[float]] | None = None,
         moment_trimmer: Callable[..., list[dict[str, Any] | None]] | None = None,
         reserve_gate: Callable[[dict[str, Any], str, str, int], bool] | None = None,
-        still_checker: Callable[[str, float, float, float | None], float] | None = None,
+        still_checker: Callable[..., float] | None = None,
         speaker_finder: Callable[[Path, list[dict[str, Any]], list[dict[str, Any]]], list[list[list[float]]]] | None = None,
         music_checker: Callable[[Path, float, float], dict[str, float]] | None = None,
     ) -> None:
@@ -416,9 +416,15 @@ class VODAutomationPipeline:
         return "clean" if loud and float(moment.get("gemini_score") or 0) >= KEEP_SCORE else "drop"
 
     def _frozen(self, vod_id: str, moment: dict[str, Any]) -> bool:
-        """Whether the Short's picture barely moves (a menu, a still picture): never rendered."""
+        """Whether a game Short's screen does not move (a menu, a still picture): never rendered.
+
+        Only game moments: a streamer on camera is never frozen. The webcam overlay is left out:
+        the game screen is what must move."""
+        if moment.get("channel") == "irl":
+            return False
         try:
-            share = self.still_checker(vod_id, float(moment["start"]), float(moment["end"]), moment.get("focus_x"))
+            share = self.still_checker(vod_id, float(moment["start"]), float(moment["end"]), moment.get("focus_x"),
+                                       moment.get("facecam"))
         except Exception:  # Twitch unavailable: the moment is kept, as before
             return False
         return share > MAX_STILL_SHARE
