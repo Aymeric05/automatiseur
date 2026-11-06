@@ -11,6 +11,18 @@
           "Evite un moment solo silencieux ou une simple ballade sans histoire ni enjeu."
         ]
       }
+    },
+    {
+      "id": "gaming_interaction_v1",
+      "channel": "gaming",
+      "started": "2026-11-06",
+      "description": "Favorise les interactions entre personnes (roleplay, invite, coequipier, chat qui provoque) avec une chute, plutot que l'action de jeu seule (concurrents 2026-11-06 : ~8 des 14 meilleurs Shorts gaming relatifs sont des interactions NoPixel/invite, sur 4 chaines ; les tops/compilations sont dans le tiers bas).",
+      "b": {
+        "selection_rules": [
+          "Privilegie un moment d'interaction entre le streamer et une autre personne (roleplay, invite, coequipier, message du chat) avec une chute claire.",
+          "Evite l'action de jeu seule sans enjeu dit a voix haute, et toute compilation de plusieurs moments."
+        ]
+      }
     }
   ]
 }

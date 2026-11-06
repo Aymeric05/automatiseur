@@ -39,6 +39,8 @@ TOPIC_OPENERS = ("okay so", "ok so", "anyway", "wait", "so basically", "guys", "
 SENTENCE_JOIN_GAP = 1.5  # merge Whisper segments into one sentence below this pause
 UNFINISHED_JOIN_GAP = 4.0  # longer pause tolerated when the previous sentence has no terminal
 # punctuation (trailing off, filler pause): an artificial split here cuts the Short mid-thought
+LOWERCASE_JOIN_GAP = 6.0  # a segment starting in lowercase ("not.", "a new one?") continues the
+# previous sentence across this pause: kept apart, it became a Short's first words (2026-11-06)
 CONTEXT_GAP = 1.5  # previous sentence is kept as lead-in context below this pause
 MIN_CANDIDATE_SECONDS = 12.0
 MAX_CANDIDATE_SECONDS = 40.0
@@ -76,12 +78,9 @@ def split_sentences(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         previous = sentences[-1] if sentences else None
         unfinished = previous is not None and previous["text"][-1] not in ".!?"
-        max_gap = UNFINISHED_JOIN_GAP if unfinished else SENTENCE_JOIN_GAP
-        if (
-            previous is not None
-            and start - previous["end"] < max_gap
-            and (unfinished or text[0].islower())
-        ):
+        lowercase = text[0].islower()
+        max_gap = LOWERCASE_JOIN_GAP if lowercase else UNFINISHED_JOIN_GAP if unfinished else SENTENCE_JOIN_GAP
+        if previous is not None and start - previous["end"] < max_gap and (unfinished or lowercase):
             previous["end"] = end
             previous["text"] = f"{previous['text']} {text}"
         else:

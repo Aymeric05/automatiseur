@@ -33,6 +33,16 @@ Shorts and channels), the date seen first and last. Strengthen, weaken or remove
 evidence comes; turn a strong line into an A/B test, then into the app's default.
 
 ### LiveActions! (gaming)
+- Coherence (2026-11-06) : CORRECTION des 11-04/11-05 - l'hypothese "chemin de secours sans
+  Gemini" etait fausse (trim_reason n'est jamais sauve dans le manifeste, son absence ne prouve
+  rien). Vraie cause commune : split_sentences laissait des bouts de phrase en minuscule ("worry.",
+  "fuck?") comme phrases a part apres une pause de 1.5-6 s ; le trim (Gemini ou secours) pouvait
+  y commencer/finir. Corrige (LOWERCASE_JOIN_GAP 6 s, highlights.py). Sur 3 transcripts : 26+11
+  phrases en minuscule, ~75% avec pause < 6 s.
+- Concurrents (2026-11-06, 296 Shorts, 9 chaines) : tiers haut 81 s median vs bas 72 s ; ~8 des
+  14 meilleurs relatifs sont des interactions (NoPixel RP, invite) ; tiers bas = tops/compilations,
+  lore. Miniatures hits : visage proche + 1-2 mots en gros ("LET ME COOK", "YO!"). Test
+  gaming_interaction_v1 lance.
 - Coherence (2026-11-05) : 1 des 4 derniers Shorts defaillant (finit sur une anticipation non
   resolue "Here we go. Here we go. Here we go", pas de chute) ; les 3 autres se terminent sur une
   reaction/chute nette. Saturation Gemini toujours tres forte aujourd'hui (7e jour de suite,
@@ -139,6 +149,13 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   pipeline suivent encore l'ancien reglage), pas une preuve independante, a resurveiller demain.
 
 ### PeakMoments (irl)
+- Coherence (2026-11-06) : 3 des 4 derniers Shorts defaillants, dont 2 qui commencent sur un bout
+  de phrase en minuscule ("not.", "a new one?") et finissent en pleine phrase ("I walked in and",
+  "I mean, look"). Meme cause que gaming (split_sentences, pas la saturation) - corrige 11-06.
+- Concurrents (2026-11-06, 214 Shorts, 7 chaines) : tiers haut 41 s median vs bas 31 s, mais nos
+  propres chiffres disent l'inverse (<25s +0.7, >40s -0.8, A/B longueur perdu) : on garde 15-30 s.
+  Tiers bas = politique/actualite/talking heads (Hasan, Trump) ; hits = Speed/Kai, action
+  physique, dialogue. Miniatures hits : visage + 1 mot ("REVENGE", "CRASHEDOUT").
 - Coherence (2026-11-05) : 2 des 4 derniers Shorts defaillants (un coupe en plein mot "Hold on,
   my iMessages off... Hold on. All", un autre finit sur une question posee aux viewers sans
   reponse "What is your wing stop order? Tell the viewers") ; les 2 autres concluent proprement.
@@ -232,9 +249,9 @@ numbers, risks, how to undo) and in its daily summary. The owner answers by writ
 at the start of the line (or tells Claude); the next run applies the OK ones, drops the NON
 ones, and moves them to the entries.
 
-- Passer l'API Gemini en tier payant (console Google AI) : 7e jour de suite ou les modeles flash
-  sont satures avant la fin de journee - un peu mieux qu'hier (2 VOD rendues/24h contre 1 hier,
-  28 VOD renvoyees en attente contre 38, 42 jobs abandonnes pour file pleine contre 72) mais
+- Passer l'API Gemini en tier payant (console Google AI) : 8e jour de suite ou les modeles flash
+  sont satures (11-06 : 1 VOD rendue/24h, 14 VOD renvoyees en attente, 61 jobs abandonnes pour
+  file pleine) mais
   toujours tres loin de l'objectif 20+/24h. Deja verifie que ce n'est pas le telechargement
   (DOWNLOAD_SHARE) ni une erreur de code (modeles pas sous leur limite, vraiment satures). Utilite :
   plus de VOD traitees = plus de candidats = top 30 plus fort, sur les deux chaines. Risque : cout
@@ -260,9 +277,22 @@ ones, and moves them to the entries.
 | 2026-10-26 | Fix: a failed Gemini trim call (quota/network) still snaps every moment's end to a sentence boundary, instead of keeping the raw un-snapped end | fewer mid-word/mid-sentence cuts | Gemini quality-check defects on our Shorts | pending |
 | 2026-10-26 | Fix: a partial trim (end only, no start) no longer crashes the whole VOD (missing "start" key) | fewer VOD retries/losses | "erreur inattendue" / KeyError in the log | pending |
 | 2026-10-30 | Fix: when Gemini's trim answer for a moment is rejected or missing, its start is now also recalee on a sentence boundary (only the end was before) | fewer "no context at start" / early cuts | Gemini quality-check defects on our Shorts | pending |
+| 2026-11-06 | A/B gaming_interaction_v1: favorise interactions entre personnes avec chute, evite action seule/compilations | retention/views plus proches des hits | retention_pct, views_3d of B vs A | pending (0 measured) |
+| 2026-11-06 | Fix (highlights.py): un segment en minuscule rejoint la phrase precedente jusqu'a 6 s de pause | plus de Shorts qui commencent/finissent sur un bout de phrase ("not.", "I walked in and") | coherence du rapport | pending |
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-06 - vraie cause des coupes en plein mot trouvee (split_sentences), guide hebdo refait
+
+- Gaming : coherence 1/4 defaillant ; sur les 30 derniers Shorts des 2 chaines, ~15 commencent
+  ou finissent sur un bout de phrase. Ce n'etait pas la saturation : split_sentences gardait les
+  bouts en minuscule apres une pause 1.5-6 s comme phrases a part -> corrige + teste. Guide refait
+  (45-90 s, interactions, accroche 1-3 mots). Test gaming_interaction_v1 lance. Revoir coherence.
+- IRL : coherence 3/4 defaillants ("not." / "a new one?" en debut), meme cause, meme correctif.
+  irl_dialogue_v1 : B toujours a 0 mesure. Guide refait (15-30 s garde, nos chiffres priment).
+- Debit : 1 VOD/24h, 14 VOD renvoyees attendre Gemini (modeles CLOSED), 61 jobs abandonnes -
+  8e jour, proposition tier payant toujours en attente.
 
 ### 2026-11-05 - saturation Gemini 7e jour de suite, coherence toujours touchee des deux cotes
 
@@ -392,47 +422,11 @@ ones, and moves them to the entries.
   un bug (modeles vraiment satures, pas sous leur limite). Proposition ajoutee : passer Gemini en
   tier payant (voir "Waiting for the owner").
 
-### 2026-10-28 - changes made in the owner's conversation (not by the loop)
+### earlier (2026-10-23 to 2026-10-28)
 
-- Accepted by the owner and done on 10-27: word-by-word subtitles (Bangers, a little below the
-  middle), two VODs processed at a time, prefetch of the next VOD, download cap from the measured
-  bandwidth. Also: split layout (webcam on top, screen below) when a webcam sits over a shared
-  screen; a framing per shot; frozen pictures never rendered; subtitles only of the streamer and
-  the people with them; a moment about a video game goes to LiveActions!; every Short declared in
-  English; PeakMoments Shorts also sent to TikTok as drafts.
-- Waste fixed on 10-28: the prefetch kept downloading while VODs waited for Gemini (9.7 GB of
-  audio, some expired unprocessed); renders limited to moments entering the top 15 (82 gaming
-  renders a day for 10 uploads); speakers request only when a watched video is heard; reserve
-  comparison every 12 h. Gemini refusals are logged with their quota id and retry delay
-  (data/output/gemini_refusals.log): check it before concluding the quota is the bottleneck.
-
-### 2026-10-26 au 2026-10-28 (resume)
-
-- Gaming : vraie cause trouvee pour les coupes en plein mot (appel Gemini de recadrage en echec =
-  fin brute non recalee ; KeyError 'start' sur VOD plantees) - les deux corriges + testes. Shorts
-  >40s publient mieux (22%) que 25-40s (13%) et <25s (18%), dans le sens du test longueur en cours.
-  Dota 2 et WoW gaspilles, a surveiller. Quota Gemini sature le 27 (rien a trancher).
-- IRL : aucun defaut de coupe sur cette periode. Concurrents : tiers du haut 45s vs bas 33s vs nos
-  31s - test Shorts plus longs 30-50s lance (irl_length_v1). Fortnite/NMS Boxing tres abandonnes,
-  fenetres qui se chevauchent, a surveiller.
-- Debit : 11 VOD/24h (objectif 20+), goulot deja identifie comme le quota Gemini, pas le
-  telechargement.
-- Debit : seulement 2 VOD rendues en 24h (objectif 20+, hier 6), 40 en file, 63 abandonnees pour
-  file pleine, 14 pour trop ancien. Meme goulot deja remonte au proprietaire (etape chat ->
-  selection Gemini) ; proposition de paralleliser toujours en attente.
-- Le 28 : quota Gemini de nouveau a zero (5 modeles + lite-latest), rien a trancher nulle part
-  (tous les tests sous le seuil). Dota 2 toujours tres gaspille (22/29), IRL dans la norme.
-
-### earlier (2026-10-23 to 2026-10-25)
-
-- Baseline (10-23) : gaming 66 Shorts mesures (learned <25s +0.3, >40s -0.3, chat +0.2, cold
-  open -0.3 tot), IRL 0 mesure ; 10 chaines gaming (290 Shorts), 6 chaines IRL (176 Shorts) ;
-  longueur ideale du guide gaming 15-45s, IRL 15-25s. Tests titres lances sur les deux chaines
-  apres un premier Gemini watch (accroche immediate + montage nerveux = hits). Regle ajoutee :
-  >= 20 Shorts par groupe ET meme periode pour comparer.
-  Test gaming_length_v1 lance le 10-24 (longueur 45-90s, vu l'ecart avec les chaines de clips :
-  mediane 74s). Trois bugs de coupe en plein mot trouves et corriges ces jours-la (trimming.py :
-  fin heuristique jamais recalee sans reponse Gemini ; plafond 58s qui rejetait les bornes du
-  test gaming_length_v1) ; gemini-2.5-flash (404 permanent) retire de la liste de secours.
-- Debit : 5-6 VOD rendues/24h (objectif 20+) ces jours-la, 40-53 en file, 60-70 abandonnees pour
-  file pleine - goulot (chat -> selection Gemini) deja remonte au proprietaire (paralleliser).
+- 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
+  gaming_length_v1 (45-90s, gagne le 11-01), 10-26 irl_length_v1 (perdu le 11-03). Bugs de coupe
+  corriges (fin non recalee sans Gemini, KeyError 'start', plafond 58s). 10-27/28 (proprietaire) :
+  sous-titres mot a mot, 2 VOD en parallele, prefetch, cadrage split, TikTok brouillons IRL,
+  rendus limites au top 15, refus Gemini dans gemini_refusals.log. Debit 2-11 VOD/24h, goulot
+  quota Gemini (proposition tier payant).

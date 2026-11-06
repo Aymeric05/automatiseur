@@ -73,9 +73,9 @@ class HighlightTests(unittest.TestCase):
             {"start": 0.0, "end": 3.0, "text": "I think it's fine to question a character's"},
             {"start": 3.4, "end": 5.0, "text": "like where her head's at."},
             {"start": 5.2, "end": 6.0, "text": "Next one."},
-            {"start": 9.0, "end": 10.0, "text": "after a long pause"},
+            {"start": 13.0, "end": 14.0, "text": "after a long pause"},
         ])
-        self.assertEqual([(s["start"], s["end"]) for s in sentences], [(0.0, 5.0), (5.2, 6.0), (9.0, 10.0)])
+        self.assertEqual([(s["start"], s["end"]) for s in sentences], [(0.0, 5.0), (5.2, 6.0), (13.0, 14.0)])
         self.assertEqual(sentences[0]["text"], "I think it's fine to question a character's like where her head's at.")
 
     def test_unfinished_sentence_merges_across_a_longer_pause(self) -> None:
@@ -85,6 +85,13 @@ class HighlightTests(unittest.TestCase):
         ])
         self.assertEqual([(s["start"], s["end"]) for s in sentences], [(0.0, 8.0)])
         self.assertEqual(sentences[0]["text"], "I was becoming like a furnace in there, it was awful.")
+
+    def test_lowercase_fragment_after_a_pause_stays_with_its_sentence(self) -> None:
+        sentences = split_sentences([
+            {"start": 0.0, "end": 3.0, "text": "I didn't know if I'd vote today or."},
+            {"start": 7.0, "end": 9.0, "text": "not. I just went out."},
+        ])
+        self.assertEqual([(s["start"], s["end"]) for s in sentences], [(0.0, 9.0)])
 
     def test_candidate_starts_at_the_sentence_start_not_mid_sentence(self) -> None:
         segments = [
