@@ -284,6 +284,8 @@ def fetch_video_statistics(
                     statistics[item["id"]]["problem"] = f"rejete ({status['rejectionReason']})"
                 elif blocked:
                     statistics[item["id"]]["problem"] = f"bloque dans {len(blocked)} pays"
+                elif (item.get("contentDetails", {}).get("contentRating") or {}).get("ytRating") == "ytAgeRestricted":
+                    statistics[item["id"]]["problem"] = "restreint aux adultes"
         return statistics
     except YouTubeUploadError:
         raise

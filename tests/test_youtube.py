@@ -222,10 +222,13 @@ class YouTubeTests(unittest.TestCase):
             {"id": "b", "statistics": {"viewCount": "3"}, "status": {"uploadStatus": "processed"},
              "contentDetails": {"regionRestriction": {"blocked": ["US", "CA"]}}},
             {"id": "c", "statistics": {"viewCount": "7"}, "status": {"uploadStatus": "rejected", "rejectionReason": "duplicate"}},
+            {"id": "d", "statistics": {"viewCount": "4"}, "status": {"uploadStatus": "processed"},
+             "contentDetails": {"contentRating": {"ytRating": "ytAgeRestricted"}}},
         ]}
-        statistics = fetch_video_statistics(["a", "b", "c"])
+        statistics = fetch_video_statistics(["a", "b", "c", "d"])
         self.assertEqual(
-            [statistics[key].get("problem") for key in "abc"], ["rejete (copyright)", "bloque dans 2 pays", None]
+            [statistics[key].get("problem") for key in "abcd"],
+            ["rejete (copyright)", "bloque dans 2 pays", None, "restreint aux adultes"],
         )
 
     def test_the_second_channel_must_not_be_the_first_one(self) -> None:

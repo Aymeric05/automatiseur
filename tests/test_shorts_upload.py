@@ -589,28 +589,30 @@ class StatisticsTests(unittest.TestCase):
             entry = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"][0]
             self.assertEqual((entry["views"], entry["retention_pct"]), (1100, 87.5))
 
-    def test_a_short_removed_by_youtube_blocks_its_streamer_but_a_music_claim_does_not(self):
+    def test_only_a_rejection_by_youtube_blacklists_the_streamer(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)
             now = [datetime(2026, 10, 18, 12, 0, tzinfo=timezone.utc)]
             (tmp / "published_shorts.json").write_text(json.dumps({"fetched_at": None, "shorts": [
-                {"video_id": "gone", "streamer": "caedrel", "uploaded_at": "2026-10-16T09:00:00+00:00"},
-                {"video_id": "claimed", "streamer": "esports", "uploaded_at": "2026-10-16T09:00:00+00:00"},
-                {"video_id": "fine", "streamer": "kaicenat", "uploaded_at": "2026-10-16T09:00:00+00:00"},
+                {"video_id": "gone", "streamer": "deleted", "uploaded_at": "2026-10-16T09:00:00+00:00"},
+                {"video_id": "claimed", "streamer": "music", "uploaded_at": "2026-10-16T09:00:00+00:00"},
+                {"video_id": "adult", "streamer": "mature", "uploaded_at": "2026-10-16T09:00:00+00:00"},
+                {"video_id": "struck", "streamer": "esports", "uploaded_at": "2026-10-16T09:00:00+00:00"},
             ]}), encoding="utf-8")
             blocked = tmp / "blocked.txt"
-            stats = {"claimed": {"views": 5, "problem": "bloque dans 3 pays"}, "fine": {"views": 900}}
+            stats = {"claimed": {"views": 5, "problem": "bloque dans 3 pays"},
+                     "adult": {"views": 7, "problem": "restreint aux adultes"},
+                     "struck": {"views": 0, "problem": "rejete (copyright)"}}
             uploader = VODShortsUploader(
                 tmp, clock=lambda: now[0], statistics_fetcher=lambda ids, *a: stats, blocked_streamers_path=blocked,
             )
-            self.assertNotIn("liste noire", uploader.refresh_statistics())  # blocked in 3 countries: a music claim
-            self.assertEqual(load_top_streamers(blocked), frozenset())  # "gone": confirmed next time
+            self.assertIn("liste noire : esports (rejete (copyright))", uploader.refresh_statistics())
             now[0] += timedelta(hours=6)
-            self.assertIn("liste noire : caedrel (retire de YouTube)", uploader.refresh_statistics())
-            self.assertEqual(load_top_streamers(blocked), frozenset({"caedrel"}))
+            uploader.refresh_statistics()  # "gone" missing twice: most often deleted by the owner
+            self.assertEqual(load_top_streamers(blocked), frozenset({"esports"}))
             entries = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"]
             self.assertEqual([entry.get("problem") for entry in entries],
-                             ["retire de YouTube", "bloque dans 3 pays", None])
+                             ["retire de YouTube", "bloque dans 3 pays", "restreint aux adultes", "rejete (copyright)"])
 
     def test_each_channel_reads_its_own_statistics_even_right_after_the_other(self):
         with tempfile.TemporaryDirectory() as directory:
