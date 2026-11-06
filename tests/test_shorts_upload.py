@@ -589,12 +589,12 @@ class StatisticsTests(unittest.TestCase):
             entry = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"][0]
             self.assertEqual((entry["views"], entry["retention_pct"]), (1100, 87.5))
 
-    def test_only_a_rejection_by_youtube_blacklists_the_streamer(self):
+    def test_a_rejection_or_a_takedown_blacklists_the_streamer_but_not_a_flagged_short_deleted_later(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)
             now = [datetime(2026, 10, 18, 12, 0, tzinfo=timezone.utc)]
             (tmp / "published_shorts.json").write_text(json.dumps({"fetched_at": None, "shorts": [
-                {"video_id": "gone", "streamer": "deleted", "uploaded_at": "2026-10-16T09:00:00+00:00"},
+                {"video_id": "gone", "streamer": "takedown", "uploaded_at": "2026-10-16T09:00:00+00:00"},
                 {"video_id": "claimed", "streamer": "music", "uploaded_at": "2026-10-16T09:00:00+00:00"},
                 {"video_id": "adult", "streamer": "mature", "uploaded_at": "2026-10-16T09:00:00+00:00"},
                 {"video_id": "struck", "streamer": "esports", "uploaded_at": "2026-10-16T09:00:00+00:00"},
@@ -608,8 +608,9 @@ class StatisticsTests(unittest.TestCase):
             )
             self.assertIn("liste noire : esports (rejete (copyright))", uploader.refresh_statistics())
             now[0] += timedelta(hours=6)
-            uploader.refresh_statistics()  # "gone" missing twice: most often deleted by the owner
-            self.assertEqual(load_top_streamers(blocked), frozenset({"esports"}))
+            del stats["adult"]  # the owner deletes the restricted Short: already flagged, not counted
+            self.assertIn("liste noire : takedown (retire de YouTube)", uploader.refresh_statistics())
+            self.assertEqual(load_top_streamers(blocked), frozenset({"esports", "takedown"}))
             entries = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"]
             self.assertEqual([entry.get("problem") for entry in entries],
                              ["retire de YouTube", "bloque dans 3 pays", "restreint aux adultes", "rejete (copyright)"])

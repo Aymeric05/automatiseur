@@ -611,10 +611,11 @@ class VODShortsUploader:
             if problem:
                 known = entry.get("problem")  # already handled: deleting it later must not count again
                 entry["problem"] = problem
-                # Only a rejection by YouTube blacklists the streamer. A Short blocked in some countries
-                # is a music claim (the moments with music are no longer rendered), an age restriction
-                # is noted for the loop, and a missing one is most often deleted by the owner.
-                serious = problem.startswith("rejete")
+                # A rejection, or a Short gone without any earlier problem (a copyright takedown: it
+                # comes with a strike, 3 close the channel), blacklists the streamer. A Short the owner
+                # deletes was flagged first (restricted, claimed): ``known`` above, never counted. A
+                # music claim (blocked in some countries) or an age restriction alone is only noted.
+                serious = problem.startswith("rejete") or problem == "retire de YouTube"
                 if not known and serious and self.blocked_streamers_path and entry.get("streamer") and add_streamer(
                     self.blocked_streamers_path, entry["streamer"],
                     f"auto {now:%Y-%m-%d}: Short {entry['video_id']} {problem}",
