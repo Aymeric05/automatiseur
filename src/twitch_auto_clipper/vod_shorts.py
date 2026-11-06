@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from .candidate_clip import CandidateClipError, calculate_candidate_bounds
 from .profanity import censor, profane_intervals
+from . import music
 from .subtitles import FONTS_DIR, SubtitleGenerationError, generate_ass_subtitles, render_hook_image
 from .video import get_video_duration
 from .vod_highlights import VODHighlightSelectionResult
@@ -567,6 +568,8 @@ class VODShortsGenerator:
                     f"FFmpeg n'a produit aucune video valide pour {candidate_id}."
                 )
             temporary_path.replace(output_path)
+            if item.get("clean_voices"):  # loud music under a good moment: the voices only
+                music.keep_voices_only(output_path)
         except (ShortsGenerationError, subprocess.CalledProcessError, OSError, ValueError) as error:
             # ValueError/OSError also cover a VOD stream that cannot be resolved.
             self._remove_quietly(temporary_path)

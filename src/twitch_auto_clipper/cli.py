@@ -14,7 +14,8 @@ import time
 from typing import Any, Callable
 import urllib.request
 
-from .audio_events import detect_emotions, music_shares
+from .audio_events import detect_emotions
+from .music import GPU_LOCK, music_profile
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
 from .competitors import refresh_competitors
@@ -284,12 +285,9 @@ DEFAULT_DAILY_UPLOADS = 10  # known to pass in 24 h; beyond, one try an hour unt
 DEFAULT_DAILY_GEMINI_REQUESTS = 20  # Gemini API free tier, per model and per day (each model)
 
 
-_transcription_lock = Lock()
-
-
 def transcribe_one_at_a_time(*args, **kwargs):
-    """``transcribe_video``, one VOD at a time: two models would not fit in the GPU's memory."""
-    with _transcription_lock:
+    """``transcribe_video``, one VOD at a time, never with Demucs: they would not fit in the GPU's memory."""
+    with GPU_LOCK:
         return transcribe_video(*args, **kwargs)
 
 
@@ -792,7 +790,7 @@ def main() -> int:
             focus_finder=partial(find_focus, quota_dir=output_dir, daily_limit=daily_gemini),
             scene_finder=scene_cuts,  # each shot of a Short framed on its own
             still_checker=still_share,
-            music_checker=music_shares,  # a stream's background music gets Shorts blocked  # a frozen picture (menu, still image) never makes a Short
+            music_checker=music_profile,  # a stream's background music gets Shorts blocked  # a frozen picture (menu, still image) never makes a Short
             # Subtitles of the streamer and the people with them only, not of a watched video.
             speaker_finder=partial(media_speech, model=LIGHT_MODEL, quota_dir=output_dir, daily_limit=daily_gemini),
             # Gemini picks where each Short starts (the context) and ends (the punchline).

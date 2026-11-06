@@ -63,11 +63,18 @@ GEMINI_WAIT = timedelta(minutes=30)
 MIN_GEMINI_SCORE = 60
 # A Short whose picture is still in more than this share of its frames is never rendered.
 MAX_STILL_SHARE = 0.5
-# Beyond these shares of music or of a song, a moment is not rendered: a stream's music is
-# rarely free, Content ID blocks the Short. Measured: the Emiru Short blocked for its music
-# bed 28 %, talking streams 0-19 %, a game's own soundtrack 27-32 % (hence a higher bar for games).
-MAX_MUSIC_SHARE = {"irl": 0.25, "gaming": 0.45}
-MAX_SONG_SHARE = 0.15
+# Music in a moment (shares of its frames, see music.py): beyond these, a non-game moment has
+# music (a song sung shows only in the whole sound, an instrumental best once the voices are
+# removed); a game's own soundtrack reaches 0.4-0.5 once voices are removed, hence its own bar.
+MAX_MUSIC_WHOLE = 0.15
+MAX_MUSIC_REST = 0.3
+GAME_MAX_MUSIC = 0.45
+# Very loud instrumental music under a moment Gemini scores this high or more: removed, the Short
+# kept. Measured on real videos (2026-11-06): with the music's part above -13 dB, Demucs removed
+# 13 to 24 dB of it every time; below, sometimes only 4 to 9 dB. Quieter music or a song: dropped.
+LOUD_MUSIC_REST = 0.5
+LOUD_MUSIC_DB = -13.0
+KEEP_SCORE = 85
 # Where in each Short (share of its length) Gemini looks to frame it.
 FOCUS_SAMPLES = (0.2, 0.5, 0.8)
 LEAD_IN_ANALYSIS_SECONDS = 20  # audio examined before a moment to find what triggers it
@@ -129,7 +136,7 @@ class VODAutomationPipeline:
         reserve_gate: Callable[[dict[str, Any], str, str, int], bool] | None = None,
         still_checker: Callable[[str, float, float, float | None], float] | None = None,
         speaker_finder: Callable[[Path, list[dict[str, Any]], list[dict[str, Any]]], list[list[list[float]]]] | None = None,
-        music_checker: Callable[[Path, float, float], tuple[float, float]] | None = None,
+        music_checker: Callable[[Path, float, float], dict[str, float]] | None = None,
     ) -> None:
         self.output_dir = output_dir
         self.processing_pipeline = processing_pipeline or VODProcessingPipeline(output_dir)
@@ -151,7 +158,7 @@ class VODAutomationPipeline:
         # Per moment, the spans said by a watched video or game: left out of the subtitles
         # (see speakers.media_speech); None: every word is subtitled.
         self.speaker_finder = speaker_finder
-        # Shares of a moment with music and with a song (see audio_events.music_shares); None: not checked.
+        # A moment's music (see music.music_profile); None: not checked.
         self.music_checker = music_checker
 
     def run(self, acquisition: VODAcquisitionResult) -> VODAutomationResult:
@@ -299,10 +306,12 @@ class VODAutomationPipeline:
                     vod_id, "completed", processing, selection, message="Aucun moment avec du mouvement a l'image.",
                 )
         if self.music_checker is not None:
+            verdicts = [(moment, self._music_verdict(source_path, moment)) for moment in selection.selected]
             selection = replace(selection, selected=tuple(
-                moment for moment in selection.selected if not self._has_music(source_path, moment)
+                {**moment, "clean_voices": True} if verdict == "clean" else moment
+                for moment, verdict in verdicts if verdict != "drop"
             ))
-            funnel.append(f"{len(selection.selected)} sans musique")
+            funnel.append(f"{len(selection.selected)} sans musique ({sum(v == 'clean' for _, v in verdicts)} musique retiree)")
             if not selection.selected:
                 return VODAutomationResult(vod_id, "completed", processing, selection, message="Que des moments avec musique.")
         # Only when a watched video speaks in one of the moments: a Gemini request saved otherwise.
@@ -392,13 +401,19 @@ class VODAutomationPipeline:
             kept.append(moment)
         return tuple(without_near_duplicates(kept))
 
-    def _has_music(self, audio_path: Path, moment: dict[str, Any]) -> bool:
-        """Whether the moment plays music (YouTube's Content ID would block or claim the Short)."""
+    def _music_verdict(self, audio_path: Path, moment: dict[str, Any]) -> str:
+        """"ok", "clean" (loud instrumental music under a good moment: removed, the voices kept)
+        or "drop" (music Content ID would block, see music.py for the measures)."""
         try:
-            music, song = self.music_checker(audio_path, float(moment["start"]), float(moment["end"]))
+            profile = self.music_checker(audio_path, float(moment["start"]), float(moment["end"]))
         except Exception:  # unreadable audio: kept, as before
-            return False
-        return music > MAX_MUSIC_SHARE.get(moment.get("channel"), MAX_MUSIC_SHARE["gaming"]) or song > MAX_SONG_SHARE
+            return "ok"
+        if moment.get("channel") != "irl":  # a game's own soundtrack: only a song-like level of music
+            return "drop" if profile["whole"] > GAME_MAX_MUSIC else "ok"
+        if profile["whole"] <= MAX_MUSIC_WHOLE and profile["rest"] <= MAX_MUSIC_REST:
+            return "ok"
+        loud = profile["rest"] > LOUD_MUSIC_REST and profile["rest_level"] > LOUD_MUSIC_DB
+        return "clean" if loud and float(moment.get("gemini_score") or 0) >= KEEP_SCORE else "drop"
 
     def _frozen(self, vod_id: str, moment: dict[str, Any]) -> bool:
         """Whether the Short's picture barely moves (a menu, a still picture): never rendered."""

@@ -146,14 +146,27 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertEqual(channels, ["gaming", "irl"])
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
-    def test_a_moment_playing_background_music_is_never_rendered(self, gemini):
+    def test_music_under_a_moment_is_dropped_or_removed_when_loud_and_the_moment_is_good(self, gemini):
         pipeline = self._pipeline()
-        shares = iter([(0.28, 0.0), (0.05, 0.0)])  # the first plays a music bed (like the blocked Emiru Short)
-        pipeline.music_checker = lambda audio, start, end: next(shares)
-        result = pipeline.run(replace(self._acquisition(budget=2), game_name="Just Chatting"))
+        profiles = iter([
+            {"whole": 0.28, "rest": 0.2, "rest_level": -30.0},  # a quiet music bed (the blocked Emiru Short): dropped
+            {"whole": 0.6, "rest": 0.9, "rest_level": -10.0},  # loud music under a moment scored 88: removed
+        ])
+        pipeline.music_checker = lambda audio, start, end: next(profiles)
+        cleaned = []
+        with patch("twitch_auto_clipper.music.keep_voices_only", side_effect=lambda video: cleaned.append(video) or True):
+            result = pipeline.run(replace(self._acquisition(budget=2), game_name="Just Chatting"))
         self.assertEqual(result.status, "completed", format_vod_automation_result(result))
         self.assertEqual(len(result.shorts.shorts), 1)
-        self.assertIn("1 sans musique", result.message)
+        self.assertEqual(len(cleaned), 1)  # its sound replaced by the voices only
+        self.assertIn("1 sans musique (1 musique retiree)", result.message)
+
+    def test_a_game_soundtrack_is_not_taken_for_stream_music(self):
+        from twitch_auto_clipper.vod_pipeline import VODAutomationPipeline
+
+        pipeline = VODAutomationPipeline(music_checker=lambda audio, start, end: {"whole": 0.3, "rest": 0.5, "rest_level": -3.0})
+        moment = {"start": 0, "end": 30, "channel": "gaming", "gemini_score": 70}
+        self.assertEqual(pipeline._music_verdict(Path("a.mp4"), moment), "ok")
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_a_moment_whose_picture_does_not_move_is_never_rendered(self, gemini):
