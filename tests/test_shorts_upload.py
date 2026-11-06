@@ -589,7 +589,7 @@ class StatisticsTests(unittest.TestCase):
             entry = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"][0]
             self.assertEqual((entry["views"], entry["retention_pct"]), (1100, 87.5))
 
-    def test_a_short_removed_rejected_or_blocked_by_youtube_blocks_its_streamer(self):
+    def test_a_short_removed_by_youtube_blocks_its_streamer_but_a_music_claim_does_not(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)
             now = [datetime(2026, 10, 18, 12, 0, tzinfo=timezone.utc)]
@@ -603,11 +603,11 @@ class StatisticsTests(unittest.TestCase):
             uploader = VODShortsUploader(
                 tmp, clock=lambda: now[0], statistics_fetcher=lambda ids, *a: stats, blocked_streamers_path=blocked,
             )
-            self.assertIn("liste noire : esports (bloque dans 3 pays)", uploader.refresh_statistics())
-            self.assertEqual(load_top_streamers(blocked), frozenset({"esports"}))  # "gone": confirmed next time
+            self.assertNotIn("liste noire", uploader.refresh_statistics())  # blocked in 3 countries: a music claim
+            self.assertEqual(load_top_streamers(blocked), frozenset())  # "gone": confirmed next time
             now[0] += timedelta(hours=6)
             self.assertIn("liste noire : caedrel (retire de YouTube)", uploader.refresh_statistics())
-            self.assertEqual(load_top_streamers(blocked), frozenset({"esports", "caedrel"}))
+            self.assertEqual(load_top_streamers(blocked), frozenset({"caedrel"}))
             entries = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"]
             self.assertEqual([entry.get("problem") for entry in entries],
                              ["retire de YouTube", "bloque dans 3 pays", None])

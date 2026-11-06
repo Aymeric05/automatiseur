@@ -63,6 +63,11 @@ GEMINI_WAIT = timedelta(minutes=30)
 MIN_GEMINI_SCORE = 60
 # A Short whose picture is still in more than this share of its frames is never rendered.
 MAX_STILL_SHARE = 0.5
+# Beyond these shares of music or of a song, a moment is not rendered: a stream's music is
+# rarely free, Content ID blocks the Short. Measured: the Emiru Short blocked for its music
+# bed 28 %, talking streams 0-19 %, a game's own soundtrack 27-32 % (hence a higher bar for games).
+MAX_MUSIC_SHARE = {"irl": 0.25, "gaming": 0.45}
+MAX_SONG_SHARE = 0.15
 # Where in each Short (share of its length) Gemini looks to frame it.
 FOCUS_SAMPLES = (0.2, 0.5, 0.8)
 LEAD_IN_ANALYSIS_SECONDS = 20  # audio examined before a moment to find what triggers it
@@ -124,6 +129,7 @@ class VODAutomationPipeline:
         reserve_gate: Callable[[dict[str, Any], str, str, int], bool] | None = None,
         still_checker: Callable[[str, float, float, float | None], float] | None = None,
         speaker_finder: Callable[[Path, list[dict[str, Any]], list[dict[str, Any]]], list[list[list[float]]]] | None = None,
+        music_checker: Callable[[Path, float, float], tuple[float, float]] | None = None,
     ) -> None:
         self.output_dir = output_dir
         self.processing_pipeline = processing_pipeline or VODProcessingPipeline(output_dir)
@@ -145,6 +151,8 @@ class VODAutomationPipeline:
         # Per moment, the spans said by a watched video or game: left out of the subtitles
         # (see speakers.media_speech); None: every word is subtitled.
         self.speaker_finder = speaker_finder
+        # Shares of a moment with music and with a song (see audio_events.music_shares); None: not checked.
+        self.music_checker = music_checker
 
     def run(self, acquisition: VODAcquisitionResult) -> VODAutomationResult:
         result = self._run(acquisition)
@@ -290,6 +298,13 @@ class VODAutomationPipeline:
                 return VODAutomationResult(
                     vod_id, "completed", processing, selection, message="Aucun moment avec du mouvement a l'image.",
                 )
+        if self.music_checker is not None:
+            selection = replace(selection, selected=tuple(
+                moment for moment in selection.selected if not self._has_music(source_path, moment)
+            ))
+            funnel.append(f"{len(selection.selected)} sans musique")
+            if not selection.selected:
+                return VODAutomationResult(vod_id, "completed", processing, selection, message="Que des moments avec musique.")
         # Only when a watched video speaks in one of the moments: a Gemini request saved otherwise.
         if self.speaker_finder is not None and any(m.get("gemini_watched_media") is not False for m in selection.selected):
             try:
@@ -376,6 +391,14 @@ class VODAutomationPipeline:
                 moment["peak"] = reaction_peak(moment, source_path, moment["start"], moment["end"])
             kept.append(moment)
         return tuple(without_near_duplicates(kept))
+
+    def _has_music(self, audio_path: Path, moment: dict[str, Any]) -> bool:
+        """Whether the moment plays music (YouTube's Content ID would block or claim the Short)."""
+        try:
+            music, song = self.music_checker(audio_path, float(moment["start"]), float(moment["end"]))
+        except Exception:  # unreadable audio: kept, as before
+            return False
+        return music > MAX_MUSIC_SHARE.get(moment.get("channel"), MAX_MUSIC_SHARE["gaming"]) or song > MAX_SONG_SHARE
 
     def _frozen(self, vod_id: str, moment: dict[str, Any]) -> bool:
         """Whether the Short's picture barely moves (a menu, a still picture): never rendered."""

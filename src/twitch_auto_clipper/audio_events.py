@@ -98,3 +98,37 @@ def emotion_moments(frames: list[tuple[float, str, float]]) -> list[dict[str, An
     ]
     moments.sort(key=lambda moment: -moment["score"])
     return moments
+
+
+MUSIC_CLASSES = (132, 262)  # Music, Background music
+SONG_CLASSES = (24, 25, 29, 30, 31)  # Singing, Choir, Child singing, Synthetic singing, Rapping
+MUSIC_SCORE = 0.1  # a frame is music above this score (a quiet music bed under voices: 0.1-0.3)
+SONG_SCORE = 0.2  # a frame has a voice singing or rapping above this score
+
+
+def music_shares(audio_path: Path, start: float, end: float) -> tuple[float, float]:
+    """Share of the moment's frames with music, and with a song (singing or rapping).
+
+    A stream's background music usually belongs to a label: YouTube's Content ID
+    recognizes it and blocks or claims the Short (an Emiru Short was blocked in
+    two countries for it on 2026-11-02).
+    """
+    import numpy as np
+    import onnxruntime
+    from huggingface_hub import hf_hub_download
+
+    session = onnxruntime.InferenceSession(
+        hf_hub_download(YAMNET_REPO, "yamnet.onnx"), providers=["CPUExecutionProvider"]
+    )
+    audio = subprocess.run(
+        ["ffmpeg", "-v", "error", "-ss", str(start), "-t", str(end - start), "-i", str(audio_path),
+         "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE), "-f", "f32le", "-"],
+        stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=120,
+    ).stdout
+    wave = np.frombuffer(audio[: len(audio) // 4 * 4], dtype=np.float32)
+    if len(wave) < SAMPLE_RATE:
+        return 0.0, 0.0
+    scores = session.run(["output_0"], {"waveform": wave})[0]
+    music = scores[:, list(MUSIC_CLASSES)].max(axis=1) >= MUSIC_SCORE
+    song = scores[:, list(SONG_CLASSES)].max(axis=1) >= SONG_SCORE
+    return float(music.mean()), float(song.mean())

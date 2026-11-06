@@ -146,6 +146,16 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertEqual(channels, ["gaming", "irl"])
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
+    def test_a_moment_playing_background_music_is_never_rendered(self, gemini):
+        pipeline = self._pipeline()
+        shares = iter([(0.28, 0.0), (0.05, 0.0)])  # the first plays a music bed (like the blocked Emiru Short)
+        pipeline.music_checker = lambda audio, start, end: next(shares)
+        result = pipeline.run(replace(self._acquisition(budget=2), game_name="Just Chatting"))
+        self.assertEqual(result.status, "completed", format_vod_automation_result(result))
+        self.assertEqual(len(result.shorts.shorts), 1)
+        self.assertIn("1 sans musique", result.message)
+
+    @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_a_moment_whose_picture_does_not_move_is_never_rendered(self, gemini):
         pipeline = self._pipeline()
         checked = []

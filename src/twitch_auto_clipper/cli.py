@@ -14,7 +14,7 @@ import time
 from typing import Any, Callable
 import urllib.request
 
-from .audio_events import detect_emotions
+from .audio_events import detect_emotions, music_shares
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
 from .competitors import refresh_competitors
@@ -791,7 +791,8 @@ def main() -> int:
             # Screen-sharing streams: each Short centered on what matters, not on the middle.
             focus_finder=partial(find_focus, quota_dir=output_dir, daily_limit=daily_gemini),
             scene_finder=scene_cuts,  # each shot of a Short framed on its own
-            still_checker=still_share,  # a frozen picture (menu, still image) never makes a Short
+            still_checker=still_share,
+            music_checker=music_shares,  # a stream's background music gets Shorts blocked  # a frozen picture (menu, still image) never makes a Short
             # Subtitles of the streamer and the people with them only, not of a watched video.
             speaker_finder=partial(media_speech, model=LIGHT_MODEL, quota_dir=output_dir, daily_limit=daily_gemini),
             # Gemini picks where each Short starts (the context) and ends (the punchline).

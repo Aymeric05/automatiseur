@@ -609,8 +609,12 @@ class VODShortsUploader:
             else:
                 entry.pop("missing_since", None)
             if problem:
+                known = entry.get("problem")  # already handled: deleting it later must not count again
                 entry["problem"] = problem
-                if self.blocked_streamers_path and entry.get("streamer") and add_streamer(
+                # A Short blocked in some countries is a music claim (Content ID): the moments with
+                # music are no longer rendered (vod_pipeline.MAX_MUSIC_SHARE), the streamer stays.
+                serious = not problem.startswith("bloque")
+                if not known and serious and self.blocked_streamers_path and entry.get("streamer") and add_streamer(
                     self.blocked_streamers_path, entry["streamer"],
                     f"auto {now:%Y-%m-%d}: Short {entry['video_id']} {problem}",
                 ):
