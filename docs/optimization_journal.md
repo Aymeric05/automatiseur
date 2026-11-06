@@ -283,6 +283,16 @@ ones, and moves them to the entries.
 
 ## Entries
 
+### 2026-11-06 - changes made in the owner's conversation
+
+- Both channels were set "made for kids" at channel level (their Shorts were not): switched to
+  "not made for kids" by the owner on 2026-11-06. Compare views and retention of the Shorts
+  published after that date with those before (report: "channels set to not made for kids").
+- An Emiru Short was blocked in 2 countries for the stream's background music: moments with
+  music are no longer rendered (vod_pipeline.MAX_MUSIC_SHARE: 25 % non-game, 45 % game; check
+  the funnel's "sans musique" count: if many moments are lost, raise the bar), and a music
+  claim no longer blacklists the streamer (Emiru removed from the list).
+
 ### 2026-11-06 - vraie cause des coupes en plein mot trouvee (split_sentences), guide hebdo refait
 
 - Gaming : coherence 1/4 defaillant ; sur les 30 derniers Shorts des 2 chaines, ~15 commencent

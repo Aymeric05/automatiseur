@@ -26,6 +26,8 @@ NOW = datetime.now(timezone.utc)
 CHANGES = {
     "bounds by Gemini + no 30 s test": "2026-10-23T01:00:00+00:00",
     "format guide from competitors": "2026-10-23T01:28:00+00:00",
+    "channels set to not made for kids": "2026-11-06T11:00:00+00:00",
+    "background music filter": "2026-11-06T10:30:00+00:00",
 }
 
 
