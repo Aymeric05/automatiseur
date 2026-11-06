@@ -149,6 +149,11 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   pipeline suivent encore l'ancien reglage), pas une preuve independante, a resurveiller demain.
 
 ### PeakMoments (irl)
+- Cold open on PeakMoments: the learned points say -0.4 with it, +0.3 without (2026-11-06), while it
+  works on LiveActions!. The owner wants MORE evidence before removing it on PeakMoments: run it
+  as an A/B test (cold_open: false on half the VODs) when an irl slot frees up, decide with the
+  usual bar (20+ measured per variant, 6+ VODs), and look at whether the big IRL clip channels
+  open on the climax (thumbnails/titles of their top Shorts): do as they do. (2026-11-06)
 - Coherence (2026-11-06) : 3 des 4 derniers Shorts defaillants, dont 2 qui commencent sur un bout
   de phrase en minuscule ("not.", "a new one?") et finissent en pleine phrase ("I walked in and",
   "I mean, look"). Meme cause que gaming (split_sentences, pas la saturation) - corrige 11-06.
