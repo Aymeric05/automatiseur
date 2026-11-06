@@ -30,7 +30,7 @@ RESERVE_SIZE = 30
 RENDER_RANK = 15
 # Only the best of a real choice goes out: below this many ready Shorts, wait for more
 # (an unused upload slot is not lost: it stays free until used).
-RESERVE_MIN_TO_PUBLISH = 10
+RESERVE_MIN_TO_PUBLISH = 5
 MIN_PUBLISHED_SECONDS = 15.0  # shorter, nobody understands the situation
 RESERVE_MAX_AGE = timedelta(days=14)  # older Shorts leave the reserve
 # A Short with muted swear words must be clearly better to beat a clean one.
