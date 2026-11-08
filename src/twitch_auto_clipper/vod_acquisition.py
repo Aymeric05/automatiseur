@@ -26,6 +26,7 @@ MAX_JOB_AGE_SECONDS = 48 * 3600
 TOP_STREAMER_CLIP_BUDGET = 20  # moments asked to Gemini for a streamer of the top list
 # About what the worker processes within MAX_JOB_AGE_SECONDS: worse jobs are dropped.
 MAX_QUEUED_JOBS = 40
+MAX_VOD_SECONDS = 8 * 3600  # of a longer VOD (a 24-48 h stream), only the last 8 hours are processed
 MEMORY_SIZE = 2000  # processed and abandoned streams remembered (never queued twice)
 AUDIO_SUFFIXES = frozenset({".mp4", ".m4a", ".aac", ".ts", ".webm", ".mkv", ".mp3", ".opus"})
 
@@ -95,7 +96,7 @@ class TwitchVODAcquisitionManager:
         # Only the audio is downloaded: the Shorts read their video from Twitch.
         # rate_limit (bytes per second) keeps the connection usable for everyone else.
         self.downloader = downloader or partial(
-            download_twitch_vod, audio_only=True, quiet=True, rate_limit=rate_limit
+            download_twitch_vod, audio_only=True, quiet=True, rate_limit=rate_limit, last_seconds=MAX_VOD_SECONDS
         )
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         # Logins whose VODs get TOP_STREAMER_CLIP_BUDGET moments (hence go first).

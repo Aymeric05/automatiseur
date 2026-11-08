@@ -1,6 +1,7 @@
 """Twitch VOD acquisition helpers."""
 
 from pathlib import Path
+import subprocess
 from urllib.parse import urlparse
 
 
@@ -28,6 +29,14 @@ def _get_youtube_dl():
     return YoutubeDL
 
 
+def audio_offset(path: Path | str) -> float:
+    """Where a downloaded audio file starts in its VOD (seconds): 0 unless only its end was kept."""
+    try:
+        return float(Path(path).with_name(f"{Path(path).stem}.offset").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0.0
+
+
 def download_twitch_vod(
     url: str,
     output_dir: Path,
@@ -36,8 +45,12 @@ def download_twitch_vod(
     audio_only: bool = False,
     quiet: bool = False,
     rate_limit: int | None = None,
+    last_seconds: float | None = None,
 ) -> Path:
     """Download a Twitch VOD and return its local path.
+
+    ``last_seconds`` keeps only the end of a longer VOD (a 48 h stream: its last 8 hours);
+    where the file starts in the VOD is written next to it (see ``audio_offset``).
 
     The video is saved as ``<vod_id>.mp4``; with ``audio_only`` only the audio
     track is saved, as ``<vod_id>_audio.<ext>`` (~70 MB per hour instead of
@@ -63,6 +76,7 @@ def download_twitch_vod(
         "noplaylist": True,
         "quiet": quiet,
         "noprogress": quiet,
+        "concurrent_fragment_downloads": 4,  # Twitch serves 10 s pieces: several at once, under the rate limit
     }
     if not audio_only:
         options["merge_output_format"] = "mp4"
@@ -78,6 +92,16 @@ def download_twitch_vod(
         with youtube_dl(options) as downloader:
             info = downloader.extract_info(url, download=True)
             downloaded_path = Path(downloader.prepare_filename(info))
+        duration = float(info.get("duration") or 0)
+        if last_seconds and duration > last_seconds and downloaded_path.is_file():
+            # Cut locally (a few seconds, no re-encoding): downloading only a section through
+            # FFmpeg runs slower than real time on Twitch's HLS.
+            offset = duration - last_seconds
+            kept = downloaded_path.with_name(f"{downloaded_path.stem}.tail{downloaded_path.suffix}")
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{offset:.3f}", "-i", str(downloaded_path),
+                            "-vn", "-c", "copy", str(kept)], stdin=subprocess.DEVNULL, check=True, timeout=1800)
+            kept.replace(downloaded_path)
+            downloaded_path.with_name(f"{downloaded_path.stem}.offset").write_text(f"{offset:.3f}", encoding="utf-8")
     except ModuleNotFoundError as error:
         raise TwitchDownloadError(
             "yt-dlp est requis pour telecharger une VOD Twitch."

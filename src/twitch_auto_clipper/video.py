@@ -5,6 +5,7 @@ import re
 import subprocess
 
 from .framing import build_vertical_filter
+from .twitch import audio_offset
 from .subtitles import FONTS_DIR
 
 
@@ -12,7 +13,7 @@ def audio_levels(input_path: Path, start: float, seconds: int) -> list[float]:
     """Loudness (RMS, dB) of each second of ``input_path`` from ``start``; silence is -90."""
     result = subprocess.run(
         [
-            "ffmpeg", "-v", "info", "-ss", str(max(0.0, start)), "-t", str(seconds),
+            "ffmpeg", "-v", "info", "-ss", str(max(0.0, start - audio_offset(input_path))), "-t", str(seconds),
             "-i", str(input_path), "-vn",
             "-af", "aresample=8000,asetnsamples=n=8000,astats=metadata=1:reset=1,"
                    "ametadata=print:key=lavfi.astats.Overall.RMS_level",

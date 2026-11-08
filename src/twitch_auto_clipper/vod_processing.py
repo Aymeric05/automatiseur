@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from .chat_activity import ChatActivityError, compact_chat, load_chat_messages
 from .transcription import save_transcription, transcribe_video
+from .twitch import audio_offset
 from .twitch_chat import TwitchChatDownloadError, download_twitch_chat
 from .vod_acquisition import VODAcquisitionResult
 
@@ -94,7 +95,7 @@ class VODProcessingPipeline:
                     device="auto",  # NVIDIA GPU when available, else CPU
                     temp_dir=self.output_dir / "tmp",  # cleared at start-up if a run is cut
                 )
-                save_transcription(segments, transcript_path)
+                save_transcription(_shifted(segments, audio_offset(acquisition.downloaded_path)), transcript_path)
                 manifest["transcription_complete"] = True
                 self._save_manifest(manifest_path, manifest)
             except Exception as error:
@@ -111,7 +112,8 @@ class VODProcessingPipeline:
         ):
             try:
                 emotions_path.write_text(
-                    json.dumps(self.emotion_detector(acquisition.downloaded_path)), encoding="utf-8"
+                    json.dumps(_shifted(self.emotion_detector(acquisition.downloaded_path),
+                                        audio_offset(acquisition.downloaded_path))), encoding="utf-8"
                 )
                 manifest.pop("emotions_error", None)
             except Exception as error:  # optional: the VOD goes on without emotion candidates
@@ -130,6 +132,7 @@ class VODProcessingPipeline:
                 timestamped_chat_path,
                 manifest,
                 errors,
+                audio_offset(acquisition.downloaded_path),
             )
         self._save_manifest(manifest_path, manifest)
 
@@ -157,6 +160,7 @@ class VODProcessingPipeline:
         timestamped_chat_path: Path,
         manifest: dict[str, Any],
         errors: list[str],
+        offset: float = 0.0,
     ) -> str:
         vod_url = f"https://www.twitch.tv/videos/{vod_id}"
         reused_existing_chat = False
@@ -170,7 +174,8 @@ class VODProcessingPipeline:
                     timestamped_chat_path.unlink(missing_ok=True)  # corrupt: rebuilt below
             if not reused_existing_chat:
                 if not (chat_path.is_file() and chat_path.stat().st_size > 0):
-                    self.chat_downloader(vod_url, chat_path)
+                    # Only the part of the VOD kept (its messages keep their VOD times).
+                    self.chat_downloader(vod_url, chat_path, start_seconds=offset) if offset else self.chat_downloader(vod_url, chat_path)
                     downloaded = True
                 messages = load_chat_messages(chat_path)
                 timestamped_chat_path.write_text(
@@ -231,3 +236,15 @@ def format_vod_processing_result(result: VODProcessingResult) -> list[str]:
     ]
     lines.extend(f"Erreur {error}" for error in result.errors)
     return lines
+
+
+def _shifted(items: list[dict[str, Any]], offset: float) -> list[dict[str, Any]]:
+    """Times of a file that starts ``offset`` seconds into the VOD, back to VOD seconds."""
+    if not offset:
+        return items
+    keys = ("start", "end", "onset")
+    return [
+        {**item, **{k: round(item[k] + offset, 3) for k in keys if isinstance(item.get(k), (int, float))},
+         **({"words": _shifted(item["words"], offset)} if isinstance(item.get("words"), list) else {})}
+        for item in items
+    ]

@@ -179,6 +179,16 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertEqual(len(result.shorts.shorts), 1)
         self.assertIn("1 avec du mouvement", result.message)
 
+    def test_a_vod_that_could_not_enter_the_reserve_costs_no_transcription_nor_gemini(self):
+        pipeline = self._pipeline()
+        asked = []
+        pipeline.reserve_gate = lambda moment, login, vod_id, budget: asked.append(moment["gemini_score"]) or False
+        result = pipeline.run(self._acquisition(budget=2))
+        self.assertEqual(result.status, "completed")
+        self.assertIn("Aucune chance", result.message)
+        self.assertEqual(asked, [95])  # even a 95 would not enter
+        self.assertEqual(self.transcriptions, 0)
+
     def test_a_stream_on_camera_is_never_checked_for_a_frozen_picture(self):
         from twitch_auto_clipper.vod_pipeline import VODAutomationPipeline
 
@@ -625,3 +635,13 @@ class ManifestStatusTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OffsetTests(unittest.TestCase):
+    def test_times_of_a_file_cut_to_the_last_hours_go_back_to_vod_seconds(self):
+        from twitch_auto_clipper.vod_processing import _shifted
+
+        segments = [{"start": 1.0, "end": 2.5, "text": "hi", "words": [{"word": "hi", "start": 1.0, "end": 1.4}]}]
+        shifted = _shifted(segments, 3600.0)
+        self.assertEqual((shifted[0]["start"], shifted[0]["end"], shifted[0]["words"][0]["start"]), (3601.0, 3602.5, 3601.0))
+        self.assertIs(_shifted(segments, 0.0), segments)

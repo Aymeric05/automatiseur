@@ -44,7 +44,7 @@ from .vod_acquisition import (
     format_vod_acquisition_result,
 )
 from .shorts_upload import VODShortsUploader, format_short_upload_result
-from .twitch import TwitchDownloadError, download_twitch_vod, resolve_twitch_video_url
+from .twitch import TwitchDownloadError, audio_offset, download_twitch_vod, resolve_twitch_video_url
 from .twitch_chat import download_twitch_chat, find_twitch_downloader_cli
 from .vod_shorts import VODShortsGenerator
 from .vod_highlights import VODHighlightSelector
@@ -881,7 +881,9 @@ def main() -> int:
 
             def prefetch_chat(vod_id: str) -> None:
                 if not (output_dir / f"{vod_id}_chat_timestamps.json").exists():
-                    download_twitch_chat(f"https://www.twitch.tv/videos/{vod_id}", output_dir / f"{vod_id}_chat.json")
+                    audio = find_downloaded_audio(input_dir, vod_id)
+                    download_twitch_chat(f"https://www.twitch.tv/videos/{vod_id}", output_dir / f"{vod_id}_chat.json",
+                                         start_seconds=audio_offset(audio) or None if audio else None)
 
             # Downloads the next VOD (audio, then chat) while the worker transcribes and renders.
             def prefetch() -> None:

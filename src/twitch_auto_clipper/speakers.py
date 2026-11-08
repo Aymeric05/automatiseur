@@ -14,6 +14,7 @@ import subprocess
 from typing import Any
 
 from .gemini_evaluation import _generate_json
+from .twitch import audio_offset
 
 MARGIN_SECONDS = 2.0  # audio heard before and after the moment (the Short's render margins)
 AUDIO_BITRATE = "48k"  # mono MP3: about 6 KB a second, 20 moments fit in one request
@@ -67,7 +68,7 @@ def media_speech(
         start = max(0.0, float(moment["start"]) - MARGIN_SECONDS)
         end = float(moment["end"]) + MARGIN_SECONDS
         audio = subprocess.run(
-            ["ffmpeg", "-v", "error", "-ss", str(start), "-t", str(end - start), "-i", str(audio_path),
+            ["ffmpeg", "-v", "error", "-ss", str(max(0.0, start - audio_offset(audio_path))), "-t", str(end - start), "-i", str(audio_path),
              "-vn", "-ac", "1", "-b:a", AUDIO_BITRATE, "-f", "mp3", "-"],
             stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=120,
         ).stdout

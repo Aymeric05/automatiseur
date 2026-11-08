@@ -24,6 +24,7 @@ from typing import Any
 import numpy as np
 
 from .audio_events import MUSIC_CLASSES, SAMPLE_RATE, YAMNET_REPO
+from .twitch import audio_offset
 
 # One GPU job at a time: Whisper and Demucs together would not fit in a 4 GB card.
 GPU_LOCK = Lock()
@@ -56,7 +57,7 @@ def _yamnet():
 
 def _load(path: Path, start: float = 0.0, seconds: float | None = None) -> np.ndarray:
     audio = subprocess.run(
-        ["ffmpeg", "-v", "error", "-ss", str(start), *(["-t", str(seconds)] if seconds else []), "-i", str(path),
+        ["ffmpeg", "-v", "error", "-ss", str(max(0.0, start - audio_offset(path))), *(["-t", str(seconds)] if seconds else []), "-i", str(path),
          "-vn", "-ac", "2", "-ar", str(RATE), "-f", "f32le", "-"],
         stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=300,
     ).stdout

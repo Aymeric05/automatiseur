@@ -63,6 +63,9 @@ GEMINI_WAIT = timedelta(minutes=30)
 MIN_GEMINI_SCORE = 60
 # A Short whose picture is still in more than this share of its frames is never rendered.
 MAX_STILL_SHARE = 0.5
+# The score a VOD's best moment is assumed to reach before Gemini sees it: if even that could not
+# enter the reserve, the VOD costs no transcription and no Gemini request.
+BEST_POSSIBLE_SCORE = 95
 # Music in a moment (shares of its frames, see music.py): beyond these, a non-game moment has
 # music (a song sung shows only in the whole sound, an instrumental best once the voices are
 # removed); a game's own soundtrack reaches 0.4-0.5 once voices are removed, hence its own bar.
@@ -182,6 +185,14 @@ class VODAutomationPipeline:
             return VODAutomationResult(vod_id, "skipped", message="VOD absente ou invalide.")
         if acquisition.clip_budget <= 0:
             return VODAutomationResult(vod_id, "skipped", message="Budget de clips nul.")
+
+        # Even its best moment could not enter its channel's reserve (the reserve already holds
+        # better Shorts of better streamers): no transcription, no Gemini request for this VOD.
+        if self.reserve_gate is not None:
+            best = {"gemini_score": BEST_POSSIBLE_SCORE, "start": 0.0, "end": 30.0,
+                    "channel": short_channel(None, acquisition.game_name or "")}
+            if not self.reserve_gate(best, acquisition.broadcaster_login or "", vod_id, acquisition.clip_budget):
+                return VODAutomationResult(vod_id, "completed", message="Aucune chance d'entrer dans la reserve : VOD ignoree.")
 
         # 1. Transcription and chat.
         try:
