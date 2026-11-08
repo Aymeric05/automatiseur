@@ -33,6 +33,10 @@ Shorts and channels), the date seen first and last. Strengthen, weaken or remove
 evidence comes; turn a strong line into an A/B test, then into the app's default.
 
 ### LiveActions! (gaming)
+- Coherence (2026-11-08) : les Shorts rendus le 11-06 13:34 (apres le fix split_sentences) finissent
+  encore sur 1-3 mots de la phrase suivante ("And by the way, you", "Okay. Tell", "No,") - 6 des 14
+  derniers, 2 chaines. Cause : la marge de rendu apres la fin (after) attrapait le debut de la phrase
+  suivante. Corrige le 11-07 (vod_shorts._clip_bounds : marges limitees au silence), commite le 11-08.
 - Coherence (2026-11-06) : CORRECTION des 11-04/11-05 - l'hypothese "chemin de secours sans
   Gemini" etait fausse (trim_reason n'est jamais sauve dans le manifeste, son absence ne prouve
   rien). Vraie cause commune : split_sentences laissait des bouts de phrase en minuscule ("worry.",
@@ -149,6 +153,11 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   pipeline suivent encore l'ancien reglage), pas une preuve independante, a resurveiller demain.
 
 ### PeakMoments (irl)
+- Concurrents (2026-11-08, miniatures 5 hauts/5 bas non vus) : hauts = Speed, histoire emotionnelle
+  (pere mort, vengeance, "caught in 4K"), miniature = image du pic + 1 mot "*REVENGE*" ; bas =
+  commentaire assis (Asmongold Reddit/societe). Confirme la ligne du 11-06. Test irl_cold_open_v1 lance.
+- Production (2026-11-08) : 8 des 10 publies en 24 h viennent d'une seule VOD politique de HasanAbi
+  (poids appris -0.5, politique = tiers bas chez les concurrents) faute d'autres VOD rendues (0/24 h).
 - Cold open on PeakMoments: the learned points say -0.4 with it, +0.3 without (2026-11-06), while it
   works on LiveActions!. The owner wants MORE evidence before removing it on PeakMoments: run it
   as an A/B test (cold_open: false on half the VODs) when an irl slot frees up, decide with the
@@ -284,9 +293,21 @@ ones, and moves them to the entries.
 | 2026-10-30 | Fix: when Gemini's trim answer for a moment is rejected or missing, its start is now also recalee on a sentence boundary (only the end was before) | fewer "no context at start" / early cuts | Gemini quality-check defects on our Shorts | pending |
 | 2026-11-06 | A/B gaming_interaction_v1: favorise interactions entre personnes avec chute, evite action seule/compilations | retention/views plus proches des hits | retention_pct, views_3d of B vs A | pending (0 measured) |
 | 2026-11-06 | Fix (highlights.py): un segment en minuscule rejoint la phrase precedente jusqu'a 6 s de pause | plus de Shorts qui commencent/finissent sur un bout de phrase ("not.", "I walked in and") | coherence du rapport | pending |
+| 2026-11-08 | A/B irl_cold_open_v1: pas de cold open sur PeakMoments (b: cold_open false) | retention meilleure si le cold open nuit en IRL (points appris -0.4) | retention_pct, perf of B vs A | pending (0 measured) |
+| 2026-11-07 | Fix (vod_shorts._clip_bounds): les marges avant/apres restent dans le silence, plus de mots de la phrase suivante/precedente | fin propre au lieu de "... Okay. Tell" | coherence du rapport | pending |
+| 2026-11-08 | DOWNLOAD_SHARE 0.10 -> 0.25 (cli.py) | telechargements plus rapides (VOD de 48 h bloquant la file) | throughput du rapport | pending |
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-08 - 0 VOD rendue en 24 h, fins qui debordent sur la phrase suivante
+
+- Gaming : coherence 3/4 finissent sur des mots de la phrase suivante (Shorts du 11-06) : marge de
+  rendu, corrigee le 11-07 et commitee. gaming_interaction_v1 a 0 mesure. Revoir coherence demain.
+- IRL : meme defaut (6/10). 8 des 10 publies = une VOD politique de HasanAbi. Test irl_cold_open_v1
+  lance (demande du proprietaire, slot libre). irl_dialogue_v1 : A n=12, B n=3, loin du seuil.
+- Debit : app arretee ~11-06 soir -> 11-08 18:25 ; depuis, une VOD de 48 h (stableronaldo, audio
+  4.4 Go a 1000 Ko/s) occupe le seul telechargement. DOWNLOAD_SHARE 0.25, app redemarree.
 
 ### 2026-11-06 - changes made in the owner's conversation
 
@@ -394,54 +415,12 @@ ones, and moves them to the entries.
 - App verifiee saine (log sans trace d'erreur fatale) ; code change (experiments.py,
   config/experiments.json), tests ok (345 passed), commit + push + redemarrage.
 
-### 2026-10-31 - quota Gemini epuise en fin de journee, rien a trancher
-
-- Gaming : quota epuise avant l'etude (5 modeles fermes par Google, flash-lite-latest a son
-  plafond du jour) - pas d'analyse video possible. Tests sous le seuil (titres A n=23 vods=11/B
-  n=17 vods=8, longueur A n=20 vods=8/B n=17 vods=9) : rien a trancher, 2 slots pleins. Production
-  (donnees seules) : Fortnite tres gaspille aujourd'hui (3/22, un seul jour) ; Dota 2 se redresse
-  et sort de la surveillance (voir Knowledge).
-- IRL : meme blocage Gemini. Tests sous le seuil (titres A n=34 vods=5/B n=9 vods=3, longueur A
-  n=19 vods=4/B n=8 vods=2) : rien a trancher, 2 slots pleins. Production : Just Chatting toujours
-  dominant, longueur >40s se tient bien - va dans le sens du test irl_length_v1 en cours.
-- App verifiee saine (aucun python.exe en trop, log sans erreur recente) ; aucun changement de
-  code ou config ce run, pas de redemarrage necessaire.
-
-### 2026-10-30 - panne reseau (pas Gemini), vraie cause de la coupe retrouvee
-
-- Gaming : Gemini a revu 5 hits/5 flops concurrents + notre meilleur/pire + 3 Shorts recents : hits
-  = accroche forte <3s, 15-45s, cadrage serre + sous-titres synchro, chute nette. Les 3 Shorts
-  recents avaient un defaut (2x fin coupee tot, 1x sans contexte) - vraie cause trouvee et corrigee
-  (trimming.py, voir Knowledge). Tests sous le seuil (titres A n=21 vods=10/B n=13 vods=7, longueur
-  A n=19 vods=8/B n=12 vods=7) : rien a trancher, 2 slots pleins.
-- IRL : memes verifications (5 hits/5 flops + meilleur/pire + 2 controle qualite), meme defaut sur 1
-  Short sur 2, meme correctif. Tests sous le seuil (titres A n=28 vods=5/B n=9 vods=3, longueur A
-  n=18 vods=4/B n=3 vods=2) : rien a trancher, 2 slots pleins.
-- A l'ouverture du run : app plantee sans trace (verifie : aucun python.exe actif), suite a une
-  panne DNS temporaire sur la machine (gql.twitch.tv, oauth2.googleapis.com injoignables - resolu
-  tout seul entre temps, confirme par nslookup). Les fichiers de quota Gemini montraient les 6
-  modeles tres en dessous de leur limite (4, 2, 1 requetes...) : les "quota atteint" vus dans les
-  3000 dernieres lignes du log dataient du 28/10 (log peu rempli, fenetre qui remonte loin), pas
-  un vrai blocage aujourd'hui. App redemarree manuellement (schtasks /Run) avant toute analyse.
-
-### 2026-10-29 - quota Gemini sature un 4e jour, rien a trancher
-
-- Gaming : analyse video impossible (6 modeles satures, verifie via les fichiers de quota avant
-  tout appel). Tests sous le seuil (titres A n=15/B n=13, longueur A n=15/B n=10, vods=6-7) : rien
-  a trancher, 2 slots pleins. Production (donnees seules) : Shorts 25-40s quasi tout perdus (1
-  publie/69), GTA V toujours faible (3/34) - voir Knowledge.
-- IRL : meme blocage Gemini. Tests sous le seuil (titres A n=21 vods=3/B n=8 vods=3, longueur A
-  n=13 vods=4/B n=0) : rien a trancher, 2 slots pleins. Production : Just Chatting toujours
-  dominant (9/30 publies), Shorts <25s sans aucun abandon - voir Knowledge.
-- Debit : 7 VOD/24h (objectif 20+), 40 en file, 68 renvoyees en attente de Gemini aujourd'hui - pas
-  un bug (modeles vraiment satures, pas sous leur limite). Proposition ajoutee : passer Gemini en
-  tier payant (voir "Waiting for the owner").
-
-### earlier (2026-10-23 to 2026-10-28)
+### earlier (2026-10-23 to 2026-10-31)
 
 - 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
   gaming_length_v1 (45-90s, gagne le 11-01), 10-26 irl_length_v1 (perdu le 11-03). Bugs de coupe
   corriges (fin non recalee sans Gemini, KeyError 'start', plafond 58s). 10-27/28 (proprietaire) :
   sous-titres mot a mot, 2 VOD en parallele, prefetch, cadrage split, TikTok brouillons IRL,
   rendus limites au top 15, refus Gemini dans gemini_refusals.log. Debit 2-11 VOD/24h, goulot
-  quota Gemini (proposition tier payant).
+  quota Gemini (proposition tier payant). 10-29/31 : Gemini sature,
+  tests sous le seuil ; 10-30 panne DNS (app relancee) et fin de Short non recalee corrigee (trimming).

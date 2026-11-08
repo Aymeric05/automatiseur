@@ -346,5 +346,18 @@ class VerticalFilterTests(unittest.TestCase):
         self.assertNotIn("-readrate", local)
 
 
+class ClipBoundsTests(unittest.TestCase):
+    def test_margins_never_take_the_next_or_previous_sentence(self):
+        generator = VODShortsGenerator(Path(tempfile.gettempdir()))
+        segments = [
+            {"words": [{"word": "before.", "start": 9.0, "end": 9.8}]},
+            {"words": [{"word": "Okay.", "start": 10.0, "end": 29.5}]},
+            {"words": [{"word": "Tell", "start": 30.3, "end": 30.6}]},
+        ]
+        start, end = generator._clip_bounds({"start": 10.0, "end": 30.0}, "c", 600.0, segments)
+        self.assertEqual((start, end), (9.85, 30.25))
+        self.assertEqual(generator._clip_bounds({"start": 10.0, "end": 30.0}, "c", 600.0), (9.5, 31.0))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -23,6 +23,15 @@
           "Evite l'action de jeu seule sans enjeu dit a voix haute, et toute compilation de plusieurs moments."
         ]
       }
+    },
+    {
+      "id": "irl_cold_open_v1",
+      "channel": "irl",
+      "started": "2026-11-08",
+      "description": "Sans cold open sur PeakMoments (points appris : -0.4 avec, +0.3 sans, 2026-11-06). Le proprietaire veut plus de preuves avant de le retirer.",
+      "b": {
+        "cold_open": false
+      }
     }
   ]
 }

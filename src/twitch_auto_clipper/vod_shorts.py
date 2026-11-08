@@ -517,7 +517,7 @@ class VODShortsGenerator:
             )
 
         try:
-            start, end = self._clip_bounds(item, candidate_id, duration)
+            start, end = self._clip_bounds(item, candidate_id, duration, segments)
         except ShortsGenerationError as error:
             return result("error", error=str(error))
 
@@ -600,15 +600,30 @@ class VODShortsGenerator:
     # ------------------------------------------------------------------
 
     def _clip_bounds(
-        self, item: dict[str, Any], candidate_id: str, duration: float
+        self, item: dict[str, Any], candidate_id: str, duration: float,
+        segments: list[dict[str, Any]] | None = None,
     ) -> tuple[float, float]:
-        """Pad the candidate with context and keep it within Shorts limits."""
+        """Pad the candidate with context and keep it within Shorts limits.
+
+        The margins stay in the silence around the candidate: they never take the first
+        words of the next sentence ("... Okay. Tell") or the last ones of the previous.
+        """
         try:
             start, end = calculate_candidate_bounds(item, duration, self.before, self.after)
         except CandidateClipError as error:
             raise ShortsGenerationError(
                 f"Intervalle invalide pour {candidate_id} : {error}"
             ) from error
+        first, last = float(item["start"]), float(item["end"])
+        for word in (word for segment in segments or [] for word in segment.get("words") or []):
+            try:
+                word_start, word_end = float(word["start"]), float(word["end"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if last - 0.05 <= word_start < end:
+                end = max(last, word_start - 0.05)
+            if start < word_end <= first + 0.05:
+                start = min(first, word_end + 0.05)
         return round(start, 3), round(min(end, start + MAX_SHORT_DURATION), 3)
 
     @staticmethod

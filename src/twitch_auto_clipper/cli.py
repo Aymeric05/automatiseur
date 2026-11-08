@@ -278,7 +278,7 @@ BLOCKED_STREAMERS_FILE = Path("blocked_streamers.txt")
 PUBLISH_RETRY_SECONDS = 600.0  # pause after a failed upload (a network drop, a sign-in problem...)
 DEFAULT_DOWNLOAD_KBPS = 1000  # VOD download cap floor (~8 Mbit/s); DOWNLOAD_MAX_KBPS overrides the measure
 SPEED_TEST_URL = "https://speed.cloudflare.com/__down?bytes=50000000"
-DOWNLOAD_SHARE = 0.10  # share of the bandwidth measured at start-up given to the VOD downloads
+DOWNLOAD_SHARE = 0.25  # share of the bandwidth measured at start-up given to the VOD downloads
 VOD_WORKERS = 2  # VODs processed at the same time (the GPU transcribes one at a time)
 PREFETCH_AHEAD = VOD_WORKERS + 1  # VODs kept downloaded: those being processed and the next one
 DEFAULT_DAILY_UPLOADS = 10  # known to pass in 24 h; beyond, one try an hour until YouTube refuses
@@ -639,7 +639,7 @@ def main() -> int:
         download_kbps = _daily_limit(parser, "DOWNLOAD_MAX_KBPS", DEFAULT_DOWNLOAD_KBPS)
         if args.monitor_twitch and not os.environ.get("DOWNLOAD_MAX_KBPS"):  # adapts to the connection of the day
             download_kbps = measured_download_kbps(DEFAULT_DOWNLOAD_KBPS)
-            print(f"Telechargements des VOD limites a {download_kbps} Ko/s (10 % du debit mesure).")
+            print(f"Telechargements des VOD limites a {download_kbps} Ko/s ({DOWNLOAD_SHARE:.0%} du debit mesure).")
         daily_uploads = _daily_limit(parser, "YOUTUBE_MAX_UPLOADS_PER_DAY", DEFAULT_DAILY_UPLOADS)
         daily_gemini = _daily_limit(parser, "GEMINI_MAX_REQUESTS_PER_DAY", DEFAULT_DAILY_GEMINI_REQUESTS)
         upload_privacy = os.environ.get("YOUTUBE_PRIVACY", "").strip().lower() or "private"
