@@ -150,7 +150,7 @@ def _build_vertical_filter_zoomed_out(input_path: Path | None = None, focus_x: f
 
 
 SPLIT_TOP = 700  # split layout: height of the streamer's camera on top; the shared screen fills the rest
-FACECAM_INSET = 0.005  # share of the stream trimmed off each side of the webcam box
+FACECAM_INSET = 0.015  # share of the stream trimmed off each side of the webcam box
 SPLIT_SUBTITLES_Y = 1500  # split layout: subtitles low in the middle of the screen part
 SPLIT_SCREEN_WIDTH = 956  # of the 1920px stream shown under it, wider than the full-height crop (1080/1220 ratio)
 

@@ -116,3 +116,29 @@ class TwitchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LongVodTests(unittest.TestCase):
+    def test_a_long_vod_is_cut_to_its_last_hours_and_its_start_is_kept(self) -> None:
+        import shutil
+        import subprocess
+
+        if not shutil.which("ffmpeg"):
+            self.skipTest("FFmpeg missing")
+        from twitch_auto_clipper.twitch import audio_offset
+
+        class AudioYoutubeDL(FakeYoutubeDL):
+            def extract_info(self, url, download):  # a 30 s "VOD": a tone whose pitch rises each second
+                path = Path(self.options["outtmpl"].replace("%(ext)s", "mp4"))
+                subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=440:d=30", "-c:a", "aac", str(path)], check=True)
+                return {"id": "123", "ext": "mp4", "duration": 30}
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch("twitch_auto_clipper.twitch._get_youtube_dl", return_value=AudioYoutubeDL):
+            path = download_twitch_vod("https://www.twitch.tv/videos/123", Path(directory), audio_only=True, last_seconds=10)
+            seconds = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+                                           capture_output=True, text=True).stdout)
+            self.assertAlmostEqual(seconds, 10, delta=0.5)
+            self.assertAlmostEqual(audio_offset(path), 20, delta=0.01)
+            short = download_twitch_vod("https://www.twitch.tv/videos/124", Path(directory), audio_only=True, last_seconds=60)
+            self.assertEqual(audio_offset(short), 0.0)  # shorter than the limit: kept whole
