@@ -316,6 +316,8 @@ ones, and moves them to the entries.
 - Gemini paid tier: NON. The owner keeps the free tier: make the most of it (selection and trimming
   first; VODs that could not enter the reserve are skipped; long VODs cut to their last 8 hours).
   Do not propose it again unless the free quota still blocks after these savings, with numbers.
+- Many Shorts from one VOD: fine. If a VOD is really excellent, all of the day's Shorts may come
+  from it; no cap per VOD or per streamer (owner, 2026-11-09).
 - Keep-awake: OK and done - on mains power the computer no longer falls asleep on its own while
   the app works (power.py); the owner can still sleep or shut down; on battery, as before.
 
