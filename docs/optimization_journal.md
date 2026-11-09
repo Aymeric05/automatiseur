@@ -33,6 +33,11 @@ Shorts and channels), the date seen first and last. Strengthen, weaken or remove
 evidence comes; turn a strong line into an A/B test, then into the app's default.
 
 ### LiveActions! (gaming)
+- Concurrents (2026-11-09, titres 5 hauts/5 bas non vus, 3 chaines) : hauts = le streamer reagit a un
+  contenu sur lui-meme (CaseOh x3 sur son animation, ~0.75-1.2M) ou clash avec une figure connue
+  ("Blizzard Roasts PirateSoftware", 950k) ; bas = discussion de mecanique de niche ("Are Racials
+  Homogenized"), scene RP longue (101 s), jeu solo rate. Faible (2 chaines), va avec la ligne
+  interactions du 11-06.
 - Coherence (2026-11-08) : les Shorts rendus le 11-06 13:34 (apres le fix split_sentences) finissent
   encore sur 1-3 mots de la phrase suivante ("And by the way, you", "Okay. Tell", "No,") - 6 des 14
   derniers, 2 chaines. Cause : la marge de rendu apres la fin (after) attrapait le debut de la phrase
@@ -272,6 +277,12 @@ ones, and moves them to the entries.
   selon l'usage (a verifier sur la console Google, pas consulte par la boucle). Annulation :
   repasser la cle API en tier gratuit a tout moment, aucun changement de code necessaire.
 
+- Empecher la mise en veille du PC tant que l'app tourne (appel Windows SetThreadExecutionState
+  dans l'app, relache a sa fermeture ; ou reglage alimentation Windows "jamais en veille"). Le PC
+  s'est mis en veille le 11-08 a 22:43 jusqu'au 11-09 11:57 : 0 VOD rendue en 24 h, VOD zackrawrr
+  bloquee au milieu, 22 jobs abandonnes "trop ancien" + 53 "file pleine". Risque : PC allume la
+  nuit (electricite, bruit). Annulation : retirer l'appel ou fermer l'app.
+
 ## Changes under evaluation
 
 | Since | Change | Expected effect | Metric to watch | Verdict |
@@ -299,6 +310,13 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-09 - PC en veille toute la nuit, 0 VOD rendue
+
+- Gaming : rien de neuf rendu, coherence = Shorts du 11-06 (avant le fix des marges). Concurrents :
+  hits = reaction a un contenu sur soi / clash avec une figure connue. gaming_interaction_v1 a 0.
+- IRL : idem, 8/10 publies toujours HasanAbi politique (seule VOD dispo). Tests a 0-3 mesures.
+- Debit : veille Windows 22:43 -> 11:57 (journal systeme), pas un bug ; proposition anti-veille.
 
 ### 2026-11-08 - 0 VOD rendue en 24 h, fins qui debordent sur la phrase suivante
 
