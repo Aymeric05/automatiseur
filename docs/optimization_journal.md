@@ -311,6 +311,14 @@ ones, and moves them to the entries.
 
 ## Entries
 
+### 2026-11-09 - owner's answers (main conversation)
+
+- Gemini paid tier: NON. The owner keeps the free tier: make the most of it (selection and trimming
+  first; VODs that could not enter the reserve are skipped; long VODs cut to their last 8 hours).
+  Do not propose it again unless the free quota still blocks after these savings, with numbers.
+- Keep-awake: OK and done - on mains power the computer no longer falls asleep on its own while
+  the app works (power.py); the owner can still sleep or shut down; on battery, as before.
+
 ### 2026-11-09 - PC en veille toute la nuit, 0 VOD rendue
 
 - Gaming : rien de neuf rendu, coherence = Shorts du 11-06 (avant le fix des marges). Concurrents :
