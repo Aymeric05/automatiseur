@@ -16,6 +16,7 @@ import urllib.request
 
 from .audio_events import detect_emotions
 from .music import GPU_LOCK, music_profile
+from .power import keep_awake_on_mains
 from .candidate_clip import CandidateClipError, generate_clip_from_candidate
 from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signals, load_chat_messages
 from .competitors import refresh_competitors
@@ -902,6 +903,8 @@ def main() -> int:
                 while not stop.is_set():
                     stop.wait(PUBLISH_IDLE_SECONDS if publish_next() else PUBLISH_RETRY_SECONDS)
 
+            # On mains power, the computer no longer falls asleep on its own while the app works.
+            Thread(target=keep_awake_on_mains, args=(stop,), name="keep-awake", daemon=True).start()
             for number in range(VOD_WORKERS):
                 Thread(target=work, name=f"vod-worker-{number + 1}", daemon=True).start()
             Thread(target=prefetch, name="vod-prefetch", daemon=True).start()
