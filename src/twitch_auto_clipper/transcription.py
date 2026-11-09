@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from typing import Any
 
@@ -128,9 +129,7 @@ def transcribe_video(
     if device == "auto":
         if cuda_available():
             try:
-                return transcribe_video(
-                    input_path, GPU_MODEL_SIZE, language, "cuda", "float16", chunk_seconds, temp_dir
-                )
+                return _transcribe_gpu_isolated(input_path, language, chunk_seconds, temp_dir)
             except TranscriptionError:
                 pass  # e.g. GPU out of memory: the CPU still works
         return transcribe_video(input_path, model_size, language, "cpu", "int8", chunk_seconds, temp_dir)
@@ -167,6 +166,32 @@ def transcribe_video(
         raise TranscriptionError(f"Echec de la transcription : {error}") from error
 
 
+def _transcribe_gpu_isolated(
+    input_path: Path, language: str | None, chunk_seconds: float, temp_dir: Path | None
+) -> list[dict[str, Any]]:
+    """GPU Whisper in a child process.
+
+    cuDNN sometimes crashes natively (cudnn64_9.dll, 0xc0000409, three times
+    between 2026-11-07 and 2026-11-09): in-process, that killed the whole app
+    with no log line. Here only the child dies and the caller falls back to the CPU.
+    """
+    if temp_dir is not None:
+        temp_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=temp_dir) as directory:
+        output_path = Path(directory) / "segments.json"
+        result = subprocess.run(
+            [sys.executable, "-m", "twitch_auto_clipper.transcription", str(input_path),
+             str(output_path), language or "", str(chunk_seconds), str(temp_dir or "")],
+            capture_output=True, text=True, errors="replace",
+        )
+        if result.returncode != 0 or not output_path.is_file():
+            detail = (result.stderr or "").strip().splitlines()[-1:] or [""]
+            raise TranscriptionError(
+                f"Transcription GPU interrompue (code {result.returncode}) {detail[0]}"
+            )
+        return json.loads(output_path.read_text(encoding="utf-8"))
+
+
 def save_transcription(
     segments: list[dict[str, Any]], output_path: Path
 ) -> None:
@@ -175,4 +200,14 @@ def save_transcription(
     output_path.write_text(
         json.dumps(segments, ensure_ascii=False, indent=2),
         encoding="utf-8",
+    )
+
+
+if __name__ == "__main__":  # child process of _transcribe_gpu_isolated
+    _source, _output, _language, _chunk, _temp = sys.argv[1:6]
+    cuda_available()  # makes the CUDA DLL folders loadable
+    save_transcription(
+        transcribe_video(Path(_source), GPU_MODEL_SIZE, _language or None, "cuda", "float16",
+                         float(_chunk), Path(_temp) if _temp else None),
+        Path(_output),
     )
