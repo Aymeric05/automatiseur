@@ -306,10 +306,22 @@ ones, and moves them to the entries.
 | 2026-11-06 | Fix (highlights.py): un segment en minuscule rejoint la phrase precedente jusqu'a 6 s de pause | plus de Shorts qui commencent/finissent sur un bout de phrase ("not.", "I walked in and") | coherence du rapport | pending |
 | 2026-11-08 | A/B irl_cold_open_v1: pas de cold open sur PeakMoments (b: cold_open false) | retention meilleure si le cold open nuit en IRL (points appris -0.4) | retention_pct, perf of B vs A | pending (0 measured) |
 | 2026-11-07 | Fix (vod_shorts._clip_bounds): les marges avant/apres restent dans le silence, plus de mots de la phrase suivante/precedente | fin propre au lieu de "... Okay. Tell" | coherence du rapport | pending |
+| 2026-11-10 | Fix (transcription.py): Whisper GPU dans un sous-processus, repli CPU si crash cuDNN | l'app ne s'arrete plus en silence (3 crashs 11-07/11-09) | throughput, "Application Error" python.exe dans le journal Windows | pending |
 | 2026-11-08 | DOWNLOAD_SHARE 0.10 -> 0.25 (cli.py) | telechargements plus rapides (VOD de 48 h bloquant la file) | throughput du rapport | pending |
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-10 - l'app plantait en silence (crash cuDNN de la transcription GPU)
+
+- Debit : 2 VOD/24h. Cause trouvee dans le journal Windows : python.exe tue par cudnn64_9.dll
+  (0xc0000409) le 11-07 21:59, le 11-09 13:05 et 23:36 - l'app s'arretait sans ligne de log et ne
+  repartait qu'au reveil/logon. Corrige : la transcription GPU tourne dans un sous-processus, un
+  crash ne tue que lui et on repasse sur le CPU (transcription.py, test). App relancee 11-10 00:17.
+- Gaming : coherence 1/4 defaillante (finit "Wait, um, bro. On bro"), pas un motif. Pas de nouveau
+  test : debit trop bas, gaming_interaction_v1 encore a A n=3 / B n=0. Prochain : verdicts impossibles avant ~1 semaine de debit normal.
+- IRL : coherence 4/4 correctes (question -> reponse, scene police complete). irl_dialogue_v1 A n=12
+  (2 VOD) / B n=5, irl_cold_open_v1 a 0. Guide concurrents refait le 11-13 (hebdo).
 
 ### 2026-11-09 - owner's answers (main conversation)
 
@@ -398,52 +410,7 @@ ones, and moves them to the entries.
   pour file pleine - 5e jour de suite, meme goulot deja remonte au proprietaire (proposition tier
   payant toujours en attente). Code change : fix split_sentences + test ; commit et redemarrage.
 
-### 2026-11-02 (bis) - nouveau trimming "sujet complet" deploye hors boucle, verification en attente de donnees
-
-- Gaming : gros changement de code pousse par le proprietaire dans la nuit (commit dfdf63e, hors
-  de cette boucle) - trimming reecrit pour demarrer et finir sur un sujet complet, chaque Short
-  garde ses mots parles, le rapport affiche desormais debut/fin (section coherence) pour
-  verification automatique. Aucun Short rendu avec ce champ pour l'instant - a verifier demain.
-  GTA V se redresse en production (7 publies/4 reserve/15 abandonnes, contredit le poids appris
-  -0.5, un seul jour) ; Dota 2 toujours tres gaspille (3/15/34). 2 emplacements de test libres,
-  aucune piste assez forte ce run (guide concurrents etudie il y a 3 jours, pas encore une semaine).
-- IRL : meme nouveau trimming a verifier demain. Tests irl_title_style_v1 (A n=41/vods=7, B
-  n=17/vods=6) et irl_length_v1 (A vods=5, B vods=6) toujours sous le seuil - A nettement devant B
-  sur le titre (retention 64.2 vs 43.8) mais pas encore mesurable. Pas de nouveau test.
-- Debit : 12 VOD/24h (objectif 20+), quota Gemini de nouveau quasi ferme (8 VOD renvoyees en
-  attente, seul flash-lite-latest encore ouvert). Proposition Gemini payant toujours en attente de
-  l'accord du proprietaire. Aucun changement de code/config ce run.
-
-### 2026-11-02 - quota Gemini epuise apres 1 seul appel, aucun defaut gaming pour la 1ere fois
-
-- Gaming : 1 seul appel Gemini possible (quota quasi a sec, flash-lite-latest seul dispo) - 5
-  flops concurrents (pas de hit non-vu) + notre meilleur/pire + 3 controle qualite. AUCUN defaut
-  de coupe cette fois (voir Knowledge), a confirmer demain. 2 emplacements de test libres, aucune
-  piste assez forte (production du jour contredit juste le defaut 45-90s tout juste adopte,
-  normal 1 jour apres le changement). Rien a coder.
-- IRL : quota epuise avant l'etude IRL (consomme par l'appel gaming) - aucune analyse video.
-  irl_title_style_v1 et irl_length_v1 toujours sous le seuil (vods/mesures insuffisants). Pas de
-  nouveau test.
-- Debit : 12 VOD/24h (objectif 20+), 0 VOD renvoyee en attente de Gemini aujourd'hui (pas le
-  goulot cette fois) ; abandons surtout "trop ancien" (17) et file pleine (11). Proposition Gemini
-  payant toujours en attente de l'accord du proprietaire. Aucun changement de code/config ce run.
-
-### 2026-11-01 - 2 verdicts gaming (Shorts longs adoptes), bug de coupe toujours non resolu
-
-- Gaming : Gemini a revu 5 hits/5 flops concurrents + notre meilleur/pire + 3 Shorts recents
-  (voir Knowledge - 2 defauts de coupe, meme classe que les correctifs precedents, cause encore
-  non trouvee). 2 tests au seuil : gaming_title_style_v1 pas clairement meilleur (retire,
-  titres inchanges) ; gaming_length_v1 gagne nettement en retention (B 69.3 vs A 61.7) -
-  devient le defaut (45-90s, experiments.py). 2 emplacements de test libres, aucune piste assez
-  forte pour l'instant. Gemini loin d'etre sature aujourd'hui (7 appels sur 120 possibles) -
-  contrairement aux jours precedents, le debit n'est pas bloque par Gemini.
-- IRL : memes verifications ; les 3 Shorts de controle qualite ont TOUS le meme defaut de coupe
-  trop tot que gaming (voir Knowledge). Tests irl_title_style_v1 et irl_length_v1 toujours sous
-  le seuil (vods<6 cote B). Pas de nouveau test.
-- App verifiee saine (log sans trace d'erreur fatale) ; code change (experiments.py,
-  config/experiments.json), tests ok (345 passed), commit + push + redemarrage.
-
-### earlier (2026-10-23 to 2026-10-31)
+### earlier (2026-10-23 to 2026-11-02)
 
 - 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
   gaming_length_v1 (45-90s, gagne le 11-01), 10-26 irl_length_v1 (perdu le 11-03). Bugs de coupe
@@ -452,3 +419,5 @@ ones, and moves them to the entries.
   rendus limites au top 15, refus Gemini dans gemini_refusals.log. Debit 2-11 VOD/24h, goulot
   quota Gemini (proposition tier payant). 10-29/31 : Gemini sature,
   tests sous le seuil ; 10-30 panne DNS (app relancee) et fin de Short non recalee corrigee (trimming).
+  11-01 : gaming_length_v1 gagne (45-90s par defaut), gaming_title_style_v1 retire. 11-02 : quota
+  Gemini a sec ; trimming "sujet complet" reecrit par le proprietaire (commit dfdf63e).
