@@ -1,6 +1,7 @@
 """Tests for private YouTube publication and post-upload cleanup."""
 
 from pathlib import Path
+import os
 import json
 import tempfile
 import unittest
@@ -199,6 +200,21 @@ class PublishNextTests(unittest.TestCase):
         while uploader.publish_next():
             pass
         self.assertEqual(self.uploaded, ["late 95", "early 70", "early 60"])
+
+    def test_a_moment_rendered_twice_is_published_once(self):
+        self._vod("retried", [80, 90, 70])
+        manifest = self.tmp / "retried_processing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        records = list(data["generated_shorts"].values())
+        for record in records[:2]:  # same moment, rendered again with other bounds
+            record.update(candidate_id="candidate_49", candidate_start=16315.0)
+        os.utime(self.tmp / records[0]["file"], (1, 1))  # the older render
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        uploader = VODShortsUploader(self.tmp, uploader=self._upload)
+        while uploader.publish_next():
+            pass
+        self.assertEqual(self.uploaded, ["retried 90", "retried 70"])
+        self.assertFalse((self.tmp / records[0]["file"]).exists())
 
     def test_a_blocked_streamers_shorts_are_deleted_never_published(self):
         self._vod("warned", [99])

@@ -55,3 +55,14 @@ class TrimTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TrimPromptTests(unittest.TestCase):
+    def test_prompt_forbids_ending_on_an_unanswered_question(self):
+        from unittest import mock
+
+        from twitch_auto_clipper import trimming
+
+        with mock.patch.object(trimming, "_generate_json", return_value=("not json", None)) as call:
+            trimming.trim_moments([{"start": 30.0, "end": 40.0}], SENTENCES)
+        self.assertIn("question encore sans reponse", call.call_args.args[0])

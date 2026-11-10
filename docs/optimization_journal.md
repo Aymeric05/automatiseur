@@ -33,6 +33,10 @@ Shorts and channels), the date seen first and last. Strengthen, weaken or remove
 evidence comes; turn a strong line into an A/B test, then into the app's default.
 
 ### LiveActions! (gaming)
+- Coherence (2026-11-11) : 3 des 4 derniers Shorts (VOD WoW 2924025635) finissent sur une question
+  sans reponse ("What is that?", "what are you putting this on?", "Dude?"). Regle ajoutee au
+  prompt de trim. Gemini : Google refuse 'PerDay 20' alors que nos compteurs sont a 0-4 ;
+  hypothese : les essais 503/504 (non comptes chez nous) le sont chez Google. A verifier.
 - Concurrents (2026-11-09, titres 5 hauts/5 bas non vus, 3 chaines) : hauts = le streamer reagit a un
   contenu sur lui-meme (CaseOh x3 sur son animation, ~0.75-1.2M) ou clash avec une figure connue
   ("Blizzard Roasts PirateSoftware", 950k) ; bas = discussion de mecanique de niche ("Are Racials
@@ -158,6 +162,9 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   pipeline suivent encore l'ancien reglage), pas une preuve independante, a resurveiller demain.
 
 ### PeakMoments (irl)
+- Coherence (2026-11-11) : 2 des 4 derniers (VOD 2924221579) coupent en pleine scene ("You live
+  here? Yeah.", "Uh-oh! No!") ou commencent en plein echange. Meme regle de trim ajoutee.
+  Production : 0 Short irl jete en 7 j (tout entre en reserve), Just Chatting 11 publies.
 - Concurrents (2026-11-08, miniatures 5 hauts/5 bas non vus) : hauts = Speed, histoire emotionnelle
   (pere mort, vengeance, "caught in 4K"), miniature = image du pic + 1 mot "*REVENGE*" ; bas =
   commentaire assis (Asmongold Reddit/societe). Confirme la ligne du 11-06. Test irl_cold_open_v1 lance.
@@ -268,20 +275,12 @@ numbers, risks, how to undo) and in its daily summary. The owner answers by writ
 at the start of the line (or tells Claude); the next run applies the OK ones, drops the NON
 ones, and moves them to the entries.
 
-- Passer l'API Gemini en tier payant (console Google AI) : 8e jour de suite ou les modeles flash
-  sont satures (11-06 : 1 VOD rendue/24h, 14 VOD renvoyees en attente, 61 jobs abandonnes pour
-  file pleine) mais
-  toujours tres loin de l'objectif 20+/24h. Deja verifie que ce n'est pas le telechargement
-  (DOWNLOAD_SHARE) ni une erreur de code (modeles pas sous leur limite, vraiment satures). Utilite :
-  plus de VOD traitees = plus de candidats = top 30 plus fort, sur les deux chaines. Risque : cout
-  selon l'usage (a verifier sur la console Google, pas consulte par la boucle). Annulation :
-  repasser la cle API en tier gratuit a tout moment, aucun changement de code necessaire.
-
-- Empecher la mise en veille du PC tant que l'app tourne (appel Windows SetThreadExecutionState
-  dans l'app, relache a sa fermeture ; ou reglage alimentation Windows "jamais en veille"). Le PC
-  s'est mis en veille le 11-08 a 22:43 jusqu'au 11-09 11:57 : 0 VOD rendue en 24 h, VOD zackrawrr
-  bloquee au milieu, 22 jobs abandonnes "trop ancien" + 53 "file pleine". Risque : PC allume la
-  nuit (electricite, bruit). Annulation : retirer l'appel ou fermer l'app.
+- Supprimer 3 doublons deja publies sur YouTube (meme moment publie deux fois, bornes differentes,
+  meme titre) : LiveActions! FbJo6C4DvNE / s_ycihm5nfw (Xaryu/Pikaboo), 8J-gHFmAjJY / EExLLXdkgqA,
+  ZiYPcRgef14 / Ea7SuszotV8 (VOD 2922381949). Utilite : YouTube penalise le contenu repete, et
+  chaque doublon prend une des 10 places du jour. Proposition : garder celui qui a le plus de vues,
+  supprimer l'autre (a faire dans YouTube Studio). Risque : irreversible, perte de ses vues.
+  Annulation : aucune (ne rien faire suffit si NON). Corrige pour l'avenir le 11-11.
 
 ## Changes under evaluation
 
@@ -306,11 +305,23 @@ ones, and moves them to the entries.
 | 2026-11-06 | Fix (highlights.py): un segment en minuscule rejoint la phrase precedente jusqu'a 6 s de pause | plus de Shorts qui commencent/finissent sur un bout de phrase ("not.", "I walked in and") | coherence du rapport | pending |
 | 2026-11-08 | A/B irl_cold_open_v1: pas de cold open sur PeakMoments (b: cold_open false) | retention meilleure si le cold open nuit en IRL (points appris -0.4) | retention_pct, perf of B vs A | pending (0 measured) |
 | 2026-11-07 | Fix (vod_shorts._clip_bounds): les marges avant/apres restent dans le silence, plus de mots de la phrase suivante/precedente | fin propre au lieu de "... Okay. Tell" | coherence du rapport | pending |
+| 2026-11-11 | Fix (shorts_upload._ready_shorts) : un moment rendu deux fois (VOD reprise apres Gemini indisponible) n'est publie qu'une fois, seul son rendu le plus recent est garde | plus de doublons publies (3 depuis le 11-09) | doublons par (candidate_id, candidate_start) dans les manifestes | pending |
+| 2026-11-11 | Fix (trimming.py) : le prompt interdit de finir sur une question sans reponse ou le debut d'une nouvelle scene | moins de fins "What is that?" (3/4 gaming, 2/4 irl le 11-11) | coherence du rapport | pending |
 | 2026-11-10 | Fix (transcription.py): Whisper GPU dans un sous-processus, repli CPU si crash cuDNN | l'app ne s'arrete plus en silence (3 crashs 11-07/11-09) | throughput, "Application Error" python.exe dans le journal Windows | pending |
 | 2026-11-08 | DOWNLOAD_SHARE 0.10 -> 0.25 (cli.py) | telechargements plus rapides (VOD de 48 h bloquant la file) | throughput du rapport | pending |
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-11 - doublons publies sur YouTube, fins sur une question sans reponse
+
+- Bug : un moment rendu une 1re fois avec bornes de secours (Gemini 503) puis re-rendu au passage
+  suivant avec d'autres bornes donnait 2 Shorts publies (3 cas depuis le 11-09). Corrige
+  (shorts_upload, test) ; suppression des 3 doublons proposee au proprietaire.
+- Gaming : coherence 3/4 finit sur une question sans reponse -> regle ajoutee au trim. Pas de nouveau
+  test (gaming_interaction_v1 B n=0). Debit 4 VOD/24h, quota Gemini vraiment epuise selon Google.
+- IRL : coherence 2/4 coupe en pleine scene (meme regle). irl_dialogue_v1 A 19/3 VOD, B 15/2 VOD ;
+  irl_cold_open_v1 A 4 / B 0. Guide concurrents a refaire le 11-13.
 
 ### 2026-11-10 - l'app plantait en silence (crash cuDNN de la transcription GPU)
 

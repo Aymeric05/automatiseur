@@ -80,6 +80,8 @@ def trim_moments(
         "question, la chute de l'histoire, le resultat de l'action et la reaction qui suit. Lis "
         "les phrases qui suivent le moment pour trouver cette conclusion : si le sujet continue, "
         "end va plus loin. Jamais au milieu d'une phrase, d'une explication ou d'une histoire. "
+        "end ne tombe jamais sur une question encore sans reponse (\"What is that?\") ni sur le "
+        "debut d'une nouvelle scene : va jusqu'a la reponse ou la reaction qui la conclut. "
         f"Duree entre {MIN_SECONDS:.0f} et {max_seconds:.0f} secondes, idealement entre {low:.0f} "
         f"et {high:.0f} secondes, mais un Short complet passe toujours avant un Short court. "
         + "".join(f"Regle observee sur les Shorts qui marchent : {rule} " for rule in guide.get("rules", []))

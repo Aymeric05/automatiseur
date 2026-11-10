@@ -499,14 +499,33 @@ class VODShortsUploader:
                     manifest.get("generated_shorts"),
                 )
             )
+            # A moment rendered again with other bounds (a VOD retried once Gemini is back) is
+            # still one Short: published once, and only its newest render is kept.
+            def moment(key: str) -> tuple[Any, Any]:
+                return generated[key].get("candidate_id", key), generated[key].get("candidate_start")
+
+            renders = {
+                key: self.output_dir / str(record.get("file", ""))
+                for key, record in generated.items() if isinstance(record, dict)
+            }
+            published = {moment(key) for key in uploads if key in renders}
+            newest: dict[tuple[Any, Any], str] = {}
+            for key, path in renders.items():
+                if key not in uploads and path.is_file():
+                    other = newest.get(moment(key))
+                    if other is None or path.stat().st_mtime > renders[other].stat().st_mtime:
+                        newest[moment(key)] = key
             for key, record in generated.items():
                 meta = metadata.get(key)
                 if key in uploads or not isinstance(record, dict) or not isinstance(meta, dict):
                     continue
                 if (record.get("channel") or "gaming") != self.channel:
                     continue  # the other channel's publisher takes care of it
-                path = self.output_dir / str(record.get("file", ""))
+                path = renders[key]
                 if not path.name.endswith("_short.mp4") or not path.is_file():
+                    continue
+                if moment(key) in published or newest.get(moment(key)) != key:
+                    self._delete_local(path)
                     continue
                 try:
                     too_short = float(record["end"]) - float(record["start"]) < MIN_PUBLISHED_SECONDS
