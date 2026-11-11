@@ -136,6 +136,14 @@ class VODAutomationPipelineTests(unittest.TestCase):
         kept = pipeline._trimmed(moments, TRANSCRIPT, self.source, "Streamer")
         self.assertEqual([(moment["start"], moment["end"]) for moment in kept], [(10.0, 40.0)])
 
+    def test_a_moment_still_too_long_after_trim_is_not_rendered(self):
+        # Gemini refused the trim of a 180 s moment: it kept its raw bounds and became a 180 s Short.
+        pipeline = self._pipeline()
+        pipeline.moment_trimmer = lambda moments, sentences, streamer, guide: [{}, {}]
+        moments = ({"start": 10.0, "end": 190.0}, {"start": 10.0, "end": 40.0})
+        kept = pipeline._trimmed(moments, TRANSCRIPT, self.source, "Streamer")
+        self.assertEqual([(moment["start"], moment["end"]) for moment in kept], [(10.0, 40.0)])
+
     @patch("twitch_auto_clipper.vod_highlights.select_candidates")
     def test_a_moment_about_a_video_game_goes_to_the_gaming_channel_even_on_the_webcam(self, gemini):
         gemini.side_effect = lambda *args, **kwargs: [

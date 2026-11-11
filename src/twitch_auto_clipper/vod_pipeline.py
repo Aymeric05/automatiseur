@@ -24,7 +24,7 @@ from . import experiments
 from .competitors import format_guide
 from .focus import IRL_CATEGORIES, short_channel
 from .highlights import EXCITEMENT_DB, _overlap_ratio, expand_moment, split_sentences
-from .trimming import snap_ends
+from .trimming import MAX_SECONDS, snap_ends
 from .profanity import has_slur
 from .video import audio_levels
 from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata, clip_transcript_text
@@ -395,11 +395,18 @@ class VODAutomationPipeline:
         self, moments: tuple[dict[str, Any], ...], sentences: list[dict[str, Any]], source_path: Path, streamer: str,
         guide: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], ...]:
-        """The moments with Gemini's bounds; one it finds incomplete is dropped (never rendered)."""
+        """The moments with Gemini's bounds; one it finds incomplete is dropped (never rendered),
+        and so is one still longer than a Short may be (Gemini's trim refused or unreachable: its
+        raw bounds ran to 126-180 s, and cutting it would lose its conclusion)."""
+        max_seconds = max(MAX_SECONDS, float(((guide or {}).get("ideal_seconds") or (0, 0))[1]))
+
+        def short_enough(kept: list[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
+            return tuple(m for m in kept if float(m["end"]) - float(m["start"]) <= max_seconds + 1.0)
+
         try:
             trims = self.moment_trimmer(list(moments), sentences, streamer, guide)
         except Exception:  # Gemini unavailable: still snap ends to a sentence boundary
-            return tuple(snap_ends(list(moments), sentences))
+            return short_enough(snap_ends(list(moments), sentences))
         kept = []
         for moment, trim in zip(moments, trims):
             if trim is None:
@@ -410,7 +417,7 @@ class VODAutomationPipeline:
                 # own bounds, never trim's, which can lack "start" and crash the VOD.
                 moment["peak"] = reaction_peak(moment, source_path, moment["start"], moment["end"])
             kept.append(moment)
-        return tuple(without_near_duplicates(kept))
+        return tuple(without_near_duplicates(list(short_enough(kept))))
 
     def _music_verdict(self, audio_path: Path, moment: dict[str, Any]) -> str:
         """"ok", "clean" (loud instrumental music under a good moment: removed, the voices kept)

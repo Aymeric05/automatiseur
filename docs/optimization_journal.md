@@ -180,7 +180,7 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   "I mean, look"). Meme cause que gaming (split_sentences, pas la saturation) - corrige 11-06.
 - Concurrents (2026-11-06, 214 Shorts, 7 chaines) : tiers haut 41 s median vs bas 31 s, mais nos
   propres chiffres disent l'inverse (<25s +0.7, >40s -0.8, A/B longueur perdu) : on garde 15-30 s.
-  Tiers bas = politique/actualite/talking heads (Hasan, Trump) ; hits = Speed/Kai, action
+  Tiers bas = politique/actualite/talking heads (Hasan, Trump ; reconfirme 11-12, midterms 0.19-0.26x) ; hits = Speed/Kai, action
   physique, dialogue. Miniatures hits : visage + 1 mot ("REVENGE", "CRASHEDOUT").
 - Coherence (2026-11-05) : 2 des 4 derniers Shorts defaillants (un coupe en plein mot "Hold on,
   my iMessages off... Hold on. All", un autre finit sur une question posee aux viewers sans
@@ -305,6 +305,7 @@ ones, and moves them to the entries.
 | 2026-11-06 | Fix (highlights.py): un segment en minuscule rejoint la phrase precedente jusqu'a 6 s de pause | plus de Shorts qui commencent/finissent sur un bout de phrase ("not.", "I walked in and") | coherence du rapport | pending |
 | 2026-11-08 | A/B irl_cold_open_v1: pas de cold open sur PeakMoments (b: cold_open false) | retention meilleure si le cold open nuit en IRL (points appris -0.4) | retention_pct, perf of B vs A | pending (0 measured) |
 | 2026-11-07 | Fix (vod_shorts._clip_bounds): les marges avant/apres restent dans le silence, plus de mots de la phrase suivante/precedente | fin propre au lieu de "... Okay. Tell" | coherence du rapport | pending |
+| 2026-11-12 | Fix (vod_pipeline._trimmed) : un moment encore plus long que la limite apres le trim (trim Gemini refuse/injoignable) n'est plus rendu | plus de Shorts de 126-180 s (2 publies/rendus irl le 11-11, VOD 2925140576) | duree des Shorts dans la coherence du rapport | pending |
 | 2026-11-11 | Fix (shorts_upload._ready_shorts) : un moment rendu deux fois (VOD reprise apres Gemini indisponible) n'est publie qu'une fois, seul son rendu le plus recent est garde | plus de doublons publies (3 depuis le 11-09) | doublons par (candidate_id, candidate_start) dans les manifestes | pending |
 | 2026-11-11 | Fix (trimming.py) : le prompt interdit de finir sur une question sans reponse ou le debut d'une nouvelle scene | moins de fins "What is that?" (3/4 gaming, 2/4 irl le 11-11) | coherence du rapport | pending |
 | 2026-11-10 | Fix (transcription.py): Whisper GPU dans un sous-processus, repli CPU si crash cuDNN | l'app ne s'arrete plus en silence (3 crashs 11-07/11-09) | throughput, "Application Error" python.exe dans le journal Windows | pending |
@@ -312,6 +313,17 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-12 - Shorts IRL de 126 s et 180 s
+
+- Bug : quand Gemini refuse ou ne repond pas au trim, le moment gardait ses bornes brutes, sans plafond
+  (VOD 2925140576 : 126 s publie eaGL6XmwnF0, 180 s rendu, fin "I would completely disagree with").
+  Corrige : un moment encore trop long apres le trim n'est plus rendu (vod_pipeline, test). App relancee.
+- Gaming : coherence 4/4 correctes (situation -> resultat). Aucun verdict (gaming_interaction_v1 B n=0).
+  Debit 8 VOD/24h, 61 jobs jetes (file pleine), modeles Gemini au quota (RESOURCE_EXHAUSTED).
+- IRL : 3/4 sont des tirades politiques de Hasan (finissent en pleine phrase) ; chez les concurrents le
+  commentaire politique est dans le tiers bas (midterms, Hasan 0.19-0.26x), l'evenement IRL en haut.
+  irl_dialogue_v1 A 24/4 VOD, B 15/2 ; irl_cold_open_v1 A 4 / B 5. Guide hebdo a refaire le 11-13.
 
 ### 2026-11-11 - doublons publies sur YouTube, fins sur une question sans reponse
 
