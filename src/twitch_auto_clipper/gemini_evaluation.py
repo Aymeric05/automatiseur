@@ -83,10 +83,20 @@ EVALUATION_RESPONSE_FORMAT = {
 }
 
 
-def _get_gemini_client():
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
+GEMINI_KEY_VARIABLES = ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3")
+
+
+def _gemini_api_keys() -> list[str]:
+    """The configured keys, in order: each has its own free-tier quota (one Google project each)."""
+    keys = [os.environ.get(name, "").strip() for name in GEMINI_KEY_VARIABLES]
+    keys = list(dict.fromkeys(key for key in keys if key))
+    if not keys:
         raise GeminiEvaluationError("La variable GEMINI_API_KEY est requise.")
+    return keys
+
+
+def _get_gemini_client(api_key: str | None = None):
+    api_key = api_key or _gemini_api_keys()[0]
 
     try:
         from google import genai
@@ -277,18 +287,25 @@ def _generate_json(
     is counted per model (``daily_limit`` each, the free-tier limit) and no
     request is sent to a model whose daily limit is reached.
     """
-    client = _get_gemini_client()
+    keys = _gemini_api_keys()
+    clients: dict[int, Any] = {}
     response = used_model = last_error = None
     next_reset = None
     pauses = []  # when the models refused for a minute only are back
     overloaded = 0  # models that answered "overloaded": each such try spends their daily quota
-    for name in dict.fromkeys((model, *fallback_models)):
-        quota = DailyQuota(quota_dir / f"gemini_quota_{name}.json", daily_limit) if quota_dir else None
+    # Every key does exactly what the first does, with its own quotas: the next key is used
+    # only once all the models of the previous one are closed or paused.
+    for key_index, name in ((k, n) for k in range(len(keys)) for n in dict.fromkeys((model, *fallback_models))):
+        suffix = f"_k{key_index + 1}" if key_index else ""  # key 1 keeps the historical file names
+        quota = DailyQuota(quota_dir / f"gemini_quota_{name}{suffix}.json", daily_limit) if quota_dir else None
         if quota is not None:
             next_reset = quota.next_reset()
             if not quota.available():
                 pauses += [quota.paused_until()] if quota.paused_until() else []
                 continue
+        if key_index not in clients:
+            clients[key_index] = _get_gemini_client(keys[key_index])
+        client = clients[key_index]
         try:
             # generate_content, not the beta Interactions API: the latter has its own,
             # much smaller quota and answered HTTP 429 while generate_content worked.
@@ -320,7 +337,7 @@ def _generate_json(
                     quota.pause(pauses[-1])
                 else:
                     quota.mark_exhausted()
-                _note_refusal(quota_dir, name, message)
+                _note_refusal(quota_dir, name + suffix, message)
             elif not any(marker in message for marker in TRANSIENT_MARKERS):
                 raise GeminiEvaluationError(f"Echec de l'appel Gemini : {error}") from error
             last_error = error  # overloaded or out of quota: try the next model

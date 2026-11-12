@@ -29,6 +29,39 @@ class FakeGeminiClient:
 
 
 class GeminiEvaluationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # A (fake) key is configured; the Gemini client itself is patched in each test.
+        patcher = patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY_2": "key-2", "GEMINI_API_KEY_3": "key-3"})
+    @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
+    def test_a_saturated_key_hands_over_to_the_next_one_with_its_own_quotas(self, get_client) -> None:
+        from twitch_auto_clipper.daily_quota import DailyQuota
+
+        answer = '{"evaluations":[{"candidate_id":"candidate_1","interesting":true,"score":70,"justification":"Ok."}]}'
+        clients = {}
+
+        def client_for(key):
+            client = FakeGeminiClient(answer)
+            if key == "test-key":  # key 1: daily quota refused by Google on every model
+                client.generate_content = lambda **kwargs: (_ for _ in ()).throw(
+                    RuntimeError("429 RESOURCE_EXHAUSTED quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier"))
+            clients[key] = client
+            return client
+
+        get_client.side_effect = client_for
+        with tempfile.TemporaryDirectory() as directory:
+            options = {"quota_dir": Path(directory), "fallback_models": ("gemini-lite",)}
+            [evaluation] = evaluate_candidates([{"start": 1.0, "end": 4.0}], [], **options)
+            self.assertEqual(evaluation["model"], "gemini-3.6-flash")  # key 2 starts with the first model again
+            self.assertEqual(sorted(clients), ["key-2", "test-key"])  # key 3 not needed yet
+            folder = Path(directory)
+            self.assertFalse(DailyQuota(folder / "gemini_quota_gemini-lite.json", 20).available())  # key 1 closed
+            self.assertEqual(json.loads((folder / "gemini_quota_gemini-3.6-flash_k2.json").read_text())["used"], 1)
+            evaluate_candidates([{"start": 1.0, "end": 4.0}], [], **options)  # key 1 skipped, nothing sent to it
+            self.assertEqual(json.loads((folder / "gemini_quota_gemini-3.6-flash_k2.json").read_text())["used"], 2)
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"})
     @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
     def test_evaluate_candidates_returns_structured_evaluations(self, get_client) -> None:
