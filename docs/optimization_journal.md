@@ -284,12 +284,6 @@ numbers, risks, how to undo) and in its daily summary. The owner answers by writ
 at the start of the line (or tells Claude); the next run applies the OK ones, drops the NON
 ones, and moves them to the entries.
 
-- Supprimer 3 doublons deja publies sur YouTube (meme moment publie deux fois, bornes differentes,
-  meme titre) : LiveActions! FbJo6C4DvNE / s_ycihm5nfw (Xaryu/Pikaboo), 8J-gHFmAjJY / EExLLXdkgqA,
-  ZiYPcRgef14 / Ea7SuszotV8 (VOD 2922381949). Utilite : YouTube penalise le contenu repete, et
-  chaque doublon prend une des 10 places du jour. Proposition : garder celui qui a le plus de vues,
-  supprimer l'autre (a faire dans YouTube Studio). Risque : irreversible, perte de ses vues.
-  Annulation : aucune (ne rien faire suffit si NON). Corrige pour l'avenir le 11-11.
 
 ## Changes under evaluation
 
@@ -344,6 +338,11 @@ ones, and moves them to the entries.
 - IRL : 3/4 sont des tirades politiques de Hasan (finissent en pleine phrase) ; chez les concurrents le
   commentaire politique est dans le tiers bas (midterms, Hasan 0.19-0.26x), l'evenement IRL en haut.
   irl_dialogue_v1 A 24/4 VOD, B 15/2 ; irl_cold_open_v1 A 4 / B 5. Guide hebdo a refaire le 11-13.
+
+### 2026-11-12 - doublons deja publies : le proprietaire s'en occupe lui-meme
+
+- Les 3 doublons LiveActions! (FbJo6C4DvNE/s_ycihm5nfw, 8J-gHFmAjJY/EExLLXdkgqA, ZiYPcRgef14/Ea7SuszotV8)
+  sont vus par le proprietaire, qui decide seul. Ne plus les proposer ni les rappeler.
 
 ### 2026-11-11 - doublons publies sur YouTube, fins sur une question sans reponse
 
