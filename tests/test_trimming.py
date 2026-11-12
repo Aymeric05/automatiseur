@@ -58,6 +58,14 @@ if __name__ == "__main__":
 
 
 class TrimPromptTests(unittest.TestCase):
+    def test_end_on_a_question_reaches_the_answer(self):
+        sentences = [dict(s) for s in SENTENCES]
+        sentences[4]["text"] = "can they break?"
+        sentences[5]["start"] = 49.0  # the answer comes right after
+        answer = json.dumps({"moments": [{"id": "m1", "start": 20, "end": 48, "complete": True}]})
+        self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["end"], 58.0)
+        self.assertEqual(snap_ends([{"start": 20.0, "end": 47.0}], sentences)[0]["end"], 58.0)
+
     def test_prompt_forbids_ending_on_an_unanswered_question(self):
         from unittest import mock
 

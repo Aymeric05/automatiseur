@@ -406,7 +406,7 @@ class VODAutomationPipeline:
         try:
             trims = self.moment_trimmer(list(moments), sentences, streamer, guide)
         except Exception:  # Gemini unavailable: still snap ends to a sentence boundary
-            return short_enough(snap_ends(list(moments), sentences))
+            return short_enough(snap_ends(list(moments), sentences, max_seconds))
         kept = []
         for moment, trim in zip(moments, trims):
             if trim is None:
