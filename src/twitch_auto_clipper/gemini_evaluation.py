@@ -23,6 +23,9 @@ GEMINI_FALLBACK_MODELS = ("gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-fl
 # alone, so they never take the main models' requests from the selection and the trimming
 # (where each Short starts and ends: the priority).
 LIGHT_MODEL = "gemini-flash-lite-latest"
+# Overloaded answers (503) accepted in one call before giving up until later: each one spends a
+# request of the model's daily 20, and a busy Gemini is usually busy on every model.
+MAX_OVERLOADED_TRIES = 2
 TRANSIENT_MARKERS = ("503", "500", "unavailable", "internal", "deadline", "high demand")
 HOOK_MAX_LENGTH = 80
 TITLE_MAX_LENGTH = 90
@@ -278,6 +281,7 @@ def _generate_json(
     response = used_model = last_error = None
     next_reset = None
     pauses = []  # when the models refused for a minute only are back
+    overloaded = 0  # models that answered "overloaded": each such try spends their daily quota
     for name in dict.fromkeys((model, *fallback_models)):
         quota = DailyQuota(quota_dir / f"gemini_quota_{name}.json", daily_limit) if quota_dir else None
         if quota is not None:
@@ -303,8 +307,9 @@ def _generate_json(
             break
         except Exception as error:
             message = str(error).lower()
-            # An overloaded model (503) served nothing: the request is not counted.
-            if quota is not None and not any(marker in message for marker in TRANSIENT_MARKERS):
+            # Google counts every request, a refused or overloaded one too (its daily 20 were
+            # reached while ours read 1-11, 2026-11-11): so does the app.
+            if quota is not None:
                 quota.record_use()
             if any(marker in message for marker in QUOTA_ERROR_MARKERS) and quota is not None:
                 # Google says how long to wait: a short delay is a per-minute limit (the model
@@ -319,6 +324,10 @@ def _generate_json(
             elif not any(marker in message for marker in TRANSIENT_MARKERS):
                 raise GeminiEvaluationError(f"Echec de l'appel Gemini : {error}") from error
             last_error = error  # overloaded or out of quota: try the next model
+            if not any(marker in message for marker in QUOTA_ERROR_MARKERS):
+                overloaded += 1
+                if overloaded >= MAX_OVERLOADED_TRIES:  # Gemini busy everywhere: try again later
+                    break
     if response is None:
         if last_error is None and not pauses:
             raise GeminiEvaluationError(

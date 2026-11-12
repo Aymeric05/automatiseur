@@ -26,6 +26,13 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     # gaming_length_v1 (2026-10-24 to 2026-11-01): longer Shorts retained clearly better
     # (69.3% vs 61.7%, perf tied) once both variants reached 20+ measured Shorts.
     "gaming": {"ideal_seconds": [45, 90]},
+    # Owner's decision (2026-11-12): political commentary does worst on the big IRL clip channels
+    # (0.19-0.26 times their median views) and ours (HasanAbi monologues ending mid-sentence).
+    "irl": {"selection_rules": [
+        "Evite les longs monologues politiques ou de commentaire d'actualite (le streamer qui explique "
+        "son avis seul face camera) : ce sont les Shorts qui marchent le moins. Prefere une situation, "
+        "une interaction, une reaction ou une histoire avec une chute.",
+    ]},
 }
 
 

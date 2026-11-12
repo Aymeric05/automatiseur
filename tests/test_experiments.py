@@ -21,8 +21,8 @@ class ExperimentTests(unittest.TestCase):
             vod = next(str(v) for v in range(200) if variant("short_titles", str(v)) == "B")
             variants, settings = for_vod(vod, "irl", config)
             self.assertEqual(set(variants), {"short_titles", "no_cold_open"})  # never the gaming test
-            self.assertEqual(settings["selection_rules"], ["Titles under 35 characters."])
-            self.assertEqual(for_vod("1", "irl", Path(directory) / "missing.json"), ({}, {}))
+            self.assertEqual(settings["selection_rules"], DEFAULTS["irl"]["selection_rules"] + ["Titles under 35 characters."])
+            self.assertEqual(for_vod("1", "irl", Path(directory) / "missing.json"), ({}, DEFAULTS["irl"]))
         self.assertIn("Titles under 35", rules_text(["Titles under 35 characters."]))
         self.assertEqual(rules_text([]), "")
 
@@ -33,7 +33,7 @@ class ExperimentTests(unittest.TestCase):
             variants, settings = for_vod("1", "gaming", config)
             self.assertEqual(variants, {})
             self.assertEqual(settings, DEFAULTS["gaming"])
-            self.assertEqual(for_vod("1", "irl", config), ({}, {}))  # no default for irl
+            self.assertEqual(for_vod("1", "irl", config), ({}, DEFAULTS["irl"]))  # the owner's rule against political monologues
 
 
 if __name__ == "__main__":

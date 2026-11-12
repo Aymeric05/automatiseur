@@ -132,17 +132,18 @@ class GeminiEvaluationTests(unittest.TestCase):
         self.assertIsNotNone(raised.exception.retry_at)
 
     @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
-    def test_an_overloaded_model_does_not_spend_its_quota(self, get_client) -> None:
+    def test_an_overloaded_gemini_is_counted_and_not_tried_on_every_model(self, get_client) -> None:
         from twitch_auto_clipper.daily_quota import DailyQuota
 
+        tried = []
         client = FakeGeminiClient("")
-        client.generate_content = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("503 UNAVAILABLE"))
+        client.generate_content = lambda **kwargs: tried.append(kwargs["model"]) or (_ for _ in ()).throw(RuntimeError("503 UNAVAILABLE"))
         get_client.return_value = client
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(GeminiEvaluationError):
-                evaluate_candidates([{"start": 1.0, "end": 4.0}], [], quota_dir=Path(directory),
-                                    daily_limit=1, fallback_models=())
-            self.assertTrue(DailyQuota(Path(directory) / "gemini_quota_gemini-3.6-flash.json", 1).available())
+                evaluate_candidates([{"start": 1.0, "end": 4.0}], [], quota_dir=Path(directory), daily_limit=1)
+            self.assertFalse(DailyQuota(Path(directory) / "gemini_quota_gemini-3.6-flash.json", 1).available())  # Google counts it
+        self.assertEqual(len(tried), 2)  # busy on two models: stop, try again later
 
     @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
     def test_google_quota_refusal_closes_the_day_for_that_model(self, get_client) -> None:
