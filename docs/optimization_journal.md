@@ -33,6 +33,11 @@ Shorts and channels), the date seen first and last. Strengthen, weaken or remove
 evidence comes; turn a strong line into an A/B test, then into the app's default.
 
 ### LiveActions! (gaming)
+- Concurrents (2026-11-13, 284 Shorts, 9 chaines) : la duree ne separe plus hauts et bas (30-180 s tous
+  ~1.0x la mediane ; <30 s 2.6x mais n=10). Hauts = CaseOh qui reagit a une animation sur lui (4 des 5
+  meilleurs, 20-31x), admin/RP avec un personnage connu ; bas = scene RP lente (poesie, journaux), hors
+  jeu. Miniatures hits : 1 mot en *MAJUSCULES* rouge/jaune sur le visage (YO!, LANG!). Production :
+  GTA V 0 publie/7 reserve/7 jetes en 7 j (poids appris -0.5), a surveiller avant de toucher.
 - Coherence (2026-11-11) : 3 des 4 derniers Shorts (VOD WoW 2924025635) finissent sur une question
   sans reponse ("What is that?", "what are you putting this on?", "Dude?"). Regle ajoutee au
   prompt de trim. Gemini : Google refuse 'PerDay 20' alors que nos compteurs sont a 0-4 ;
@@ -162,6 +167,10 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   pipeline suivent encore l'ancien reglage), pas une preuve independante, a resurveiller demain.
 
 ### PeakMoments (irl)
+- Concurrents (2026-11-13, 215 Shorts, 7 chaines) : 6 des 7 meilleurs = Speed (17-50 s, action physique
+  ou emotion forte, 19-36x) ; bas = politique (Hasan midterms, gouverneur 0.23x), clips sans sujet ("WTF",
+  "HOLYY"). Miniatures : visage + 1 mot *REVENGE*/*CAUGHT 4K*. Production : source chat 1 publie/4/5 jetes
+  en 7 j, poids appris -0.8 : moments du chat peu rentables, idee de test si un slot se libere.
 - Coherence (2026-11-11) : 2 des 4 derniers (VOD 2924221579) coupent en pleine scene ("You live
   here? Yeah.", "Uh-oh! No!") ou commencent en plein echange. Meme regle de trim ajoutee.
   Production : 0 Short irl jete en 7 j (tout entre en reserve), Just Chatting 11 publies.
@@ -305,6 +314,7 @@ ones, and moves them to the entries.
 | 2026-11-06 | Fix (highlights.py): un segment en minuscule rejoint la phrase precedente jusqu'a 6 s de pause | plus de Shorts qui commencent/finissent sur un bout de phrase ("not.", "I walked in and") | coherence du rapport | pending |
 | 2026-11-08 | A/B irl_cold_open_v1: pas de cold open sur PeakMoments (b: cold_open false) | retention meilleure si le cold open nuit en IRL (points appris -0.4) | retention_pct, perf of B vs A | pending (0 measured) |
 | 2026-11-07 | Fix (vod_shorts._clip_bounds): les marges avant/apres restent dans le silence, plus de mots de la phrase suivante/precedente | fin propre au lieu de "... Okay. Tell" | coherence du rapport | pending |
+| 2026-11-13 | Fix (trimming._past_question) : une fin sur une question va jusqu'a la phrase-reponse (< 2 s apres, dans la limite) | plus de fins "can they break?" (2/8 le 11-13 malgre le prompt) | coherence du rapport | pending |
 | 2026-11-12 | Fix (vod_pipeline._trimmed) : un moment encore plus long que la limite apres le trim (trim Gemini refuse/injoignable) n'est plus rendu | plus de Shorts de 126-180 s (2 publies/rendus irl le 11-11, VOD 2925140576) | duree des Shorts dans la coherence du rapport | pending |
 | 2026-11-11 | Fix (shorts_upload._ready_shorts) : un moment rendu deux fois (VOD reprise apres Gemini indisponible) n'est publie qu'une fois, seul son rendu le plus recent est garde | plus de doublons publies (3 depuis le 11-09) | doublons par (candidate_id, candidate_start) dans les manifestes | pending |
 | 2026-11-11 | Fix (trimming.py) : le prompt interdit de finir sur une question sans reponse ou le debut d'une nouvelle scene | moins de fins "What is that?" (3/4 gaming, 2/4 irl le 11-11) | coherence du rapport | pending |
@@ -313,6 +323,16 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-13 - fins sur une question corrigees dans le code, guide hebdo refait
+
+- Gaming : coherence 1/4 finit sur une question ("can they break?"), 1/4 commence en plein decompte.
+  Garde-fou ajoute (trimming._past_question, test) : une fin sur "?" va jusqu'a la reponse si elle suit
+  en moins de 2 s. Guide refait (284 Shorts, 9 chaines). Aucun verdict (gaming_interaction_v1 B n=5/1 VOD).
+- IRL : coherence 1/4 finit sur une question ("Is my candle cooked now?"), meme correctif. Guide refait
+  (215 Shorts, 7 chaines). irl_dialogue_v1 A 29/5 VOD, B 17/3 ; irl_cold_open_v1 A 6 / B 10 : on attend.
+- Debit 8 VOD/24h, 54 jobs jetes (file pleine) ; ~30 renvois "Gemini indisponible" sur ~10 VOD, tous 503
+  (surcharge Google, pas le quota : cle 2 peu utilisee, cle 3 a 0). Pas de hausse d'usage Gemini (VOD renvoyees).
 
 ### 2026-11-12 - Shorts IRL de 126 s et 180 s
 
@@ -404,36 +424,7 @@ ones, and moves them to the entries.
   suite, proposition tier payant mise a jour, toujours en attente de l'OK du proprietaire. Aucun
   changement de code (cause = saturation confirmee par les logs, pas un bug).
 
-### 2026-11-04 - defauts de coherence probablement lies a la saturation Gemini extreme du jour
-
-- Gaming : 2 des 4 derniers Shorts defaillants (fin en pleine question, debut/fin en pleine liste
-  de dons) - trim_reason absent sur les deux, chemin de secours sans Gemini. Dota 2 toujours
-  gaspille (2/3/27), aucune piste neuve. 2 emplacements de test libres, rien d'assez fort.
-- IRL : 1 des 2 derniers Shorts coupe en pleine phrase (meme chemin de secours), l'autre conclut
-  bien. Test irl_dialogue_v1 toujours a 0 mesure (seuil non atteint). 1 emplacement libre, rien
-  d'assez fort.
-- Debit : 1 VOD/24h (objectif 20+, pire qu'hier/5), quasi tous les modeles Gemini CLOSED, 38 VOD
-  renvoyees en attente - 6e jour de suite, proposition tier payant mise a jour avec ces chiffres,
-  toujours en attente de l'OK du proprietaire. Aucun changement de code ce run (cause probable =
-  saturation, pas un bug de trimming confirme) - a reverifier un jour calme.
-
-### 2026-11-03 - bug de coupe en plein mot/pensee enfin identifie (irl), 2 verdicts A/B irl + nouveau test
-
-- Gaming : 4 derniers Shorts tous coherents (debut/fin propres) - le trimming "sujet complet" du
-  11-02 tient. Dota 2 toujours gaspille (0/5/27), aucune piste neuve. 2 emplacements de test
-  libres, aucune ligne de Knowledge assez forte ce run.
-- IRL : coherence montre 2 Shorts sur 3 coupes en plein mot/pensee malgre le trimming du 11-02 -
-  cause reelle trouvee (highlights.py, split_sentences) : une phrase sans ponctuation finale se
-  coupait des qu'une pause depassait 1.5s, meme pensee inachevee. Corrige (pause toleree jusqu'a
-  4s pour une phrase inachevee) + teste, pytest ok. Verdicts A/B : irl_title_style_v1 et
-  irl_length_v1 tous deux au seuil, aucun B pas clairement meilleur, tests retires (A inchange).
-  Nouveau test sur un emplacement libre : irl_dialogue_v1 (favorise dialogue/invite, evite le solo
-  silencieux, ligne ohnepixel du 27/10 jamais testee).
-- Debit : 5 VOD/24h (objectif 20+, en baisse), 20 VOD renvoyees en attente de Gemini, 49 abandons
-  pour file pleine - 5e jour de suite, meme goulot deja remonte au proprietaire (proposition tier
-  payant toujours en attente). Code change : fix split_sentences + test ; commit et redemarrage.
-
-### earlier (2026-10-23 to 2026-11-02)
+### earlier (2026-10-23 to 2026-11-04)
 
 - 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
   gaming_length_v1 (45-90s, gagne le 11-01), 10-26 irl_length_v1 (perdu le 11-03). Bugs de coupe
@@ -443,4 +434,6 @@ ones, and moves them to the entries.
   quota Gemini (proposition tier payant). 10-29/31 : Gemini sature,
   tests sous le seuil ; 10-30 panne DNS (app relancee) et fin de Short non recalee corrigee (trimming).
   11-01 : gaming_length_v1 gagne (45-90s par defaut), gaming_title_style_v1 retire. 11-02 : quota
-  Gemini a sec ; trimming "sujet complet" reecrit par le proprietaire (commit dfdf63e).
+  Gemini a sec ; trimming "sujet complet" reecrit par le proprietaire (commit dfdf63e). 11-03 : fix
+  split_sentences (phrase inachevee tolere 4 s de pause), irl_title_style_v1 et irl_length_v1 perdus,
+  irl_dialogue_v1 lance. 11-04 : Gemini sature, 1 VOD/24h, defauts de coherence sur le chemin de secours.
