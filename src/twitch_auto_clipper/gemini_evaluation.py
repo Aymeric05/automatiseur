@@ -24,8 +24,9 @@ GEMINI_FALLBACK_MODELS = ("gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-fl
 # (where each Short starts and ends: the priority).
 LIGHT_MODEL = "gemini-flash-lite-latest"
 # Overloaded answers (503) accepted in one call before giving up until later: each one spends a
-# request of the model's daily 20, and a busy Gemini is usually busy on every model.
-MAX_OVERLOADED_TRIES = 2
+# request of the model's daily 20. With 3 keys the quota is no longer scarce, and 503s were the
+# main brake (~30 VODs sent back in 24 h, 2026-11-13): every model of the lane gets a try.
+MAX_OVERLOADED_TRIES = 5
 TRANSIENT_MARKERS = ("503", "500", "unavailable", "internal", "deadline", "high demand")
 HOOK_MAX_LENGTH = 80
 TITLE_MAX_LENGTH = 90

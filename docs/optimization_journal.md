@@ -289,6 +289,7 @@ ones, and moves them to the entries.
 
 | Since | Change | Expected effect | Metric to watch | Verdict |
 |---|---|---|---|---|
+| 2026-11-13 | MAX_OVERLOADED_TRIES 2 -> 5 (owner's OK): on 503 every model of the lane is tried before the VOD waits 30 min; 3 keys make quota no longer scarce | fewer VODs sent back to wait for Gemini, more VODs rendered per 24 h | VODs sent back (report's gemini line), VODs rendered per 24 h, keys 2/3 usage | pending |
 | 2026-10-23 | Gemini picks each Short's start and end (trimming.py); 30 s length test dropped | Shorts understandable alone, complete endings | share watched (retention_pct), views_3d | pending |
 | 2026-10-23 | Cold open 3 s, starting 1 s before the reaction | fewer swipe-aways in the first seconds | retention_pct of cold_open=yes vs no | pending (early data: -0.3 pts for cold_open=yes) |
 | 2026-10-23 | Ranking learned from real results (performance.py) | better Shorts published first | correlation of predicted_points with results (reliability) | pending (needs 30 measured Shorts) |
