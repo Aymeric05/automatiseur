@@ -166,6 +166,11 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   defaut tout juste adopte - un seul jour juste apres le changement (les Shorts en cours de
   pipeline suivent encore l'ancien reglage), pas une preuve independante, a resurveiller demain.
 
+- Production (2026-11-14, Shorts des 7 derniers jours) : World of Warcraft rend beaucoup pour peu de
+  publies (5 pub / 20 reserve / 18 jetes) contre Fortnite 16/3/13 ; ROB RUN 0/2/7 ; source emotion
+  1/9/3. Points appris fortnite +1.3, LoL +1.6. A suivre : si WoW reste <15 % publie une semaine de
+  plus, proposer un budget de clips reduit pour WoW.
+
 ### PeakMoments (irl)
 - Concurrents (2026-11-13, 215 Shorts, 7 chaines) : 6 des 7 meilleurs = Speed (17-50 s, action physique
   ou emotion forte, 19-36x) ; bas = politique (Hasan midterms, gouverneur 0.23x), clips sans sujet ("WTF",
@@ -277,6 +282,10 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   Verdicts A/B : irl_title_style_v1 toujours sous le seuil (B n=17/vods=6, <20 mesures) ;
   irl_length_v1 toujours sous le seuil (A vods=5, <6 VOD) - rien a trancher, 2 slots pleins.
 
+- Production (2026-11-14, 7 jours) : source chat 3 pub / 2 reserve / 10 jetes (et point appris
+  source=chat -0.7), transcript 21/22/16, emotion 6/2/2. Les moments du chat sont surtout rendus pour
+  rien : candidat a reduire (budget ou regle de selection) si ca se confirme.
+
 ## Waiting for the owner
 
 Risky or doubtful actions are never done directly: the loop writes them here (what, why with
@@ -289,6 +298,7 @@ ones, and moves them to the entries.
 
 | Since | Change | Expected effect | Metric to watch | Verdict |
 |---|---|---|---|---|
+| 2026-11-14 | Fix (trimming._settled_end) : une fin sur un fragment d'un seul mot sans ponctuation (debut de la scene suivante) s'arrete a la phrase d'avant | plus de fins "There's no quest. Oh" (gaming 11-14), "Okay. Tell" (11-08) | coherence du rapport | pending |
 | 2026-11-13 | MAX_OVERLOADED_TRIES 2 -> 5 (owner's OK): on 503 every model of the lane is tried before the VOD waits 30 min; 3 keys make quota no longer scarce | fewer VODs sent back to wait for Gemini, more VODs rendered per 24 h | VODs sent back (report's gemini line), VODs rendered per 24 h, keys 2/3 usage | pending |
 | 2026-10-23 | Gemini picks each Short's start and end (trimming.py); 30 s length test dropped | Shorts understandable alone, complete endings | share watched (retention_pct), views_3d | pending |
 | 2026-10-23 | Cold open 3 s, starting 1 s before the reaction | fewer swipe-aways in the first seconds | retention_pct of cold_open=yes vs no | pending (early data: -0.3 pts for cold_open=yes) |
@@ -318,6 +328,17 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-14 - fins sur un fragment de la scene suivante corrigees
+
+- Gaming : coherence 2/4 mal finies (WoW "There's no quest. Oh" : fragment de la scene suivante ; WoW
+  89 s finit en plein combat). Garde-fou ajoute (trimming._settled_end, test). Aucun verdict :
+  gaming_interaction_v1 A 25/5 VOD, B 8/2. Pas de nouveau test (aucune ligne Knowledge assez forte).
+- IRL : coherence 1/4 commence en plein sujet ("In the UK, that means..."), les autres correctes. Aucun
+  verdict : irl_dialogue_v1 A 33/5, B 22/4 VOD ; irl_cold_open_v1 A 10/2, B 15/3 (retention B incoherente, peu de donnees).
+- Gemini : depuis la relance de 20h30 (5 essais sur 503), 2 VOD renvoyees pour 18 pipelines finis (54 avant).
+  Cle 3 a 1 requete : sous la cible, mais le palier d'hier n'a pas encore un jour de mesure ; montee suivante
+  (TOP_STREAMER_CLIP_BUDGET +5) au prochain run si le debit ne remonte pas seul. Debit 8 VOD/24h, 45 jobs jetes.
 
 ### 2026-11-13 - fins sur une question corrigees dans le code, guide hebdo refait
 
@@ -402,29 +423,7 @@ ones, and moves them to the entries.
   the funnel's "sans musique" count: if many moments are lost, raise the bar), and a music
   claim no longer blacklists the streamer (Emiru removed from the list).
 
-### 2026-11-06 - vraie cause des coupes en plein mot trouvee (split_sentences), guide hebdo refait
-
-- Gaming : coherence 1/4 defaillant ; sur les 30 derniers Shorts des 2 chaines, ~15 commencent
-  ou finissent sur un bout de phrase. Ce n'etait pas la saturation : split_sentences gardait les
-  bouts en minuscule apres une pause 1.5-6 s comme phrases a part -> corrige + teste. Guide refait
-  (45-90 s, interactions, accroche 1-3 mots). Test gaming_interaction_v1 lance. Revoir coherence.
-- IRL : coherence 3/4 defaillants ("not." / "a new one?" en debut), meme cause, meme correctif.
-  irl_dialogue_v1 : B toujours a 0 mesure. Guide refait (15-30 s garde, nos chiffres priment).
-- Debit : 1 VOD/24h, 14 VOD renvoyees attendre Gemini (modeles CLOSED), 61 jobs abandonnes -
-  8e jour, proposition tier payant toujours en attente.
-
-### 2026-11-05 - saturation Gemini 7e jour de suite, coherence toujours touchee des deux cotes
-
-- Gaming : 1 des 4 derniers Shorts defaillant (fin sur anticipation non resolue, pas de chute) -
-  meme hypothese saturation que le 11-04. Dota 2 toujours surveille, rien de neuf. 2 emplacements
-  de test libres, rien d'assez fort (pas d'etude concurrents ce run, guide a J+6).
-- IRL : 2 des 4 derniers Shorts defaillants (coupe en plein mot, fin sur question sans reponse) -
-  meme hypothese. Test irl_dialogue_v1 toujours a 0 mesure. 1 emplacement libre, rien d'assez fort.
-- Debit : 2 VOD/24h (objectif 20+), un peu mieux qu'hier (1) mais toujours tres loin - 7e jour de
-  suite, proposition tier payant mise a jour, toujours en attente de l'OK du proprietaire. Aucun
-  changement de code (cause = saturation confirmee par les logs, pas un bug).
-
-### earlier (2026-10-23 to 2026-11-04)
+### earlier (2026-10-23 to 2026-11-06)
 
 - 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
   gaming_length_v1 (45-90s, gagne le 11-01), 10-26 irl_length_v1 (perdu le 11-03). Bugs de coupe
@@ -437,3 +436,5 @@ ones, and moves them to the entries.
   Gemini a sec ; trimming "sujet complet" reecrit par le proprietaire (commit dfdf63e). 11-03 : fix
   split_sentences (phrase inachevee tolere 4 s de pause), irl_title_style_v1 et irl_length_v1 perdus,
   irl_dialogue_v1 lance. 11-04 : Gemini sature, 1 VOD/24h, defauts de coherence sur le chemin de secours.
+  11-05 : Gemini sature 7e jour, 2 VOD/24h. 11-06 : vraie cause des coupes en plein mot (split_sentences
+  gardait les bouts en minuscule comme phrases a part) corrigee, guide refait, gaming_interaction_v1 lance.

@@ -3,7 +3,7 @@ import unittest
 
 from twitch_auto_clipper.trimming import parse_trims, snap_ends
 
-SENTENCES = [{"start": 10.0 * i, "end": 10.0 * i + 8, "text": f"sentence {i}"} for i in range(12)]
+SENTENCES = [{"start": 10.0 * i, "end": 10.0 * i + 8, "text": f"sentence {i}."} for i in range(12)]
 
 
 class TrimTests(unittest.TestCase):
@@ -65,6 +65,13 @@ class TrimPromptTests(unittest.TestCase):
         answer = json.dumps({"moments": [{"id": "m1", "start": 20, "end": 48, "complete": True}]})
         self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["end"], 58.0)
         self.assertEqual(snap_ends([{"start": 20.0, "end": 47.0}], sentences)[0]["end"], 58.0)
+
+    def test_end_drops_a_dangling_fragment_of_the_next_scene(self):
+        sentences = [dict(s) for s in SENTENCES]
+        sentences[5]["text"] = "Oh"  # first word of what comes next, no punctuation
+        answer = json.dumps({"moments": [{"id": "m1", "start": 20, "end": 58, "complete": True}]})
+        self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["end"], 48.0)
+        self.assertEqual(snap_ends([{"start": 20.0, "end": 57.0}], sentences)[0]["end"], 48.0)
 
     def test_prompt_forbids_ending_on_an_unanswered_question(self):
         from unittest import mock

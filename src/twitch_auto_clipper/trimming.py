@@ -118,6 +118,23 @@ def _past_question(start: float, end: float, sentences: list[dict[str, Any]], ma
     return end
 
 
+def _settled_end(start: float, end: float, sentences: list[dict[str, Any]], max_seconds: float) -> float:
+    """``end`` without a dangling last fragment, then past a question to its answer.
+
+    A last "sentence" of one word with no final punctuation is the start of the next
+    scene ("... There's no quest. Oh", gaming 2026-11-14; "... Okay. Tell", 2026-11-08):
+    the Short stops at the sentence before, if it stays long enough.
+    """
+    for index, sentence in enumerate(sentences[1:], 1):
+        if abs(sentence["end"] - end) <= 0.05:
+            text = str(sentence.get("text", "")).strip()
+            previous = float(sentences[index - 1]["end"])
+            if text and text[-1] not in ".!?" and len(text.split()) == 1 and previous - start >= MIN_SECONDS:
+                end = previous
+            break
+    return _past_question(start, end, sentences, max_seconds)
+
+
 def snap_ends(
     moments: list[dict[str, Any]], sentences: list[dict[str, Any]], max_seconds: float = MAX_SECONDS
 ) -> list[dict[str, Any]]:
@@ -135,7 +152,7 @@ def snap_ends(
         end = float(moment.get("end", 0))
         new_start = _enclosing_start(start, sentences)
         new_end = next((value for value in ends if value >= end - 0.05), end)
-        new_end = _past_question(new_start, new_end, sentences, max_seconds)
+        new_end = _settled_end(new_start, new_end, sentences, max_seconds)
         if new_start != start or new_end != end:
             snapped.append({**moment, "start": round(new_start, 2), "end": round(new_end, 2)})
         else:
@@ -169,7 +186,7 @@ def parse_trims(
             end = float(moment.get("end", 0))
             new_start = _enclosing_start(start, sentences)
             snapped_end = next((value for value in ends if value >= end - 0.05), end)
-            snapped_end = _past_question(new_start, snapped_end, sentences, max_seconds)
+            snapped_end = _settled_end(new_start, snapped_end, sentences, max_seconds)
             fallback: dict[str, Any] = {}
             if new_start != start:
                 fallback["start"] = round(new_start, 2)
@@ -203,7 +220,7 @@ def parse_trims(
             end = next((value for value in ends if value - start >= MIN_SECONDS), start + MIN_SECONDS)
         if end - start > max_seconds or end <= start:
             continue  # unusable answer: the moment keeps its bounds
-        end = _past_question(start, end, sentences, max_seconds)
+        end = _settled_end(start, end, sentences, max_seconds)
         found[index] = {"start": round(start, 2), "end": round(end, 2), "trim_reason": answer.get("reason")}
     snap_fallback_ends()
     return found
