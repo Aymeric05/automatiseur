@@ -6,3 +6,4 @@
 # removed from YouTube, rejected or blocked (copyright warning, claim). Remove a
 # line to allow a streamer again.
 caedrel  # 2026-10-18: YouTube warnings on Shorts of his streams (esports broadcasts)
+kaicenat  # auto 2026-11-10: Short MCqUlVRdGQs retire de YouTube
