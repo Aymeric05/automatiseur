@@ -17,6 +17,11 @@ from .gemini_evaluation import GEMINI_FALLBACK_MODELS, _generate_json
 WINDOW_SECONDS = 45.0  # sentences shown before and after each moment (enough to reach the conclusion)
 MIN_SECONDS = 15.0
 MAX_SECONDS = 58.0  # a Short stays under a minute, cold open included
+# A Short whose last words end on one of these (no final punctuation) stops mid-sentence.
+DANGLING_WORDS = {
+    "and", "but", "or", "so", "because", "the", "a", "an", "to", "of", "with", "if", "that", "like",
+    "i", "she", "he", "they", "we", "you", "it", "my", "your", "his", "her", "their", "oh", "then", "when",
+}
 TRIM_SCHEMA = {
     "type": "object",
     "properties": {
@@ -123,14 +128,20 @@ def _settled_end(start: float, end: float, sentences: list[dict[str, Any]], max_
 
     A last "sentence" of one word with no final punctuation is the start of the next
     scene ("... There's no quest. Oh", gaming 2026-11-14; "... Okay. Tell", 2026-11-08):
-    the Short stops at the sentence before, if it stays long enough.
+    the Short stops at the sentence before, if it stays long enough. So does one trailing off
+    ("... Oh She", "... J of K And...", irl 2026-11-14): it stops at its last whole Whisper segment.
     """
-    for index, sentence in enumerate(sentences[1:], 1):
+    for index, sentence in enumerate(sentences):
         if abs(sentence["end"] - end) <= 0.05:
             text = str(sentence.get("text", "")).strip()
-            previous = float(sentences[index - 1]["end"])
-            if text and text[-1] not in ".!?" and len(text.split()) == 1 and previous - start >= MIN_SECONDS:
-                end = previous
+            words = text.split()
+            dangling = text.endswith(("...", "…")) or (
+                text[-1:] not in ".!?" and (len(words) == 1 or words[-1].strip(",").lower() in DANGLING_WORDS)
+            )
+            # Where to stop instead: the end of the sentence's previous Whisper segment, else the sentence before.
+            earlier = list(sentence.get("cuts", [])) + ([float(sentences[index - 1]["end"])] if index else [])
+            if dangling:
+                end = next((cut for cut in sorted(earlier, reverse=True) if cut - start >= MIN_SECONDS), end)
             break
     return _past_question(start, end, sentences, max_seconds)
 

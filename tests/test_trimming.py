@@ -73,6 +73,19 @@ class TrimPromptTests(unittest.TestCase):
         self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["end"], 48.0)
         self.assertEqual(snap_ends([{"start": 20.0, "end": 57.0}], sentences)[0]["end"], 48.0)
 
+    def test_end_trailing_off_mid_sentence_stops_at_its_last_whole_segment(self):
+        # Seen on PeakMoments 2026-11-14: "... She's fucking slow Oh She", "... there's J of K And..."
+        from twitch_auto_clipper.highlights import split_sentences
+
+        segments = [{"start": 10.0 * i, "end": 10.0 * i + 8, "text": f"sentence {i}."} for i in range(4)]
+        segments += [{"start": 40.0, "end": 48.0, "text": "She's fucking slow"}, {"start": 48.5, "end": 49.5, "text": "Oh She"}]
+        sentences = split_sentences(segments)
+        self.assertEqual(sentences[-1]["cuts"], [48.0])
+        answer = json.dumps({"moments": [{"id": "m1", "start": 20, "end": 49.5, "complete": True}]})
+        self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["end"], 48.0)
+        sentences[-1]["text"] = "Because they're all J's Like, there's J of K And..."
+        self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["end"], 48.0)
+
     def test_prompt_forbids_ending_on_an_unanswered_question(self):
         from unittest import mock
 

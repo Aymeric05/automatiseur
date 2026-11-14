@@ -81,6 +81,7 @@ def split_sentences(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         lowercase = text[0].islower()
         max_gap = LOWERCASE_JOIN_GAP if lowercase else UNFINISHED_JOIN_GAP if unfinished else SENTENCE_JOIN_GAP
         if previous is not None and start - previous["end"] < max_gap and (unfinished or lowercase):
+            previous.setdefault("cuts", []).append(previous["end"])  # where a Short may still stop
             previous["end"] = end
             previous["text"] = f"{previous['text']} {text}"
         else:

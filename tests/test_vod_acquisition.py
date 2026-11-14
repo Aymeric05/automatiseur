@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 from twitch_auto_clipper.twitch_api import LiveStream, TwitchAPIError, TwitchVOD
 from twitch_auto_clipper.twitch_monitor import MonitoringCycle, MonitoredStream
 from twitch_auto_clipper.vod_acquisition import (
+    TOP_STREAMER_CLIP_BUDGET,
     MAX_ATTEMPTS,
     RETRY_BASE_SECONDS,
     TwitchVODAcquisitionManager,
@@ -194,7 +195,7 @@ class VODAcquisitionTests(unittest.TestCase):
         manager.record_automation(taken[0], f"vod-{taken[0]}", "error")  # retried later: free again
         self.assertEqual(manager.record_automation(taken[1], f"vod-{taken[1]}", "completed"), "done")
 
-    def test_top_streamer_gets_twenty_moments_and_carries_its_peak(self) -> None:
+    def test_top_streamer_gets_the_top_budget_and_carries_its_peak(self) -> None:
         manager = TwitchVODAcquisitionManager(
             api_client=self.client, input_dir=self.root / "input", state_path=self.root / "state" / "vods.json",
             downloader=self.download, clock=self.clock, top_streamers=frozenset({"LOGIN"}),
@@ -202,7 +203,7 @@ class VODAcquisitionTests(unittest.TestCase):
         live = monitored_stream(budget=5)
         manager.process_cycle(MonitoringCycle(ended_streams=(live,)))
         [acquisition] = list(manager.acquire_due())
-        self.assertEqual((acquisition.clip_budget, acquisition.peak_viewers), (20, 10_000))
+        self.assertEqual((acquisition.clip_budget, acquisition.peak_viewers), (TOP_STREAMER_CLIP_BUDGET, 10_000))
 
     def test_biggest_peak_goes_first_even_if_it_ended_last(self) -> None:
         manager = self.manager()

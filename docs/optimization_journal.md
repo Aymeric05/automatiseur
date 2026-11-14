@@ -170,6 +170,8 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   publies (5 pub / 20 reserve / 18 jetes) contre Fortnite 16/3/13 ; ROB RUN 0/2/7 ; source emotion
   1/9/3. Points appris fortnite +1.3, LoL +1.6. A suivre : si WoW reste <15 % publie une semaine de
   plus, proposer un budget de clips reduit pour WoW.
+  2026-11-15 : WoW 12 pub / 15 res / 29 jetes (21 % publie), Fortnite 12/9/12 (36 %), ROB RUN 0/2/7,
+  emotion 1/6/6. WoW remonte un peu ; on garde la surveillance.
 
 ### PeakMoments (irl)
 - Concurrents (2026-11-13, 215 Shorts, 7 chaines) : 6 des 7 meilleurs = Speed (17-50 s, action physique
@@ -285,6 +287,10 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
 - Production (2026-11-14, 7 jours) : source chat 3 pub / 2 reserve / 10 jetes (et point appris
   source=chat -0.7), transcript 21/22/16, emotion 6/2/2. Les moments du chat sont surtout rendus pour
   rien : candidat a reduire (budget ou regle de selection) si ca se confirme.
+  2026-11-15 : confirme, chat 3 pub / 4 res / 11 jetes (17 % publie), point appris source=chat -0.6.
+  Premier test a lancer quand un slot IRL se libere (regle de selection : pas de moment du seul chat
+  sans parole claire). Longueur : nos Shorts IRL 38.5 s (guide 15-30, top concurrents 29 s) et points
+  appris <25s +0.6 / >40s -0.6 : le trim depasse le guide ; second candidat de test.
 
 ## Waiting for the owner
 
@@ -298,6 +304,8 @@ ones, and moves them to the entries.
 
 | Since | Change | Expected effect | Metric to watch | Verdict |
 |---|---|---|---|---|
+| 2026-11-15 | TOP_STREAMER_CLIP_BUDGET 20 -> 25 (palier 1 de la montee Gemini) | plus de candidats par VOD de streamer top, cles 2/3 mieux utilisees | VOD rendues/24h, requetes Gemini par cle, heure de saturation, taille de la file | pending |
+| 2026-11-15 | Fix (trimming._settled_end + highlights.split_sentences) : une fin qui traine ("... Oh She", "... J of K And...") s'arrete au dernier segment Whisper complet de la phrase | plus de fins en pleine phrase (2/4 irl le 11-14) | coherence du rapport | pending |
 | 2026-11-14 | Fix (trimming._settled_end) : une fin sur un fragment d'un seul mot sans ponctuation (debut de la scene suivante) s'arrete a la phrase d'avant | plus de fins "There's no quest. Oh" (gaming 11-14), "Okay. Tell" (11-08) | coherence du rapport | pending |
 | 2026-11-14 | Reserve pre-gate moved before the download (vod_acquisition.worth_downloading, owner's OK): a VOD with no chance to enter its channel's reserve is no longer downloaded (~1 downloaded VOD in 3 was dropped right after) | bandwidth goes to useful VODs, more VODs rendered per 24 h | VODs rendered per 24 h, "non telechargee" log lines, keys 2/3 usage | pending |
 | 2026-11-13 | MAX_OVERLOADED_TRIES 2 -> 5 (owner's OK): on 503 every model of the lane is tried before the VOD waits 30 min; 3 keys make quota no longer scarce | fewer VODs sent back to wait for Gemini, more VODs rendered per 24 h | VODs sent back (report's gemini line), VODs rendered per 24 h, keys 2/3 usage | pending |
@@ -329,6 +337,17 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-15 - fins IRL en pleine phrase, palier Gemini 1
+
+- Gaming : coherence 4/4 acceptables (1 debut en plein sujet "Oh Well, whatever"). gaming_interaction_v1
+  A 28/7 VOD, B 15/6 : on attend (B < 20). Pas de nouveau test (aucune ligne Knowledge assez forte).
+- IRL : coherence 2/4 finissent en pleine phrase ("... Oh She", "... J of K And...") malgre le correctif
+  d'hier (phrase de plusieurs mots sans ponctuation). Corrige : la fin recule au dernier segment Whisper
+  complet (test). Aucun verdict : irl_dialogue_v1 5 VOD chacun (B en retrait : retention 33 vs 72) ;
+  irl_cold_open_v1 A 2 VOD. Rapport : retention 0 (pas encore de chiffre YouTube) exclue des medianes.
+- Debit 11 VOD/24h (8 hier), 45 jobs jetes ; renvois Gemini = 503 uniquement, cle 3 a ~13 requetes.
+  Palier 1 : TOP_STREAMER_CLIP_BUDGET 20 -> 25, a mesurer 24 h avant le palier suivant (VOD_WORKERS).
 
 ### 2026-11-14 - fins sur un fragment de la scene suivante corrigees
 
@@ -418,26 +437,7 @@ ones, and moves them to the entries.
 - IRL : idem, 8/10 publies toujours HasanAbi politique (seule VOD dispo). Tests a 0-3 mesures.
 - Debit : veille Windows 22:43 -> 11:57 (journal systeme), pas un bug ; proposition anti-veille.
 
-### 2026-11-08 - 0 VOD rendue en 24 h, fins qui debordent sur la phrase suivante
-
-- Gaming : coherence 3/4 finissent sur des mots de la phrase suivante (Shorts du 11-06) : marge de
-  rendu, corrigee le 11-07 et commitee. gaming_interaction_v1 a 0 mesure. Revoir coherence demain.
-- IRL : meme defaut (6/10). 8 des 10 publies = une VOD politique de HasanAbi. Test irl_cold_open_v1
-  lance (demande du proprietaire, slot libre). irl_dialogue_v1 : A n=12, B n=3, loin du seuil.
-- Debit : app arretee ~11-06 soir -> 11-08 18:25 ; depuis, une VOD de 48 h (stableronaldo, audio
-  4.4 Go a 1000 Ko/s) occupe le seul telechargement. DOWNLOAD_SHARE 0.25, app redemarree.
-
-### 2026-11-06 - changes made in the owner's conversation
-
-- Both channels were set "made for kids" at channel level (their Shorts were not): switched to
-  "not made for kids" by the owner on 2026-11-06. Compare views and retention of the Shorts
-  published after that date with those before (report: "channels set to not made for kids").
-- An Emiru Short was blocked in 2 countries for the stream's background music: moments with
-  music are no longer rendered (vod_pipeline.MAX_MUSIC_SHARE: 25 % non-game, 45 % game; check
-  the funnel's "sans musique" count: if many moments are lost, raise the bar), and a music
-  claim no longer blacklists the streamer (Emiru removed from the list).
-
-### earlier (2026-10-23 to 2026-11-06)
+### earlier (2026-10-23 to 2026-11-08)
 
 - 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
   gaming_length_v1 (45-90s, gagne le 11-01), 10-26 irl_length_v1 (perdu le 11-03). Bugs de coupe
@@ -452,3 +452,6 @@ ones, and moves them to the entries.
   irl_dialogue_v1 lance. 11-04 : Gemini sature, 1 VOD/24h, defauts de coherence sur le chemin de secours.
   11-05 : Gemini sature 7e jour, 2 VOD/24h. 11-06 : vraie cause des coupes en plein mot (split_sentences
   gardait les bouts en minuscule comme phrases a part) corrigee, guide refait, gaming_interaction_v1 lance.
+  11-06 (proprietaire) : chaines en "not made for kids", moments avec musique plus rendus (MAX_MUSIC_SHARE).
+  11-08 : app arretee ~2 jours, VOD de 48 h bloquant le telechargement, DOWNLOAD_SHARE 0.25 ; fins
+  debordant sur la phrase suivante (marge de rendu) corrigees ; irl_cold_open_v1 lance.

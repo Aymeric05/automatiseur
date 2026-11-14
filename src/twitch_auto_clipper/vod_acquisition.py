@@ -23,7 +23,7 @@ VOD_WAIT_SECONDS = 24 * 3600  # still no VOD a day after the end: disabled or de
 MIN_FREE_BYTES = 2 * 1024**3  # never start a download with less free space
 # Unpublished Shorts expire after 48 hours: an older VOD is no longer worth processing.
 MAX_JOB_AGE_SECONDS = 48 * 3600
-TOP_STREAMER_CLIP_BUDGET = 20  # moments asked to Gemini for a streamer of the top list
+TOP_STREAMER_CLIP_BUDGET = 25  # moments asked to Gemini for a streamer of the top list
 # About what the worker processes within MAX_JOB_AGE_SECONDS: worse jobs are dropped.
 MAX_QUEUED_JOBS = 40
 MAX_VOD_SECONDS = 8 * 3600  # of a longer VOD (a 24-48 h stream), only the last 8 hours are processed

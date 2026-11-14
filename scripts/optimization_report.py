@@ -53,7 +53,7 @@ for channel in ("gaming", "irl"):
     print(f"reliability={model.reliability:.2f} gemini_weight={model.gemini_weight:.2f}")
     measured = [e for e in entries if e["video_id"] in scores]
     print("median views", median([e.get("views_3d", e.get("views_1d", e.get("views", 0))) for e in measured]),
-          "| median retention", median([e["retention_pct"] for e in measured if isinstance(e.get("retention_pct"), (int, float))]))
+          "| median retention", median([e["retention_pct"] for e in measured if isinstance(e.get("retention_pct"), (int, float)) and e["retention_pct"] > 0]))
     effects = sorted(((value * 4, name, val) for (name, val), value in model.learned.items()), reverse=True)
     if effects:
         print("learned points (best, worst):", ", ".join(f"{n}={v} {p:+.1f}" for p, n, v in effects[:4]),
@@ -81,7 +81,7 @@ for test in tests:
         group = [e for e in history if e.get("channel", "gaming") == test["channel"]
                  and (e.get("experiments") or {}).get(test["id"]) == side and e["video_id"] in scores]
         print(f"  {side}: measured n={len(group)} vods={len({e.get('vod_id') for e in group})} perf={median([scores[e['video_id']] for e in group])} "
-              f"retention={median([e['retention_pct'] for e in group if isinstance(e.get('retention_pct'), (int, float))])} "
+              f"retention={median([e['retention_pct'] for e in group if isinstance(e.get('retention_pct'), (int, float)) and e['retention_pct'] > 0])} "
               f"views={median([e.get('views_3d', e.get('views_1d', 0)) for e in group])}")
 
 guide = load("format_guide.json", {})
@@ -176,6 +176,7 @@ print("gemini today: " + ", ".join(f"{name} {q.get('used')}{' CLOSED' if q.get('
                                    for name, q in sorted(gemini.items()) if q.get("day") == max(v.get("day", "") for v in gemini.values()))
       + f" | VODs sent back to wait for Gemini (log): {waiting}")
 
+# retention_pct 0 = YouTube gave no figure yet (too few views): left out of the medians.
 # Coherence check (read by Claude in the loop): does each recent Short start with its subject
 # and end once it is concluded? Its first and last words, from the manifests.
 print("\n## coherence: first / last words of the last rendered Shorts")
