@@ -173,6 +173,17 @@ class VODAutomationPipeline:
             self._update_manifest(result.vod_id, update)
         return result
 
+    def could_enter_reserve(self, login: str, vod_id: str, clip_budget: int, game_name: str) -> bool:
+        """False when even the VOD's best possible moment would be pushed out of its channel's reserve.
+
+        Needs only the stream's metadata: the acquisition asks it before downloading anything.
+        """
+        if self.reserve_gate is None:
+            return True
+        best = {"gemini_score": BEST_POSSIBLE_SCORE, "start": 0.0, "end": 30.0,
+                "channel": short_channel(None, game_name)}
+        return self.reserve_gate(best, login, vod_id, clip_budget)
+
     def _run(self, acquisition: VODAcquisitionResult) -> VODAutomationResult:
         vod_id = acquisition.vod_id
         source_path = acquisition.downloaded_path
@@ -188,11 +199,9 @@ class VODAutomationPipeline:
 
         # Even its best moment could not enter its channel's reserve (the reserve already holds
         # better Shorts of better streamers): no transcription, no Gemini request for this VOD.
-        if self.reserve_gate is not None:
-            best = {"gemini_score": BEST_POSSIBLE_SCORE, "start": 0.0, "end": 30.0,
-                    "channel": short_channel(None, acquisition.game_name or "")}
-            if not self.reserve_gate(best, acquisition.broadcaster_login or "", vod_id, acquisition.clip_budget):
-                return VODAutomationResult(vod_id, "completed", message="Aucune chance d'entrer dans la reserve : VOD ignoree.")
+        if not self.could_enter_reserve(acquisition.broadcaster_login or "", vod_id, acquisition.clip_budget,
+                                        acquisition.game_name or ""):
+            return VODAutomationResult(vod_id, "completed", message="Aucune chance d'entrer dans la reserve : VOD ignoree.")
 
         # 1. Transcription and chat.
         try:

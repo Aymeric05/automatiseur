@@ -110,6 +110,9 @@ class TwitchVODAcquisitionManager:
         self._prefetching: set[str] = set()  # stream ids being downloaded ahead (see prefetch)
         self._claimed: set[str] = set()  # stream ids a worker is processing (several workers run)
         self._abandoned: dict[str, dict[str, Any]] = {}
+        # (login, vod_id, clip_budget, game_name) -> False when the VOD could not enter its
+        # channel's reserve: it is then never downloaded (set once the pipeline exists).
+        self.worth_downloading: Callable[[str, str, int, str], bool] | None = None
         self._load_state()
 
     @property
@@ -325,6 +328,14 @@ class TwitchVODAcquisitionManager:
             if audio_path is not None:
                 return _result(stream, budget, "already_downloaded", vod_id=vod_id, downloaded_path=audio_path)
 
+            if self.worth_downloading is not None and not self.worth_downloading(
+                stream.broadcaster_login, vod_id, budget, stream.game_name or ""
+            ):
+                with self._lock:
+                    self._finish_locked(stream_id, vod_id)
+                    self._save_state()
+                return _result(stream, budget, "skipped_reserve", vod_id=vod_id)
+
             self.input_dir.mkdir(parents=True, exist_ok=True)
             free = shutil.disk_usage(self.input_dir).free
             if free < MIN_FREE_BYTES:
@@ -526,6 +537,8 @@ def format_vod_acquisition_result(result: VODAcquisitionResult) -> str:
         return f"VOD pas encore disponible pour {name}; nouvel essai dans quelques minutes."
     if result.status == "skipped_blocked":
         return f"Stream de {name} ignore : streamer en liste noire."
+    if result.status == "skipped_reserve":
+        return f"VOD {result.vod_id} de {name} non telechargee : aucune chance d'entrer dans la reserve."
     if result.status == "skipped_zero_budget":
         return f"Stream {result.stream_id} ignore : budget de clips nul."
     if result.status == "already_downloaded":

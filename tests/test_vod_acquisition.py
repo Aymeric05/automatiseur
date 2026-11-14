@@ -97,6 +97,20 @@ class VODAcquisitionTests(unittest.TestCase):
         self.assertEqual(self.state()["jobs"], {})
         self.download.assert_called_once()
 
+    def test_a_vod_that_could_not_enter_the_reserve_is_never_downloaded(self) -> None:
+        manager = self.manager()
+        asked = []
+        manager.worth_downloading = lambda *args: asked.append(args) or False
+        manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))
+
+        [acquisition] = list(manager.acquire_due())
+        self.assertEqual((acquisition.status, acquisition.vod_id), ("skipped_reserve", "vod-1"))
+        self.assertEqual(asked, [("login", "vod-1", 5, "Game")])
+        self.download.assert_not_called()  # no bandwidth spent on it
+        self.assertEqual(self.state()["jobs"], {})  # closed, never retried
+        self.assertEqual(self.state()["processed_streams"], {"stream-1": "vod-1"})
+        self.assertIsNone(manager.prefetch(3))
+
     def test_queued_job_survives_a_restart_even_mid_processing(self) -> None:
         first = self.manager()
         first.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))

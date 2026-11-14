@@ -802,6 +802,8 @@ def main() -> int:
                 .would_enter_reserve(moment, login, vod_id, budget)
             ) if uploaders else None,
         )
+        # A VOD that could not enter its channel's reserve is not even downloaded.
+        manager.worth_downloading = automation.could_enter_reserve
 
         def report(line: str, is_error: bool = False) -> None:
             print(line, file=sys.stderr if is_error else sys.stdout, flush=True)
