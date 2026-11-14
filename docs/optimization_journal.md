@@ -395,6 +395,11 @@ ones, and moves them to the entries.
   it (shorts_upload protected_streamers); kaicenat, added automatically on 11-10 after Short
   MCqUlVRdGQs disappeared from YouTube about an hour after upload, was removed from the blacklist.
   A problem on such a streamer's Short is only noted (and reported to the owner).
+- Cause found (owner's Studio screenshot): both kaicenat Shorts (MCqUlVRdGQs, HgqqMsPnaHQ) were
+  "Traitement abandonne" (YouTube processing failed, likely the PC shut down during publication),
+  not a takedown. Such a video vanishes from the API exactly like a removed one. Since 2026-11-14 the
+  app follows the processing after each upload (youtube._wait_for_processing): an abandoned one is an
+  upload error, the Short is kept and sent again later. Both entries relabelled in published_shorts.json.
 
 ### 2026-11-09 - owner's answers (main conversation)
 

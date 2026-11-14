@@ -235,7 +235,9 @@ class VODShortsUploader:
                     short.candidate_id, short.output_path, "deferred", title=metadata.title,
                     error=f"YouTube refuse l'upload ({reason}). {self._deferred_message()}",
                 )
-            self._record_error(manifest_path, short.key, str(error))
+            if "Traitement YouTube abandonne" in str(error) and self.quota is not None:
+                self.quota.record_use()  # it reached YouTube: counted in the day's uploads
+            self._record_error(manifest_path, short.key, str(error))  # file kept: sent again later
             return ShortUploadResult(
                 short.candidate_id, short.output_path, "error",
                 title=metadata.title, error=str(error),

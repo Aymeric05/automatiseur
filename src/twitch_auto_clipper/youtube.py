@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,10 @@ ANALYTICS_TOKEN_NAME = "youtube-analytics-token.json"
 UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024
 UPLOAD_RETRIES = 5  # network errors and timeouts, with growing pauses
 # Rejections that mean a rights or rules problem (not "duplicate" or "length").
+# After the upload, YouTube's processing is followed: a Short whose processing is abandoned
+# ("Traitement abandonne" in Studio) disappears from the API like a removed one; it is not.
+PROCESSING_CHECK_SECONDS = 30
+PROCESSING_TIMEOUT_SECONDS = 15 * 60
 WARNING_REASONS = frozenset({"copyright", "legal", "trademark", "termsOfUse", "inappropriate"})
 
 
@@ -293,6 +298,32 @@ def fetch_video_statistics(
         raise YouTubeUploadError(f"Statistiques YouTube indisponibles : {error}") from error
 
 
+def _wait_for_processing(service: Any, video_id: str, sleep: Any = time.sleep) -> None:
+    """Raise when YouTube abandons the processing of an uploaded video (the Short must be sent again).
+
+    Gone twice in a row, or marked failed, it never became a Short. Still processing after
+    ``PROCESSING_TIMEOUT_SECONDS``: accepted (YouTube usually finishes later).
+    """
+    missing = 0
+    for _ in range(PROCESSING_TIMEOUT_SECONDS // PROCESSING_CHECK_SECONDS):
+        items = service.videos().list(part="status,processingDetails", id=video_id).execute(
+            num_retries=UPLOAD_RETRIES
+        ).get("items", [])
+        if items:
+            missing = 0
+            status = items[0].get("status", {}).get("uploadStatus")
+            processing = items[0].get("processingDetails", {}).get("processingStatus")
+            if status == "failed" or processing in {"failed", "terminated"}:
+                raise YouTubeUploadError(f"Traitement YouTube abandonne pour {video_id} : Short a renvoyer.")
+            if status in {"processed", "rejected"} or processing == "succeeded":
+                return  # a rejection is read later with the statistics (a real YouTube decision)
+        else:
+            missing += 1
+            if missing >= 2:
+                raise YouTubeUploadError(f"Traitement YouTube abandonne pour {video_id} (video disparue) : Short a renvoyer.")
+        sleep(PROCESSING_CHECK_SECONDS)
+
+
 def upload_video(
     video_path: Path,
     title: str,
@@ -345,6 +376,7 @@ def upload_video(
         video_id = response.get("id") if isinstance(response, dict) else None
         if not video_id:
             raise YouTubeUploadError("La reponse YouTube ne contient pas d'identifiant.")
+        _wait_for_processing(service, video_id)
         return video_id, f"https://www.youtube.com/watch?v={video_id}"
     except YouTubeUploadError:
         raise

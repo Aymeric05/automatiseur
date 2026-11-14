@@ -41,6 +41,17 @@ class FakeVideos:
         self.arguments = kwargs
         return self.request
 
+    def list(self, **kwargs):  # the processing check after the upload: done
+        return FakeExecute({"items": [{"status": {"uploadStatus": "processed"}}]})
+
+
+class FakeExecute:
+    def __init__(self, response) -> None:
+        self.response = response
+
+    def execute(self, num_retries=0):
+        return self.response
+
 
 class FakeChannels:
     def __init__(self, channel_id: str) -> None:
@@ -167,6 +178,29 @@ class YouTubeTests(unittest.TestCase):
         )
         snippet = fake_service.videos_api.arguments["body"]["snippet"]
         self.assertEqual((snippet["defaultLanguage"], snippet["defaultAudioLanguage"]), ("en", "en"))
+
+    def test_an_abandoned_youtube_processing_is_an_upload_failure_not_a_removal(self) -> None:
+        from twitch_auto_clipper.youtube import _wait_for_processing
+
+        class Service:
+            def __init__(self, answers) -> None:
+                self.answers = answers
+
+            def videos(self):
+                return self
+
+            def list(self, **kwargs):
+                return FakeExecute({"items": self.answers.pop(0)})
+
+        waits = []
+        processing = [{"status": {"uploadStatus": "uploaded"}, "processingDetails": {"processingStatus": "processing"}}]
+        failed = [{"status": {"uploadStatus": "failed"}}]
+        done = [{"status": {"uploadStatus": "processed"}, "processingDetails": {"processingStatus": "succeeded"}}]
+        _wait_for_processing(Service([processing, [], done]), "v", sleep=waits.append)  # one miss: still fine
+        self.assertEqual(len(waits), 2)
+        for answers in ([processing, failed], [processing, [], []]):
+            with self.assertRaisesRegex(YouTubeUploadError, "Traitement YouTube abandonne"):
+                _wait_for_processing(Service(answers), "v", sleep=waits.append)
 
     def test_upload_video_rejects_missing_video(self) -> None:
         with self.assertRaisesRegex(YouTubeUploadError, "introuvable"):
