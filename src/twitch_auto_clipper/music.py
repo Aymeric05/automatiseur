@@ -38,6 +38,9 @@ def _demucs():
         from demucs.pretrained import get_model
         import torch
 
+        # cuDNN crashed the whole app here (cudnn64_9.dll, 2026-11-14): this runs in the app's own
+        # process, so torch uses its plain CUDA kernels instead (a bit slower, never fatal).
+        torch.backends.cudnn.enabled = False
         model = get_model("htdemucs").eval()
         _models["device"] = "cuda" if torch.cuda.is_available() else "cpu"
         _models["demucs"] = model.to(_models["device"])
