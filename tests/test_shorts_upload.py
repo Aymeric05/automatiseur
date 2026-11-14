@@ -631,6 +631,23 @@ class StatisticsTests(unittest.TestCase):
             self.assertEqual([entry.get("problem") for entry in entries],
                              ["retire de YouTube", "bloque dans 3 pays", "restreint aux adultes", "rejete (copyright)"])
 
+    def test_a_streamer_of_the_owner_s_lists_is_never_blacklisted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            (tmp / "published_shorts.json").write_text(json.dumps({"fetched_at": None, "shorts": [
+                {"video_id": "struck", "streamer": "kaicenat", "uploaded_at": "2026-10-16T09:00:00+00:00"},
+            ]}), encoding="utf-8")
+            blocked = tmp / "blocked.txt"
+            uploader = VODShortsUploader(
+                tmp, clock=lambda: datetime(2026, 10, 18, 12, 0, tzinfo=timezone.utc),
+                statistics_fetcher=lambda ids, *a: {"struck": {"views": 0, "problem": "rejete (copyright)"}},
+                blocked_streamers_path=blocked, protected_streamers=frozenset({"KaiCenat"}),
+            )
+            self.assertNotIn("liste noire", uploader.refresh_statistics())
+            self.assertEqual(load_top_streamers(blocked), frozenset())
+            entries = json.loads((tmp / "published_shorts.json").read_text(encoding="utf-8"))["shorts"]
+            self.assertEqual(entries[0]["problem"], "rejete (copyright)")  # still noted
+
     def test_each_channel_reads_its_own_statistics_even_right_after_the_other(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)

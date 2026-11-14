@@ -107,6 +107,7 @@ class VODShortsUploader:
         uploaded_finder: Callable[..., tuple[str, str] | None] | None = None,
         retention_fetcher: Callable[[list[str], str], dict[str, dict[str, float]]] | None = None,
         blocked_streamers_path: Path | None = None,
+        protected_streamers: frozenset[str] = frozenset(),
         channel: str = "gaming",
         publishing: bool = True,
         arbiter: Callable[[list[dict[str, Any]]], dict[str, float]] | None = None,
@@ -151,6 +152,8 @@ class VODShortsUploader:
         # No Short of these streamers is published; one gets added when YouTube removes,
         # rejects or blocks one of their Shorts (see refresh_statistics).
         self.blocked_streamers_path = blocked_streamers_path
+        # The owner's lists (top and favored streamers): never blacklisted automatically.
+        self.protected_streamers = frozenset(login.lower() for login in protected_streamers)
         self._statistics_retry_at: datetime | None = None
         # Comparative scores of the reserve (see _arbitrate); None: per-live Gemini scores only.
         self._arbiter = arbiter
@@ -635,7 +638,8 @@ class VODShortsUploader:
                 # deletes was flagged first (restricted, claimed): ``known`` above, never counted. A
                 # music claim (blocked in some countries) or an age restriction alone is only noted.
                 serious = problem.startswith("rejete") or problem == "retire de YouTube"
-                if not known and serious and self.blocked_streamers_path and entry.get("streamer") and add_streamer(
+                protected = str(entry.get("streamer") or "").lower() in self.protected_streamers
+                if not known and serious and not protected and self.blocked_streamers_path and entry.get("streamer") and add_streamer(
                     self.blocked_streamers_path, entry["streamer"],
                     f"auto {now:%Y-%m-%d}: Short {entry['video_id']} {problem}",
                 ):

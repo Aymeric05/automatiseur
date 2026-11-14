@@ -388,6 +388,14 @@ ones, and moves them to the entries.
 - IRL : coherence 4/4 correctes (question -> reponse, scene police complete). irl_dialogue_v1 A n=12
   (2 VOD) / B n=5, irl_cold_open_v1 a 0. Guide concurrents refait le 11-13 (hebdo).
 
+### 2026-11-14 - owner's rule: whitelist streamers are never blacklisted
+
+- NEVER put a streamer of the owner's lists (top_streamers_gaming.txt, top_streamers_irl.txt,
+  favored_streamers.txt) in blocked_streamers.txt, automatically or by hand. The app now refuses
+  it (shorts_upload protected_streamers); kaicenat, added automatically on 11-10 after Short
+  MCqUlVRdGQs disappeared from YouTube about an hour after upload, was removed from the blacklist.
+  A problem on such a streamer's Short is only noted (and reported to the owner).
+
 ### 2026-11-09 - owner's answers (main conversation)
 
 - Gemini paid tier: NON. The owner keeps the free tier: make the most of it (selection and trimming

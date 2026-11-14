@@ -726,6 +726,7 @@ def main() -> int:
                     streamer_ranks={login: rank for rank, login in enumerate(streamer_lists[channel], start=1)},
                     check_seconds=PUBLISH_IDLE_SECONDS,
                     blocked_streamers_path=BLOCKED_STREAMERS_FILE,
+                    protected_streamers=top_streamers,  # the owner's lists: never blacklisted
                     retention_fetcher=partial(
                         fetch_video_retention,
                         client_secrets_path=args.youtube_client_secrets,
