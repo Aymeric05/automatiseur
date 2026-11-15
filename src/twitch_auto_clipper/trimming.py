@@ -87,6 +87,8 @@ def trim_moments(
         "end va plus loin. Jamais au milieu d'une phrase, d'une explication ou d'une histoire. "
         "end ne tombe jamais sur une question encore sans reponse (\"What is that?\") ni sur le "
         "debut d'une nouvelle scene : va jusqu'a la reponse ou la reaction qui la conclut. "
+        "start ne tombe jamais sur une phrase qui en continue une autre (\"that means...\", "
+        "\"and then...\", une suite de phrase) : remonte a la phrase qui pose le sujet. "
         f"Duree entre {MIN_SECONDS:.0f} et {max_seconds:.0f} secondes, idealement entre {low:.0f} "
         f"et {high:.0f} secondes, mais un Short complet passe toujours avant un Short court. "
         + "".join(f"Regle observee sur les Shorts qui marchent : {rule} " for rule in guide.get("rules", []))
@@ -107,6 +109,22 @@ def _enclosing_start(value: float, sentences: list[dict[str, Any]]) -> float:
         if sentence["start"] <= value < sentence["end"]:
             return float(sentence["start"])
     return value
+
+
+def _settled_start(start: float, end: float, sentences: list[dict[str, Any]], max_seconds: float) -> float:
+    """``start`` pulled back one sentence when it opens on a lowercase fragment of the one before.
+
+    "when the deal is done you see your cat..." (gaming 2026-11-16) began mid-subject: its
+    sentence continues the previous one, which sets up what the Short is about.
+    """
+    for index, sentence in enumerate(sentences):
+        if abs(sentence["start"] - start) <= 0.05:
+            if index and str(sentence.get("text", "")).lstrip()[:1].islower():
+                earlier = float(sentences[index - 1]["start"])
+                if end - earlier <= max_seconds:
+                    return earlier
+            break
+    return start
 
 
 def _past_question(start: float, end: float, sentences: list[dict[str, Any]], max_seconds: float) -> float:
@@ -161,8 +179,8 @@ def snap_ends(
     for moment in moments:
         start = float(moment.get("start", 0))
         end = float(moment.get("end", 0))
-        new_start = _enclosing_start(start, sentences)
         new_end = next((value for value in ends if value >= end - 0.05), end)
+        new_start = _settled_start(_enclosing_start(start, sentences), new_end, sentences, max_seconds)
         new_end = _settled_end(new_start, new_end, sentences, max_seconds)
         if new_start != start or new_end != end:
             snapped.append({**moment, "start": round(new_start, 2), "end": round(new_end, 2)})
@@ -195,8 +213,8 @@ def parse_trims(
                 continue
             start = float(moment.get("start", 0))
             end = float(moment.get("end", 0))
-            new_start = _enclosing_start(start, sentences)
             snapped_end = next((value for value in ends if value >= end - 0.05), end)
+            new_start = _settled_start(_enclosing_start(start, sentences), snapped_end, sentences, max_seconds)
             snapped_end = _settled_end(new_start, snapped_end, sentences, max_seconds)
             fallback: dict[str, Any] = {}
             if new_start != start:
@@ -231,6 +249,7 @@ def parse_trims(
             end = next((value for value in ends if value - start >= MIN_SECONDS), start + MIN_SECONDS)
         if end - start > max_seconds or end <= start:
             continue  # unusable answer: the moment keeps its bounds
+        start = _settled_start(start, end, sentences, max_seconds)
         end = _settled_end(start, end, sentences, max_seconds)
         found[index] = {"start": round(start, 2), "end": round(end, 2), "trim_reason": answer.get("reason")}
     snap_fallback_ends()

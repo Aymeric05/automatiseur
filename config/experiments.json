@@ -13,24 +13,24 @@
       }
     },
     {
-      "id": "gaming_interaction_v1",
-      "channel": "gaming",
-      "started": "2026-11-06",
-      "description": "Favorise les interactions entre personnes (roleplay, invite, coequipier, chat qui provoque) avec une chute, plutot que l'action de jeu seule (concurrents 2026-11-06 : ~8 des 14 meilleurs Shorts gaming relatifs sont des interactions NoPixel/invite, sur 4 chaines ; les tops/compilations sont dans le tiers bas).",
-      "b": {
-        "selection_rules": [
-          "Privilegie un moment d'interaction entre le streamer et une autre personne (roleplay, invite, coequipier, message du chat) avec une chute claire.",
-          "Evite l'action de jeu seule sans enjeu dit a voix haute, et toute compilation de plusieurs moments."
-        ]
-      }
-    },
-    {
       "id": "irl_cold_open_v1",
       "channel": "irl",
       "started": "2026-11-08",
       "description": "Sans cold open sur PeakMoments (points appris : -0.4 avec, +0.3 sans, 2026-11-06). Le proprietaire veut plus de preuves avant de le retirer.",
       "b": {
         "cold_open": false
+      }
+    },
+    {
+      "id": "gaming_tight_start_v1",
+      "channel": "gaming",
+      "started": "2026-11-16",
+      "description": "Le sujet est pose des les premieres secondes, sans introduction calme (Gemini 10-30 et 11-01 : hits concurrents = accroche/enjeu <3 s, flops = debut calme ; notre pire Short demarre lentement).",
+      "b": {
+        "trim_rules": [
+          "Le sujet est pose des les 3 premieres secondes (question, enjeu ou action deja lancee) : pas d'introduction calme.",
+          "Si le declencheur arrive tard, commence a la phrase juste avant lui, jamais plus tot."
+        ]
       }
     }
   ]

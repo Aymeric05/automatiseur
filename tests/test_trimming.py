@@ -3,7 +3,7 @@ import unittest
 
 from twitch_auto_clipper.trimming import parse_trims, snap_ends
 
-SENTENCES = [{"start": 10.0 * i, "end": 10.0 * i + 8, "text": f"sentence {i}."} for i in range(12)]
+SENTENCES = [{"start": 10.0 * i, "end": 10.0 * i + 8, "text": f"Sentence {i}."} for i in range(12)]
 
 
 class TrimTests(unittest.TestCase):
@@ -85,6 +85,17 @@ class TrimPromptTests(unittest.TestCase):
         self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["end"], 48.0)
         sentences[-1]["text"] = "Because they're all J's Like, there's J of K And..."
         self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["end"], 48.0)
+
+    def test_start_on_a_lowercase_continuation_goes_back_one_sentence(self):
+        # Seen on LiveActions! 2026-11-16: a Short opening on "when the deal is done you see..."
+        sentences = [dict(s) for s in SENTENCES]
+        sentences[3]["text"] = "when the deal is done you see your cat."
+        answer = json.dumps({"moments": [{"id": "m1", "start": 30, "end": 58, "complete": True}]})
+        self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["start"], 20.0)
+        self.assertEqual(snap_ends([{"start": 31.0, "end": 57.0}], sentences)[0]["start"], 20.0)
+        # Not when the sentence before would make the Short too long.
+        answer = json.dumps({"moments": [{"id": "m1", "start": 30, "end": 88, "complete": True}]})
+        self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["start"], 30.0)
 
     def test_prompt_forbids_ending_on_an_unanswered_question(self):
         from unittest import mock

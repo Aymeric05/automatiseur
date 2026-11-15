@@ -280,7 +280,7 @@ PUBLISH_RETRY_SECONDS = 600.0  # pause after a failed upload (a network drop, a 
 DEFAULT_DOWNLOAD_KBPS = 1000  # VOD download cap floor (~8 Mbit/s); DOWNLOAD_MAX_KBPS overrides the measure
 SPEED_TEST_URL = "https://speed.cloudflare.com/__down?bytes=50000000"
 DOWNLOAD_SHARE = 0.25  # share of the bandwidth measured at start-up given to the VOD downloads
-VOD_WORKERS = 2  # VODs processed at the same time (the GPU transcribes one at a time)
+VOD_WORKERS = 3  # VODs processed at the same time (the GPU transcribes one at a time)
 PREFETCH_AHEAD = VOD_WORKERS + 1  # VODs kept downloaded: those being processed and the next one
 DEFAULT_DAILY_UPLOADS = 10  # known to pass in 24 h; beyond, one try an hour until YouTube refuses
 DEFAULT_DAILY_GEMINI_REQUESTS = 20  # Gemini API free tier, per model and per day (each model)

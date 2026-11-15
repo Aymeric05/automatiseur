@@ -173,6 +173,14 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   2026-11-15 : WoW 12 pub / 15 res / 29 jetes (21 % publie), Fortnite 12/9/12 (36 %), ROB RUN 0/2/7,
   emotion 1/6/6. WoW remonte un peu ; on garde la surveillance.
 
+- Verdict A/B gaming_interaction_v1 (2026-11-16, seuil atteint : A n=33/vods=9, B n=20/vods=8) :
+  perf A 0.6 vs B 0.3, retention 53.5 vs 53.9 - B pas meilleur, test retire, selection inchangee.
+  Affaiblit la ligne concurrents "interactions" (11-06/11-09) : ne se confirme pas chez nous.
+- Production (2026-11-16, 7 j) : Fortnite 14 pub/5 res/14 jetes (42 %), WoW 9/15/19 (21 %), ROB RUN
+  0/3/7 (0 publie en 7 j, 3e jour), len=25-40s 7/6/4 (41 %) vs >40s 18/23/39 (22 %). 14 des ~40 VOD
+  traitees (2 chaines) finissent "aucun moment assez bon pour la reserve" apres l'appel Gemini (pre-gate
+  au score maximal) : piste = pre-gate plus realiste, a chiffrer avant d'y toucher.
+
 ### PeakMoments (irl)
 - Concurrents (2026-11-13, 215 Shorts, 7 chaines) : 6 des 7 meilleurs = Speed (17-50 s, action physique
   ou emotion forte, 19-36x) ; bas = politique (Hasan midterms, gouverneur 0.23x), clips sans sujet ("WTF",
@@ -291,6 +299,10 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   Premier test a lancer quand un slot IRL se libere (regle de selection : pas de moment du seul chat
   sans parole claire). Longueur : nos Shorts IRL 38.5 s (guide 15-30, top concurrents 29 s) et points
   appris <25s +0.6 / >40s -0.6 : le trim depasse le guide ; second candidat de test.
+- Production (2026-11-16, 7 j) : Just Chatting 35 pub/26 res/21 jetes ; len=25-40s 19/8/11 (50 %),
+  <25s 7/8/4, >40s 11/11/11 (33 %) ; source chat 4/6/6 (25 %) vs transcript 29/17/17 (46 %), coherent
+  avec les points appris (source=chat -0.7, length=>40s -0.7). Concurrents : tiers haut 28 s vs bas 31 s,
+  nous 37 s ; titres 34 vs 38.5 caracteres, nous 49.
 
 ## Waiting for the owner
 
@@ -304,6 +316,9 @@ ones, and moves them to the entries.
 
 | Since | Change | Expected effect | Metric to watch | Verdict |
 |---|---|---|---|---|
+| 2026-11-16 | VOD_WORKERS 2 -> 3 (palier 2 de la montee Gemini) | plus de VOD rendues/24h (12, objectif 20), cles 2/3 mieux utilisees (136 requetes/~360) | VOD rendues/24h, requetes par cle, file, charge du PC | pending |
+| 2026-11-16 | Fix (trimming._settled_start + prompt) : un debut sur une phrase en minuscule (suite de la precedente) remonte d'une phrase | moins de debuts en plein sujet ("when the deal is done...", 1/4 a 2/4 par jour depuis le 11-13) | coherence du rapport | pending |
+| 2026-11-16 | A/B gaming_tight_start_v1 : sujet pose dans les 3 premieres secondes (trim_rules) | retention meilleure (hits concurrents = enjeu <3 s) | retention_pct, perf of B vs A | pending (0 measured) |
 | 2026-11-15 | TOP_STREAMER_CLIP_BUDGET 20 -> 25 (palier 1 de la montee Gemini) | plus de candidats par VOD de streamer top, cles 2/3 mieux utilisees | VOD rendues/24h, requetes Gemini par cle, heure de saturation, taille de la file | pending |
 | 2026-11-15 | Fix (trimming._settled_end + highlights.split_sentences) : une fin qui traine ("... Oh She", "... J of K And...") s'arrete au dernier segment Whisper complet de la phrase | plus de fins en pleine phrase (2/4 irl le 11-14) | coherence du rapport | pending |
 | 2026-11-14 | Fix (trimming._settled_end) : une fin sur un fragment d'un seul mot sans ponctuation (debut de la scene suivante) s'arrete a la phrase d'avant | plus de fins "There's no quest. Oh" (gaming 11-14), "Okay. Tell" (11-08) | coherence du rapport | pending |
@@ -324,7 +339,7 @@ ones, and moves them to the entries.
 | 2026-10-26 | Fix: a failed Gemini trim call (quota/network) still snaps every moment's end to a sentence boundary, instead of keeping the raw un-snapped end | fewer mid-word/mid-sentence cuts | Gemini quality-check defects on our Shorts | pending |
 | 2026-10-26 | Fix: a partial trim (end only, no start) no longer crashes the whole VOD (missing "start" key) | fewer VOD retries/losses | "erreur inattendue" / KeyError in the log | pending |
 | 2026-10-30 | Fix: when Gemini's trim answer for a moment is rejected or missing, its start is now also recalee on a sentence boundary (only the end was before) | fewer "no context at start" / early cuts | Gemini quality-check defects on our Shorts | pending |
-| 2026-11-06 | A/B gaming_interaction_v1: favorise interactions entre personnes avec chute, evite action seule/compilations | retention/views plus proches des hits | retention_pct, views_3d of B vs A | pending (0 measured) |
+| 2026-11-06 | A/B gaming_interaction_v1: favorise interactions entre personnes avec chute, evite action seule/compilations | retention/views plus proches des hits | retention_pct, views_3d of B vs A | **not better** (2026-11-16, perf A 0.6 vs B 0.3, retention 53.5 vs 53.9), removed |
 | 2026-11-06 | Fix (highlights.py): un segment en minuscule rejoint la phrase precedente jusqu'a 6 s de pause | plus de Shorts qui commencent/finissent sur un bout de phrase ("not.", "I walked in and") | coherence du rapport | pending |
 | 2026-11-08 | A/B irl_cold_open_v1: pas de cold open sur PeakMoments (b: cold_open false) | retention meilleure si le cold open nuit en IRL (points appris -0.4) | retention_pct, perf of B vs A | pending (0 measured) |
 | 2026-11-07 | Fix (vod_shorts._clip_bounds): les marges avant/apres restent dans le silence, plus de mots de la phrase suivante/precedente | fin propre au lieu de "... Okay. Tell" | coherence du rapport | pending |
@@ -337,6 +352,16 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-16 - debuts en plein sujet corriges, test interactions gaming perdu, palier Gemini 2
+
+- Gaming : coherence 2/4 commencent en plein sujet ("when the deal is done...", "Attempts somehow...").
+  Garde-fou (trimming._settled_start + regle du prompt, test). gaming_interaction_v1 perdu (perf 0.6 vs 0.3,
+  retention egale), retire ; gaming_tight_start_v1 lance (sujet pose en <3 s). Miniatures non regardees.
+- IRL : coherence 3/4 bonnes (1 finit sur "Um, okay. Look.", cas isole). Aucun verdict : irl_dialogue_v1
+  A 5 VOD (<6, B en retrait 43.6 vs 72.3) ; irl_cold_open_v1 A 3 VOD. Guide hebdo du 11-13, pas encore du.
+- Debit 12 VOD/24h (11 hier), 65 jobs jetes ; Gemini ~136/360 requetes, cle 3 a 5, renvois = 503/timeout.
+  Palier 2 : VOD_WORKERS 2 -> 3, a mesurer 24 h (recul si le PC ne suit pas).
 
 ### 2026-11-15 - fins IRL en pleine phrase, palier Gemini 1
 
@@ -430,14 +455,7 @@ ones, and moves them to the entries.
 - Keep-awake: OK and done - on mains power the computer no longer falls asleep on its own while
   the app works (power.py); the owner can still sleep or shut down; on battery, as before.
 
-### 2026-11-09 - PC en veille toute la nuit, 0 VOD rendue
-
-- Gaming : rien de neuf rendu, coherence = Shorts du 11-06 (avant le fix des marges). Concurrents :
-  hits = reaction a un contenu sur soi / clash avec une figure connue. gaming_interaction_v1 a 0.
-- IRL : idem, 8/10 publies toujours HasanAbi politique (seule VOD dispo). Tests a 0-3 mesures.
-- Debit : veille Windows 22:43 -> 11:57 (journal systeme), pas un bug ; proposition anti-veille.
-
-### earlier (2026-10-23 to 2026-11-08)
+### earlier (2026-10-23 to 2026-11-09)
 
 - 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
   gaming_length_v1 (45-90s, gagne le 11-01), 10-26 irl_length_v1 (perdu le 11-03). Bugs de coupe
@@ -454,4 +472,5 @@ ones, and moves them to the entries.
   gardait les bouts en minuscule comme phrases a part) corrigee, guide refait, gaming_interaction_v1 lance.
   11-06 (proprietaire) : chaines en "not made for kids", moments avec musique plus rendus (MAX_MUSIC_SHARE).
   11-08 : app arretee ~2 jours, VOD de 48 h bloquant le telechargement, DOWNLOAD_SHARE 0.25 ; fins
-  debordant sur la phrase suivante (marge de rendu) corrigees ; irl_cold_open_v1 lance.
+  debordant sur la phrase suivante (marge de rendu) corrigees ; irl_cold_open_v1 lance. 11-09 : PC en
+  veille toute la nuit (0 VOD), anti-veille accepte par le proprietaire.
