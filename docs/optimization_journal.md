@@ -33,6 +33,11 @@ Shorts and channels), the date seen first and last. Strengthen, weaken or remove
 evidence comes; turn a strong line into an A/B test, then into the app's default.
 
 ### LiveActions! (gaming)
+- Concurrents (2026-11-17, 40 derniers Shorts) : hauts = le streamer reagit a un evenement sur lui
+  (CaseOh prix Streamer Awards 8x, Backrooms 7.9x) ; bas = compilations/classements ("Ranking The Funniest", 0.1x).
+  Miniatures hits : ecran partage visage + jeu/creature. Bruit : une chaine non gaming (Rupert Spira) dans la liste.
+  Production 7 j : >40s 20 pub/21 res/35 jetes (26 %), ROB RUN 1/4/8. Coherence : fins sur une question
+  nouvelle sans reponse (11-11, 11-13, 11-17) : corrige dans le code (_past_question).
 - Concurrents (2026-11-13, 284 Shorts, 9 chaines) : la duree ne separe plus hauts et bas (30-180 s tous
   ~1.0x la mediane ; <30 s 2.6x mais n=10). Hauts = CaseOh qui reagit a une animation sur lui (4 des 5
   meilleurs, 20-31x), admin/RP avec un personnage connu ; bas = scene RP lente (poesie, journaux), hors
@@ -182,6 +187,10 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   au score maximal) : piste = pre-gate plus realiste, a chiffrer avant d'y toucher.
 
 ### PeakMoments (irl)
+- Concurrents (2026-11-17, 40 derniers) : hauts = reaction a un evenement/drama (Streamer Awards, H3, 5-13x) ;
+  miniatures hits = deux visages ou visage + scene, flop = overlay de chat. Production 7 j : >40s 1 pub/11 res/7 jetes
+  (5 %), <25s 5/5/3 (38 %) ; chat 2/9/5. Verdict irl_dialogue_v1 (2026-11-17) : B pas meilleur (perf -0.4 = -0.4,
+  retention 47.7 vs 63.0), retire. Test irl_short_v1 (15-25 s) lance.
 - Concurrents (2026-11-13, 215 Shorts, 7 chaines) : 6 des 7 meilleurs = Speed (17-50 s, action physique
   ou emotion forte, 19-36x) ; bas = politique (Hasan midterms, gouverneur 0.23x), clips sans sujet ("WTF",
   "HOLYY"). Miniatures : visage + 1 mot *REVENGE*/*CAUGHT 4K*. Production : source chat 1 publie/4/5 jetes
@@ -316,6 +325,9 @@ ones, and moves them to the entries.
 
 | Since | Change | Expected effect | Metric to watch | Verdict |
 |---|---|---|---|---|
+| 2026-11-17 | MAX_QUEUED_JOBS 40 -> 50 (palier 3 de la montee Gemini) | moins de VOD jetees file pleine (38/24h), plus de candidats | VOD rendues/24h, jobs jetes, requetes par cle, file | pending |
+| 2026-11-17 | Fix (trimming._past_question) : une fin sur une question sans reponse recule a la phrase d'avant | plus de fins "What do we think about mid boss?" | coherence du rapport | pending |
+| 2026-11-17 | A/B irl_short_v1 : Shorts IRL 15-25 s (ideal_seconds + trim_rules) | perf/retention meilleures (appris <25s +0.6, >40s -0.7) | retention_pct, perf of B vs A | pending (0 measured) |
 | 2026-11-16 | VOD_WORKERS 2 -> 3 (palier 2 de la montee Gemini) | plus de VOD rendues/24h (12, objectif 20), cles 2/3 mieux utilisees (136 requetes/~360) | VOD rendues/24h, requetes par cle, file, charge du PC | pending |
 | 2026-11-16 | Fix (trimming._settled_start + prompt) : un debut sur une phrase en minuscule (suite de la precedente) remonte d'une phrase | moins de debuts en plein sujet ("when the deal is done...", 1/4 a 2/4 par jour depuis le 11-13) | coherence du rapport | pending |
 | 2026-11-16 | A/B gaming_tight_start_v1 : sujet pose dans les 3 premieres secondes (trim_rules) | retention meilleure (hits concurrents = enjeu <3 s) | retention_pct, perf of B vs A | pending (0 measured) |
@@ -334,14 +346,14 @@ ones, and moves them to the entries.
 | 2026-10-23 | A/B irl_title_style_v1: shorter, less emoji titles | retention/views closer to competitor hits | retention_pct, views_3d of B vs A | **not better** (2026-11-03, A retention 64.2 vs B 43.9), removed |
 | 2026-10-24 | A/B gaming_length_v1: longer Shorts (45-90s vs guide's 15-45s) | retention/views closer to competitor hits (median 74s) | retention_pct, views_3d of B vs A | **B wins** (2026-11-01, retention 69.3 vs 61.7) - now default (experiments.py DEFAULTS), removed |
 | 2026-10-26 | A/B irl_length_v1: longer Shorts (30-50s vs guide's 15-25s) | retention/views closer to competitor hits (top third 45s) | retention_pct, views_3d of B vs A | **not better** (2026-11-03, A retention 53.0 vs B 53.7, perf A 0.3 vs B 0.0), removed |
-| 2026-11-03 | A/B irl_dialogue_v1: favorise dialogue/invite avec chute claire, evite le solo silencieux (ohnepixel) | retention/views plus proches des hits | retention_pct, views_3d of B vs A | pending (0 measured) |
+| 2026-11-03 | A/B irl_dialogue_v1: favorise dialogue/invite avec chute claire, evite le solo silencieux (ohnepixel) | retention/views plus proches des hits | retention_pct, views_3d of B vs A | **not better** (2026-11-17, perf -0.4 = -0.4, retention B 47.7 vs A 63.0), removed |
 | 2026-11-03 | Fix (highlights.py): une phrase sans ponctuation finale (hesitation, silence qui traine) peut maintenant se continuer au-dela d'une pause de 1.5s (jusqu'a 4s) au lieu de se couper en phrase separee | moins de Shorts coupes en plein mot/pensee (irl, 2 des 3 derniers controle qualite) | coherence du rapport (debut/fin), controle qualite | pending |
 | 2026-10-26 | Fix: a failed Gemini trim call (quota/network) still snaps every moment's end to a sentence boundary, instead of keeping the raw un-snapped end | fewer mid-word/mid-sentence cuts | Gemini quality-check defects on our Shorts | pending |
 | 2026-10-26 | Fix: a partial trim (end only, no start) no longer crashes the whole VOD (missing "start" key) | fewer VOD retries/losses | "erreur inattendue" / KeyError in the log | pending |
 | 2026-10-30 | Fix: when Gemini's trim answer for a moment is rejected or missing, its start is now also recalee on a sentence boundary (only the end was before) | fewer "no context at start" / early cuts | Gemini quality-check defects on our Shorts | pending |
 | 2026-11-06 | A/B gaming_interaction_v1: favorise interactions entre personnes avec chute, evite action seule/compilations | retention/views plus proches des hits | retention_pct, views_3d of B vs A | **not better** (2026-11-16, perf A 0.6 vs B 0.3, retention 53.5 vs 53.9), removed |
 | 2026-11-06 | Fix (highlights.py): un segment en minuscule rejoint la phrase precedente jusqu'a 6 s de pause | plus de Shorts qui commencent/finissent sur un bout de phrase ("not.", "I walked in and") | coherence du rapport | pending |
-| 2026-11-08 | A/B irl_cold_open_v1: pas de cold open sur PeakMoments (b: cold_open false) | retention meilleure si le cold open nuit en IRL (points appris -0.4) | retention_pct, perf of B vs A | pending (0 measured) |
+| 2026-11-08 | A/B irl_cold_open_v1: pas de cold open sur PeakMoments (b: cold_open false) | retention meilleure si le cold open nuit en IRL (points appris -0.4) | retention_pct, perf of B vs A | pending (11-17 : B retention 75.3 vs 51.0 mais perf -0.5 vs -0.3, vues 2.5 vs 6.5 : mitige) |
 | 2026-11-07 | Fix (vod_shorts._clip_bounds): les marges avant/apres restent dans le silence, plus de mots de la phrase suivante/precedente | fin propre au lieu de "... Okay. Tell" | coherence du rapport | pending |
 | 2026-11-13 | Fix (trimming._past_question) : une fin sur une question va jusqu'a la phrase-reponse (< 2 s apres, dans la limite) | plus de fins "can they break?" (2/8 le 11-13 malgre le prompt) | coherence du rapport | pending |
 | 2026-11-12 | Fix (vod_pipeline._trimmed) : un moment encore plus long que la limite apres le trim (trim Gemini refuse/injoignable) n'est plus rendu | plus de Shorts de 126-180 s (2 publies/rendus irl le 11-11, VOD 2925140576) | duree des Shorts dans la coherence du rapport | pending |
@@ -352,6 +364,16 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-17 - fins sur une question sans reponse, verdict irl_dialogue_v1, palier Gemini 3
+
+- Gaming : coherence 3/4 bonnes, 1 finit sur une question nouvelle ("What do we think about mid boss?",
+  3e fois depuis le 11-11) : la fin recule a la phrase d'avant (trimming._past_question, test).
+  gaming_tight_start_v1 : 0 mesure. Concurrents : hits = reaction a un evenement sur soi, flops = compilations.
+- IRL : coherence 4/4 correctes (une de 42 s). irl_dialogue_v1 perdu (retention 47.7 vs 63.0), retire ;
+  irl_short_v1 lance (15-25 s). irl_cold_open_v1 mitige (retention B 75 vs 51, perf -0.5 vs -0.3) : on attend.
+- Debit 12 VOD/24h (12 hier, palier 2 sans effet visible), 38 jobs jetes (65) ; Gemini ~162 requetes a 23h UTC,
+  cle 3 a 33, 2 renvois. Palier 3 : MAX_QUEUED_JOBS 40 -> 50. Selection Gemini garde 0-3 moments/25 : a suivre.
 
 ### 2026-11-16 - debuts en plein sujet corriges, test interactions gaming perdu, palier Gemini 2
 
@@ -445,16 +467,6 @@ ones, and moves them to the entries.
   app follows the processing after each upload (youtube._wait_for_processing): an abandoned one is an
   upload error, the Short is kept and sent again later. Both entries relabelled in published_shorts.json.
 
-### 2026-11-09 - owner's answers (main conversation)
-
-- Gemini paid tier: NON. The owner keeps the free tier: make the most of it (selection and trimming
-  first; VODs that could not enter the reserve are skipped; long VODs cut to their last 8 hours).
-  Do not propose it again unless the free quota still blocks after these savings, with numbers.
-- Many Shorts from one VOD: fine. If a VOD is really excellent, all of the day's Shorts may come
-  from it; no cap per VOD or per streamer (owner, 2026-11-09).
-- Keep-awake: OK and done - on mains power the computer no longer falls asleep on its own while
-  the app works (power.py); the owner can still sleep or shut down; on battery, as before.
-
 ### earlier (2026-10-23 to 2026-11-09)
 
 - 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
@@ -474,3 +486,5 @@ ones, and moves them to the entries.
   11-08 : app arretee ~2 jours, VOD de 48 h bloquant le telechargement, DOWNLOAD_SHARE 0.25 ; fins
   debordant sur la phrase suivante (marge de rendu) corrigees ; irl_cold_open_v1 lance. 11-09 : PC en
   veille toute la nuit (0 VOD), anti-veille accepte par le proprietaire.
+  11-09 (proprietaire) : tier Gemini payant NON (ne pas reproposer sans chiffres apres economies) ;
+  plusieurs Shorts d'une meme VOD OK, pas de plafond par VOD ni par streamer.

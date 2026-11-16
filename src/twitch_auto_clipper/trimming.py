@@ -131,13 +131,18 @@ def _past_question(start: float, end: float, sentences: list[dict[str, Any]], ma
     """``end`` moved to the next sentence's end when the Short would stop on a question.
 
     A question left unanswered was still seen ending Shorts after the prompt rule (2/8 on
-    2026-11-13, 5/8 on 2026-11-11): the answer follows in the next sentence.
+    2026-11-13, 5/8 on 2026-11-11): the answer follows in the next sentence. With no answer
+    in reach, the question opens a new subject ("... What do we think about mid boss?",
+    gaming 2026-11-17): the Short stops at the sentence before, if it stays long enough.
     """
-    for index, sentence in enumerate(sentences[:-1]):
+    for index, sentence in enumerate(sentences):
         if abs(sentence["end"] - end) <= 0.05 and str(sentence.get("text", "")).rstrip().endswith("?"):
-            answer = sentences[index + 1]
-            if answer["start"] - end <= 2.0 and answer["end"] - start <= max_seconds:
+            answer = sentences[index + 1] if index + 1 < len(sentences) else None
+            if answer and answer["start"] - end <= 2.0 and answer["end"] - start <= max_seconds:
                 return float(answer["end"])
+            if index and sentences[index - 1]["end"] - start >= MIN_SECONDS:
+                return float(sentences[index - 1]["end"])
+            break
     return end
 
 

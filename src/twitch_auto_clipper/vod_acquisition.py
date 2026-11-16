@@ -25,7 +25,7 @@ MIN_FREE_BYTES = 2 * 1024**3  # never start a download with less free space
 MAX_JOB_AGE_SECONDS = 48 * 3600
 TOP_STREAMER_CLIP_BUDGET = 25  # moments asked to Gemini for a streamer of the top list
 # About what the worker processes within MAX_JOB_AGE_SECONDS: worse jobs are dropped.
-MAX_QUEUED_JOBS = 40
+MAX_QUEUED_JOBS = 50
 MAX_VOD_SECONDS = 8 * 3600  # of a longer VOD (a 24-48 h stream), only the last 8 hours are processed
 MEMORY_SIZE = 2000  # processed and abandoned streams remembered (never queued twice)
 AUDIO_SUFFIXES = frozenset({".mp4", ".m4a", ".aac", ".ts", ".webm", ".mkv", ".mp3", ".opus"})

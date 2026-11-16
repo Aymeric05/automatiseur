@@ -1,18 +1,6 @@
 {
   "experiments": [
     {
-      "id": "irl_dialogue_v1",
-      "channel": "irl",
-      "started": "2026-11-03",
-      "description": "Favorise les moments avec un invite/dialogue et une vraie chute, evite les moments solo silencieux (ohnepixel, 2026-10-27 : ses Shorts a 2-14M vues vs 60-80k pour les faibles).",
-      "b": {
-        "selection_rules": [
-          "Privilegie un moment avec dialogue entre le streamer et un invite ou en vocal, avec une chute claire a la fin.",
-          "Evite un moment solo silencieux ou une simple ballade sans histoire ni enjeu."
-        ]
-      }
-    },
-    {
       "id": "irl_cold_open_v1",
       "channel": "irl",
       "started": "2026-11-08",
@@ -30,6 +18,21 @@
         "trim_rules": [
           "Le sujet est pose des les 3 premieres secondes (question, enjeu ou action deja lancee) : pas d'introduction calme.",
           "Si le declencheur arrive tard, commence a la phrase juste avant lui, jamais plus tot."
+        ]
+      }
+    },
+    {
+      "id": "irl_short_v1",
+      "channel": "irl",
+      "started": "2026-11-17",
+      "description": "Shorts IRL plus courts (15-25 s) : points appris <25s +0.6 / >40s -0.7 ; production 7 j >40s 1 publie/11 reserve/7 jetes ; nos Shorts IRL 34 s pour un guide 15-30 s. irl_length_v1 (plus longs) avait perdu.",
+      "b": {
+        "ideal_seconds": [
+          15,
+          25
+        ],
+        "trim_rules": [
+          "Coupe des que la chute ou la reaction est passee : vise 15-25 s, pas plus de 35 s sauf si la conclusion l'exige."
         ]
       }
     }

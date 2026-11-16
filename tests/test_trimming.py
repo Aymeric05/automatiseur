@@ -66,6 +66,14 @@ class TrimPromptTests(unittest.TestCase):
         self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["end"], 58.0)
         self.assertEqual(snap_ends([{"start": 20.0, "end": 47.0}], sentences)[0]["end"], 58.0)
 
+    def test_end_on_an_unanswered_question_stops_at_the_sentence_before(self):
+        # Seen on LiveActions! 2026-11-17: "... Big belly What do we think about mid boss?"
+        sentences = [dict(s) for s in SENTENCES]
+        sentences[4]["text"] = "What do we think about mid boss?"
+        sentences[5]["start"] = 52.0  # nothing answers it
+        answer = json.dumps({"moments": [{"id": "m1", "start": 20, "end": 48, "complete": True}]})
+        self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["end"], 38.0)
+
     def test_end_drops_a_dangling_fragment_of_the_next_scene(self):
         sentences = [dict(s) for s in SENTENCES]
         sentences[5]["text"] = "Oh"  # first word of what comes next, no punctuation
