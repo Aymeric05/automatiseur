@@ -243,6 +243,25 @@ class VODAcquisitionTests(unittest.TestCase):
         self.assertEqual(manager.pending_jobs, 0)
         self.assertIn("trop ancien", self.state()["abandoned"]["stream-1"]["error"])
 
+    def test_a_whitelisted_streamer_s_vod_gets_more_time_and_more_tries(self) -> None:
+        from twitch_auto_clipper.vod_acquisition import TOP_STREAMER_MAX_ATTEMPTS
+
+        manager = TwitchVODAcquisitionManager(
+            api_client=self.client, input_dir=self.root / "input", state_path=self.root / "state" / "vods.json",
+            downloader=self.download, clock=self.clock, top_streamers=frozenset({"Login"}),
+        )
+        manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))
+        for _ in range(MAX_ATTEMPTS):  # as many failures as abandon another streamer's VOD
+            manager.record_automation("stream-1", "vod-1", "error", error="boom")
+        self.assertEqual(manager.pending_jobs, 1)
+        self.clock.advance(49 * 3600)  # past the 48 h of the others
+        self.assertEqual(list(manager.acquire_due())[0].status, "downloaded")
+        manager.record_automation("stream-1", "vod-1", "error", error="boom")
+        self.clock.advance(4 * 24 * 3600)  # 5 days and more: dropped
+        self.assertEqual(list(manager.acquire_due()), [])
+        self.assertIn("trop ancien", self.state()["abandoned"]["stream-1"]["error"])
+        self.assertGreater(TOP_STREAMER_MAX_ATTEMPTS, MAX_ATTEMPTS)
+
     def test_the_queue_keeps_only_the_jobs_it_can_process(self) -> None:
         from twitch_auto_clipper.vod_acquisition import MAX_QUEUED_JOBS
 

@@ -22,6 +22,10 @@ VOD_WAIT_SECONDS = 24 * 3600  # still no VOD a day after the end: disabled or de
 MIN_FREE_BYTES = 2 * 1024**3  # never start a download with less free space
 # Unpublished Shorts expire after 48 hours: an older VOD is no longer worth processing.
 MAX_JOB_AGE_SECONDS = 48 * 3600
+# The owner's lists (top and favored streamers) get more time and more tries: their VODs are
+# never lost to a slow or failing download (the reserve keeps Shorts 14 days, Twitch VODs 7+).
+TOP_STREAMER_JOB_AGE_SECONDS = 5 * 24 * 3600
+TOP_STREAMER_MAX_ATTEMPTS = 12  # past the 8th try, one every 6 hours: about 1.5 days of failures
 TOP_STREAMER_CLIP_BUDGET = 25  # moments asked to Gemini for a streamer of the top list
 # About what the worker processes within MAX_JOB_AGE_SECONDS: worse jobs are dropped.
 MAX_QUEUED_JOBS = 50
@@ -287,7 +291,7 @@ class TwitchVODAcquisitionManager:
         stream = LiveStream(**job["stream"])
         budget = self._budget(stream.broadcaster_login, int(job["clip_budget"]))
         vod_id = job.get("vod_id")
-        if self._clock() - _parse(job["ended_at"]) > timedelta(seconds=MAX_JOB_AGE_SECONDS):
+        if self._clock() - _parse(job["ended_at"]) > self._max_age(job):
             error = "trop ancien : ses Shorts ne seraient plus publies"
             audio_path = find_downloaded_audio(self.input_dir, vod_id) if vod_id else None
             if audio_path is not None:
@@ -360,7 +364,7 @@ class TwitchVODAcquisitionManager:
         job = self._jobs[stream_id]
         job["attempts"] = int(job.get("attempts", 0)) + 1
         job["last_error"] = error
-        if job["attempts"] >= MAX_ATTEMPTS:
+        if job["attempts"] >= (TOP_STREAMER_MAX_ATTEMPTS if self._listed(job) else MAX_ATTEMPTS):
             self._abandon_locked(stream_id, job.get("vod_id"), error)
             return True
         delay = min(RETRY_BASE_SECONDS * 2 ** (job["attempts"] - 1), RETRY_MAX_SECONDS)
@@ -387,7 +391,7 @@ class TwitchVODAcquisitionManager:
         blocked = self.blocked_streamers() if ranked else frozenset()
         dropped = False
         for position, (stream_id, job) in enumerate(ranked):
-            too_old = now - _parse(job["ended_at"]) > timedelta(seconds=MAX_JOB_AGE_SECONDS)
+            too_old = now - _parse(job["ended_at"]) > self._max_age(job)
             is_blocked = job["stream"]["broadcaster_login"].lower() in blocked
             if too_old or is_blocked or position >= MAX_QUEUED_JOBS:
                 reason = (
@@ -402,6 +406,12 @@ class TwitchVODAcquisitionManager:
                 dropped = True
         if dropped:
             self._save_state()
+
+    def _listed(self, job: dict[str, Any]) -> bool:
+        return job["stream"]["broadcaster_login"].lower() in self.top_streamers
+
+    def _max_age(self, job: dict[str, Any]) -> timedelta:
+        return timedelta(seconds=TOP_STREAMER_JOB_AGE_SECONDS if self._listed(job) else MAX_JOB_AGE_SECONDS)
 
     def _budget(self, login: str, budget: int) -> int:
         # Also applies to jobs queued before the streamer joined the list.
