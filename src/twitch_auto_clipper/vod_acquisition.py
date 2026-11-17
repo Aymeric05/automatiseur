@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import shutil
+import time
 from threading import Event, Lock
 from typing import Any, Callable, Iterator
 
@@ -47,6 +48,7 @@ class VODAcquisitionResult:
     error: str | None = None
     game_name: str = ""
     peak_viewers: int = 0
+    seconds: float | None = None  # download time
 
 
 @dataclass(frozen=True)
@@ -345,8 +347,10 @@ class TwitchVODAcquisitionManager:
             free = shutil.disk_usage(self.input_dir).free
             if free < MIN_FREE_BYTES:
                 raise OSError(f"espace disque insuffisant ({free // 1024**2} Mo libres)")
+            started = time.monotonic()
             audio_path = self.downloader(f"https://www.twitch.tv/videos/{vod_id}", self.input_dir)
-            return _result(stream, budget, "downloaded", vod_id=vod_id, downloaded_path=audio_path)
+            return replace(_result(stream, budget, "downloaded", vod_id=vod_id, downloaded_path=audio_path),
+                           seconds=time.monotonic() - started)
         except (TwitchAPIError, TwitchDownloadError, OSError, ValueError) as error:
             with self._lock:
                 abandoned = stream_id in self._jobs and self._fail_locked(stream_id, str(error))
@@ -543,7 +547,8 @@ def format_vod_acquisition_result(result: VODAcquisitionResult) -> str:
     if result.status == "queued":
         return f"Stream termine ajoute a la file : {name} (budget {result.clip_budget} clips)."
     if result.status == "downloaded":
-        return f"Audio de la VOD {result.vod_id} telecharge : {result.downloaded_path}"
+        took = f" (en {result.seconds / 60:.1f} min)" if result.seconds is not None else ""
+        return f"Audio de la VOD {result.vod_id} telecharge{took} : {result.downloaded_path}"
     if result.status == "vod_not_available":
         return f"VOD pas encore disponible pour {name}; nouvel essai dans quelques minutes."
     if result.status == "skipped_blocked":

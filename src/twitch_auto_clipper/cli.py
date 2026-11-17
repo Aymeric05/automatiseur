@@ -1,6 +1,7 @@
 """Command-line interface for the first local clipping workflow."""
 
 import argparse
+from datetime import datetime
 from functools import partial
 import importlib.util
 import json
@@ -289,7 +290,11 @@ DEFAULT_DAILY_GEMINI_REQUESTS = 20  # Gemini API free tier, per model and per da
 
 def transcribe_one_at_a_time(*args, **kwargs):
     """``transcribe_video``, one VOD at a time, never with Demucs: they would not fit in the GPU's memory."""
+    asked = time.monotonic()
     with GPU_LOCK:
+        waited = time.monotonic() - asked
+        if waited >= 60:  # the GPU was busy with another VOD (where the time goes)
+            print(f"Transcription : {waited / 60:.1f} min d'attente du GPU.", flush=True)
         return transcribe_video(*args, **kwargs)
 
 
@@ -335,10 +340,17 @@ class RotatingLog:
         self._lock = Lock()  # the monitoring, worker and publisher threads all print
         path.parent.mkdir(parents=True, exist_ok=True)
         self._file = open(path, "a", encoding="utf-8", errors="replace")
+        self._line_start = True
 
     def write(self, text: str) -> int:
         with self._lock:
-            self._file.write(text)
+            # Each line starts with its date and time (how long each stage takes, when things happen).
+            stamp = datetime.now().strftime("%m-%d %H:%M:%S ")
+            if self._line_start and text:
+                self._file.write(stamp)
+            if text:
+                self._file.write(text[:-1].replace("\n", "\n" + stamp) + text[-1])
+                self._line_start = text.endswith("\n")
             self._file.flush()
             if self._file.tell() > self.max_bytes:
                 self._file.close()

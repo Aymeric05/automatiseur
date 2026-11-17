@@ -22,8 +22,10 @@ class RotatingLogTests(unittest.TestCase):
             log._file.close()
             old = path.with_name("monitor.old.log")
             self.assertTrue(old.is_file())
-            self.assertLessEqual(path.stat().st_size, 100 + 20)
+            self.assertLessEqual(path.stat().st_size, 100 + 40)
             self.assertIn("ligne 29", path.read_text(encoding="utf-8"))
+            # Every line starts with its date and time, even when printed in several pieces.
+            self.assertRegex(path.read_text(encoding="utf-8"), r"^\n?(\d\d-\d\d \d\d:\d\d:\d\d ligne \d+ .\n)+$")
 
 
 class TwitchCliTests(unittest.TestCase):

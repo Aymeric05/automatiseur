@@ -323,6 +323,10 @@ class VODAutomationPipelineTests(unittest.TestCase):
 
         self.assertEqual(result.status, "completed")
         self.assertEqual(self.transcriptions, 1)
+        # Where the time goes: each stage's duration, also printed in the summary line.
+        self.assertEqual([stage for stage, _ in result.timings],
+                         ["transcription et chat", "selection Gemini", "analyse (trim, cadrage, musique)", "rendu"])
+        self.assertIn("durees : transcription et chat", format_vod_automation_result(result)[-1])
         self.assertEqual(gemini.call_count, 1)  # selection file reused
         self.assertEqual(ffmpeg_calls, [])  # existing Shorts not regenerated
         self.assertEqual({s.status for s in result.shorts.shorts}, {"already_exists"})

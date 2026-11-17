@@ -110,6 +110,7 @@ class VODAutomationResult:
     metadata: tuple[tuple[str, ShortMetadata], ...] = ()
     message: str | None = None
     retry_at: datetime | None = None  # waiting_gemini: when Gemini should be back
+    timings: tuple[tuple[str, float], ...] = ()  # seconds spent in each stage (where the time goes)
 
 
 class VODAutomationPipeline:
@@ -165,7 +166,10 @@ class VODAutomationPipeline:
         self.music_checker = music_checker
 
     def run(self, acquisition: VODAcquisitionResult) -> VODAutomationResult:
-        result = self._run(acquisition)
+        timings: dict[str, float] = {}
+        result = self._run(acquisition, timings)
+        if timings:
+            result = replace(result, timings=tuple(timings.items()))
         if result.processing is not None and result.vod_id:
             update: dict[str, Any] = {"automation_status": result.status}
             if result.status == "completed" and self.delete_sources_on_success:
@@ -184,8 +188,14 @@ class VODAutomationPipeline:
                 "channel": short_channel(None, game_name)}
         return self.reserve_gate(best, login, vod_id, clip_budget)
 
-    def _run(self, acquisition: VODAcquisitionResult) -> VODAutomationResult:
+    def _run(self, acquisition: VODAcquisitionResult, timings: dict[str, float]) -> VODAutomationResult:
         vod_id = acquisition.vod_id
+        started = [time.monotonic()]
+
+        def mark(stage: str) -> None:  # time since the previous stage ended
+            now = time.monotonic()
+            timings[stage] = now - started[0]
+            started[0] = now
         source_path = acquisition.downloaded_path
         if (
             acquisition.status not in READY_ACQUISITION_STATUSES
@@ -206,6 +216,7 @@ class VODAutomationPipeline:
         # 1. Transcription and chat.
         try:
             processing = self.processing_pipeline.process(acquisition)
+            mark("transcription et chat")
         except (OSError, ValueError) as error:
             return VODAutomationResult(vod_id, "error", message=f"traitement VOD : {error}")
         if processing.transcription_status == "error":
@@ -217,6 +228,7 @@ class VODAutomationPipeline:
         # 2-3. Candidates and Gemini selection (budget handled by the selector).
         try:
             selection = self.highlight_selector.select(processing)
+            mark("selection Gemini")
         except Exception as error:
             return VODAutomationResult(vod_id, "error", processing, message=f"selection : {error}")
         if selection.status == "error":
@@ -345,6 +357,7 @@ class VODAutomationPipeline:
                     {**moment, "media_speech": media} for moment, media in zip(selection.selected, spans)
                 ))
 
+        mark("analyse (trim, cadrage, musique)")
         # 4. Shorts generation.
         video_source = self.video_source
         source: Any = (lambda: video_source(acquisition)) if video_source else source_path
@@ -352,6 +365,7 @@ class VODAutomationPipeline:
             shorts = self.shorts_generator.generate(
                 selection, source, processing.transcript_path
             )
+            mark("rendu")
         except (ShortsGenerationError, OSError) as error:
             return VODAutomationResult(
                 vod_id, "error", processing, selection, message=f"Shorts : {error}"
@@ -745,5 +759,7 @@ def format_vod_automation_result(result: VODAutomationResult) -> list[str]:
     summary = f"Pipeline VOD {result.vod_id} : {result.status}"
     if result.message:
         summary += f" ({result.message})"
+    if isinstance(result.timings, tuple) and result.timings:
+        summary += " | durees : " + ", ".join(f"{stage} {seconds / 60:.1f} min" for stage, seconds in result.timings)
     lines.append(summary)
     return lines
