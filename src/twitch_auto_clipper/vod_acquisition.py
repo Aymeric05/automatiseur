@@ -2,7 +2,6 @@
 
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
-from functools import partial
 import json
 from pathlib import Path
 import shutil
@@ -95,9 +94,11 @@ class TwitchVODAcquisitionManager:
         self.state_path = state_path
         # Only the audio is downloaded: the Shorts read their video from Twitch.
         # rate_limit (bytes per second) keeps the connection usable for everyone else.
-        self.downloader = downloader or partial(
-            download_twitch_vod, audio_only=True, quiet=True, rate_limit=rate_limit, last_seconds=MAX_VOD_SECONDS
-        )
+        # rate_limit is read at each download: the app adjusts it when the connection changes.
+        self.rate_limit = rate_limit
+        self.downloader = downloader or (lambda url, folder: download_twitch_vod(
+            url, folder, audio_only=True, quiet=True, rate_limit=self.rate_limit, last_seconds=MAX_VOD_SECONDS
+        ))
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         # Logins whose VODs get TOP_STREAMER_CLIP_BUDGET moments (hence go first).
         self.top_streamers = frozenset(login.lower() for login in top_streamers)

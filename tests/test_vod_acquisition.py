@@ -112,6 +112,20 @@ class VODAcquisitionTests(unittest.TestCase):
         self.assertEqual(self.state()["processed_streams"], {"stream-1": "vod-1"})
         self.assertIsNone(manager.prefetch(3))
 
+    def test_a_new_download_rate_applies_to_the_next_download(self) -> None:
+        manager = TwitchVODAcquisitionManager(
+            api_client=self.client, input_dir=self.root / "input",
+            state_path=self.root / "state" / "vods.json", clock=self.clock, rate_limit=1000,
+        )
+        manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))
+        manager.rate_limit = 5000  # measured again an hour later
+        with patch("twitch_auto_clipper.vod_acquisition.download_twitch_vod", side_effect=self._fake_download_kw) as download:
+            list(manager.acquire_due())
+        self.assertEqual(download.call_args.kwargs["rate_limit"], 5000)
+
+    def _fake_download_kw(self, url, input_dir, **kwargs):
+        return self._fake_download(url, input_dir)
+
     def test_queued_job_survives_a_restart_even_mid_processing(self) -> None:
         first = self.manager()
         first.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(),)))

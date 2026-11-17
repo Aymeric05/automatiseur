@@ -279,7 +279,8 @@ BLOCKED_STREAMERS_FILE = Path("blocked_streamers.txt")
 PUBLISH_RETRY_SECONDS = 600.0  # pause after a failed upload (a network drop, a sign-in problem...)
 DEFAULT_DOWNLOAD_KBPS = 1000  # VOD download cap floor (~8 Mbit/s); DOWNLOAD_MAX_KBPS overrides the measure
 SPEED_TEST_URL = "https://speed.cloudflare.com/__down?bytes=50000000"
-DOWNLOAD_SHARE = 0.25  # share of the bandwidth measured at start-up given to the VOD downloads
+DOWNLOAD_SHARE = 0.25  # share of the measured bandwidth given to the VOD downloads
+BANDWIDTH_CHECK_SECONDS = 3600  # the bandwidth is measured again every hour (one bad start-up measure no longer caps a day)
 VOD_WORKERS = 3  # VODs processed at the same time (the GPU transcribes one at a time)
 PREFETCH_AHEAD = VOD_WORKERS + 1  # VODs kept downloaded: those being processed and the next one
 DEFAULT_DAILY_UPLOADS = 10  # known to pass in 24 h; beyond, one try an hour until YouTube refuses
@@ -638,7 +639,8 @@ def main() -> int:
             parser.error("--max-cycles doit etre positif.")
         kill_children_with_this_process()
         download_kbps = _daily_limit(parser, "DOWNLOAD_MAX_KBPS", DEFAULT_DOWNLOAD_KBPS)
-        if args.monitor_twitch and not os.environ.get("DOWNLOAD_MAX_KBPS"):  # adapts to the connection of the day
+        measure_bandwidth = args.monitor_twitch and not os.environ.get("DOWNLOAD_MAX_KBPS")
+        if measure_bandwidth:  # adapts to the connection (measured again every hour)
             download_kbps = measured_download_kbps(DEFAULT_DOWNLOAD_KBPS)
             print(f"Telechargements des VOD limites a {download_kbps} Ko/s ({DOWNLOAD_SHARE:.0%} du debit mesure).")
         daily_uploads = _daily_limit(parser, "YOUTUBE_MAX_UPLOADS_PER_DAY", DEFAULT_DAILY_UPLOADS)
@@ -891,7 +893,15 @@ def main() -> int:
 
             # Downloads the next VOD (audio, then chat) while the worker transcribes and renders.
             def prefetch() -> None:
+                next_measure = time.monotonic() + BANDWIDTH_CHECK_SECONDS
                 while not stop.is_set():
+                    # Measured here, between two downloads: the app's own download never lowers it.
+                    if measure_bandwidth and time.monotonic() >= next_measure:
+                        next_measure = time.monotonic() + BANDWIDTH_CHECK_SECONDS
+                        kbps = measured_download_kbps(DEFAULT_DOWNLOAD_KBPS)
+                        if kbps * 1024 != manager.rate_limit:
+                            manager.rate_limit = kbps * 1024
+                            report(f"Telechargements des VOD limites a {kbps} Ko/s ({DOWNLOAD_SHARE:.0%} du debit mesure).")
                     try:
                         result = manager.prefetch(PREFETCH_AHEAD, prefetch_chat)
                     except Exception as error:  # keep the thread alive; jobs stay queued
