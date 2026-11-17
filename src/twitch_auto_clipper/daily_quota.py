@@ -5,7 +5,12 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 import json
 from pathlib import Path
+from threading import Lock
 from typing import Any, Callable
+
+# The VOD workers count Gemini requests at the same time: an unlocked read-modify-write lost
+# counts (Google closed models the app believed at 7-16 of 20, 2026-11-17).
+_COUNT_LOCK = Lock()
 
 
 def _pacific_offset(moment: datetime) -> timedelta:
@@ -64,9 +69,10 @@ class DailyQuota:
 
     def pause(self, until: datetime) -> None:
         """Refused for a short while only (a per-minute limit): available again at ``until``."""
-        state = self._state()
-        state["paused_until"] = until.isoformat()
-        self._write(state)
+        with _COUNT_LOCK:
+            state = self._state()
+            state["paused_until"] = until.isoformat()
+            self._write(state)
 
     def paused_until(self) -> datetime | None:
         """When a pause ends, if this quota is only paused (not used up for the day)."""
@@ -81,14 +87,16 @@ class DailyQuota:
         return 0 if state["exhausted"] else max(0, self.daily_limit - state["used"])
 
     def record_use(self) -> None:
-        state = self._state()
-        state["used"] += 1
-        self._write(state)
+        with _COUNT_LOCK:
+            state = self._state()
+            state["used"] += 1
+            self._write(state)
 
     def mark_exhausted(self) -> None:
-        state = self._state()
-        state["exhausted"] = True
-        self._write(state)
+        with _COUNT_LOCK:
+            state = self._state()
+            state["exhausted"] = True
+            self._write(state)
 
     def _state(self) -> dict[str, Any]:
         try:
