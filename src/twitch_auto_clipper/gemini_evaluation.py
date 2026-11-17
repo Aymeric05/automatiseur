@@ -27,6 +27,10 @@ LIGHT_MODEL = "gemini-flash-lite-latest"
 # request of the model's daily 20. With 3 keys the quota is no longer scarce, and 503s were the
 # main brake (~30 VODs sent back in 24 h, 2026-11-13): every model of the lane gets a try.
 MAX_OVERLOADED_TRIES = 5
+# Once Gemini is busy on every model tried, the whole app stops calling it for a while: each VOD
+# retrying on its own burnt up to 170 requests in a 2-hour overload (2026-11-17), all counted by Google.
+OVERLOAD_PAUSE = timedelta(minutes=10)
+_overloaded_until: list[datetime] = []  # shared by every worker thread
 TRANSIENT_MARKERS = ("503", "500", "unavailable", "internal", "deadline", "high demand")
 HOOK_MAX_LENGTH = 80
 TITLE_MAX_LENGTH = 90
@@ -292,6 +296,11 @@ def _generate_json(
     is counted per model (``daily_limit`` each, the free-tier limit) and no
     request is sent to a model whose daily limit is reached.
     """
+    if _overloaded_until and datetime.now(timezone.utc) < _overloaded_until[0]:
+        raise GeminiEvaluationError(
+            "Echec de l'appel Gemini : 503 UNAVAILABLE, Gemini surcharge (pause de toute l'app).",
+            retry_at=_overloaded_until[0],
+        )
     keys = _gemini_api_keys()
     clients: dict[int, Any] = {}
     response = used_model = last_error = None
@@ -349,6 +358,7 @@ def _generate_json(
             if not any(marker in message for marker in QUOTA_ERROR_MARKERS):
                 overloaded += 1
                 if overloaded >= MAX_OVERLOADED_TRIES:  # Gemini busy everywhere: try again later
+                    _overloaded_until[:] = [datetime.now(timezone.utc) + OVERLOAD_PAUSE]
                     break
     if response is None:
         if last_error is None and not pauses:
@@ -359,7 +369,8 @@ def _generate_json(
         quota_only = last_error is None or any(marker in str(last_error).lower() for marker in QUOTA_ERROR_MARKERS)
         raise GeminiEvaluationError(
             f"Echec de l'appel Gemini : {last_error or 'limite par minute atteinte'}",
-            retry_at=(min(pauses) if pauses else next_reset) if quota_only else None,
+            retry_at=(min(pauses) if pauses else next_reset) if quota_only else (
+                _overloaded_until[0] if overloaded >= MAX_OVERLOADED_TRIES else None),
         )
     response_text = getattr(response, "text", None)
     if not isinstance(response_text, str) or not response_text.strip():

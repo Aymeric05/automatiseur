@@ -24,3 +24,13 @@ def isolated_data_dir(monkeypatch, tmp_path):
 def no_job_object(monkeypatch):
     """The test runner itself is never tied to a Windows job object."""
     monkeypatch.setattr("twitch_auto_clipper.cli.kill_children_with_this_process", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def no_gemini_overload_pause():
+    """A test that overloads Gemini never pauses the next tests' calls."""
+    from twitch_auto_clipper import gemini_evaluation
+
+    gemini_evaluation._overloaded_until.clear()
+    yield
+    gemini_evaluation._overloaded_until.clear()

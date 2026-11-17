@@ -176,7 +176,12 @@ class GeminiEvaluationTests(unittest.TestCase):
             with self.assertRaises(GeminiEvaluationError):
                 evaluate_candidates([{"start": 1.0, "end": 4.0}], [], quota_dir=Path(directory), daily_limit=1)
             self.assertFalse(DailyQuota(Path(directory) / "gemini_quota_gemini-3.6-flash.json", 1).available())  # Google counts it
-        self.assertEqual(len(tried), 5)  # busy on all five models: stop, try again later
+            self.assertEqual(len(tried), 5)  # busy on all five models: stop, try again later
+            # The whole app then waits: the next call (another VOD) sends nothing for 10 minutes.
+            with self.assertRaises(GeminiEvaluationError) as raised:
+                evaluate_candidates([{"start": 1.0, "end": 4.0}], [], quota_dir=Path(directory), daily_limit=20)
+        self.assertEqual(len(tried), 5)
+        self.assertLess(raised.exception.retry_at - datetime.now(timezone.utc), timedelta(minutes=11))
 
     @patch("twitch_auto_clipper.gemini_evaluation._get_gemini_client")
     def test_google_quota_refusal_closes_the_day_for_that_model(self, get_client) -> None:
