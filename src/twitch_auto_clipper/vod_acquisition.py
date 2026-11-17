@@ -24,7 +24,7 @@ MIN_FREE_BYTES = 2 * 1024**3  # never start a download with less free space
 MAX_JOB_AGE_SECONDS = 48 * 3600
 # The owner's lists (top and favored streamers) get more time and more tries: their VODs are
 # never lost to a slow or failing download (the reserve keeps Shorts 14 days, Twitch VODs 7+).
-TOP_STREAMER_JOB_AGE_SECONDS = 5 * 24 * 3600
+TOP_STREAMER_JOB_AGE_SECONDS = 3 * 24 * 3600  # owner, 2026-11-17
 TOP_STREAMER_MAX_ATTEMPTS = 12  # past the 8th try, one every 6 hours: about 1.5 days of failures
 TOP_STREAMER_CLIP_BUDGET = 25  # moments asked to Gemini for a streamer of the top list
 # About what the worker processes within MAX_JOB_AGE_SECONDS: worse jobs are dropped.

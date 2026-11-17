@@ -257,7 +257,7 @@ class VODAcquisitionTests(unittest.TestCase):
         self.clock.advance(49 * 3600)  # past the 48 h of the others
         self.assertEqual(list(manager.acquire_due())[0].status, "downloaded")
         manager.record_automation("stream-1", "vod-1", "error", error="boom")
-        self.clock.advance(4 * 24 * 3600)  # 5 days and more: dropped
+        self.clock.advance(24 * 3600)  # 3 days and more: dropped
         self.assertEqual(list(manager.acquire_due()), [])
         self.assertIn("trop ancien", self.state()["abandoned"]["stream-1"]["error"])
         self.assertGreater(TOP_STREAMER_MAX_ATTEMPTS, MAX_ATTEMPTS)
