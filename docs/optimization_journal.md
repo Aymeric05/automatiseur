@@ -186,6 +186,13 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   traitees (2 chaines) finissent "aucun moment assez bon pour la reserve" apres l'appel Gemini (pre-gate
   au score maximal) : piste = pre-gate plus realiste, a chiffrer avant d'y toucher.
 
+- Production (2026-11-18, 7 j) : Fortnite 14 pub/3 res/14 jetes (45 %), WoW 8/8/11 (30 %), Deadlock
+  3/8/4, ROB RUN 0/4/7 (0 publie, 5e releve de suite) ; len <25s 5/2/7, 25-40s 6/9/5, >40s 17/17/28.
+  Le log "Selection Gemini X/25" compte les moments restants apres l'entonnoir (admis en reserve),
+  pas ce que Gemini garde : pas de perte a la selection (piste du 11-17 close).
+- Coherence (2026-11-18) : 3/4 bonnes ; 1 debut sur un fragment ("One proc. Oh, the gorilla's...").
+  Debuts en plein sujet : 2/4 le 11-16, 1/4 le 11-18 - en baisse depuis le garde-fou du 11-16.
+
 ### PeakMoments (irl)
 - Concurrents (2026-11-17, 40 derniers) : hauts = reaction a un evenement/drama (Streamer Awards, H3, 5-13x) ;
   miniatures hits = deux visages ou visage + scene, flop = overlay de chat. Production 7 j : >40s 1 pub/11 res/7 jetes
@@ -313,6 +320,13 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   avec les points appris (source=chat -0.7, length=>40s -0.7). Concurrents : tiers haut 28 s vs bas 31 s,
   nous 37 s ; titres 34 vs 38.5 caracteres, nous 49.
 
+- Production (2026-11-18, 7 j) : Just Chatting 19 pub/26 res/15 jetes ; source chat 5/7/5 (29 %) vs
+  transcript 13/15/11 (33 %) : l'ecart chat se resserre. len >40s 4/7/7 (22 %) reste le pire.
+- irl_cold_open_v1 (2026-11-18, seuil atteint : A n=31/vods=9, B n=35/vods=7) : retention B 68.2 vs
+  53.4 mais perf -0.4 vs -0.3 et vues 4 vs 7 : mitige, pas "clairement meilleur" sur les deux, on attend.
+- Coherence (2026-11-18) : 3/4 bonnes, Shorts de 18-25 s ; 1 debut en plein sujet ("In the middle of
+  the ball too...").
+
 ## Waiting for the owner
 
 Risky or doubtful actions are never done directly: the loop writes them here (what, why with
@@ -366,6 +380,16 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-18 - debit 6 VOD/24h (vagues de 503 Gemini), aucun verdict
+
+- Gaming : coherence 3/4 bonnes (1 debut sur un fragment, cas isole). gaming_tight_start_v1 : 4 mesures B,
+  rien a trancher. ROB RUN 0 publie en 7 j (5e releve), le modele appris le gere ; pas de nouveau test.
+- IRL : coherence 3/4 (18-25 s, 1 debut en plein sujet). irl_cold_open_v1 au seuil mais mitige (retention
+  B 68 vs 53, perf -0.4 vs -0.3) : on attend. irl_short_v1 : 0 mesure.
+- Debit 6 VOD/24h (12 hier) : 34 renvois pour 503 UNAVAILABLE, groupes 15-17 h UTC ; cles 1-2 fermees
+  (7-16 requetes comptees), cle 3 ~44. Plus de jobs jetes file pleine (1 seul, echec de telechargement).
+  Pas de palier aujourd'hui (palier 3 a mesurer). Durees par etape loguees depuis 11-18 00:07 : somme demain.
 
 ### 2026-11-17 - fins sur une question sans reponse, verdict irl_dialogue_v1, palier Gemini 3
 
@@ -445,17 +469,6 @@ ones, and moves them to the entries.
 - IRL : coherence 2/4 coupe en pleine scene (meme regle). irl_dialogue_v1 A 19/3 VOD, B 15/2 VOD ;
   irl_cold_open_v1 A 4 / B 0. Guide concurrents a refaire le 11-13.
 
-### 2026-11-10 - l'app plantait en silence (crash cuDNN de la transcription GPU)
-
-- Debit : 2 VOD/24h. Cause trouvee dans le journal Windows : python.exe tue par cudnn64_9.dll
-  (0xc0000409) le 11-07 21:59, le 11-09 13:05 et 23:36 - l'app s'arretait sans ligne de log et ne
-  repartait qu'au reveil/logon. Corrige : la transcription GPU tourne dans un sous-processus, un
-  crash ne tue que lui et on repasse sur le CPU (transcription.py, test). App relancee 11-10 00:17.
-- Gaming : coherence 1/4 defaillante (finit "Wait, um, bro. On bro"), pas un motif. Pas de nouveau
-  test : debit trop bas, gaming_interaction_v1 encore a A n=3 / B n=0. Prochain : verdicts impossibles avant ~1 semaine de debit normal.
-- IRL : coherence 4/4 correctes (question -> reponse, scene police complete). irl_dialogue_v1 A n=12
-  (2 VOD) / B n=5, irl_cold_open_v1 a 0. Guide concurrents refait le 11-13 (hebdo).
-
 ### 2026-11-14 - owner's rule: whitelist streamers are never blacklisted
 
 - NEVER put a streamer of the owner's lists (top_streamers_gaming.txt, top_streamers_irl.txt,
@@ -469,7 +482,7 @@ ones, and moves them to the entries.
   app follows the processing after each upload (youtube._wait_for_processing): an abandoned one is an
   upload error, the Short is kept and sent again later. Both entries relabelled in published_shorts.json.
 
-### earlier (2026-10-23 to 2026-11-09)
+### earlier (2026-10-23 to 2026-11-10)
 
 - 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
   gaming_length_v1 (45-90s, gagne le 11-01), 10-26 irl_length_v1 (perdu le 11-03). Bugs de coupe
@@ -490,3 +503,5 @@ ones, and moves them to the entries.
   veille toute la nuit (0 VOD), anti-veille accepte par le proprietaire.
   11-09 (proprietaire) : tier Gemini payant NON (ne pas reproposer sans chiffres apres economies) ;
   plusieurs Shorts d'une meme VOD OK, pas de plafond par VOD ni par streamer.
+  11-10 : app tuee en silence par un crash cuDNN (transcription GPU) ; transcription GPU mise dans un
+  sous-processus avec repli CPU. 2 VOD/24h.
