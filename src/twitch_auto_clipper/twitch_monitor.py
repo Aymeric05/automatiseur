@@ -11,8 +11,8 @@ from typing import Callable
 from .clip_budget import (
     DEFAULT_CLIP_BUDGET_POLICY,
     ClipBudgetPolicy,
-    clip_count_for_stream,
 )
+from . import launch_event
 from .twitch_api import LiveStream, TwitchAPIClient, TwitchAPIError
 
 
@@ -86,9 +86,10 @@ class TwitchStreamMonitor:
         """Fetch and classify one snapshot; API errors are returned, not raised."""
         started = time.monotonic()
         try:
-            streams = self.client.fetch_english_streams(
-                min_viewers=self.budget_policy.minimum_eligible_viewers
-            )
+            minimum = self.budget_policy.minimum_eligible_viewers
+            if minimum is not None and launch_event.active():  # smaller GTA 6 streams too
+                minimum = min(minimum, launch_event.MIN_VIEWERS)
+            streams = self.client.fetch_english_streams(min_viewers=minimum)
         except TwitchAPIError as error:
             return MonitoringCycle(error=str(error), duration_seconds=time.monotonic() - started)
 
@@ -123,7 +124,7 @@ class TwitchStreamMonitor:
             previous = self._active_streams.get(stream.stream_id)
             monitored = MonitoredStream(
                 stream,
-                clip_count_for_stream(stream, self.budget_policy),
+                self._clips(stream, stream.viewer_count),
                 max(previous.peak_viewers if previous else 0, stream.viewer_count),
             )
             if previous is None:
@@ -156,7 +157,7 @@ class TwitchStreamMonitor:
                 # The VOD budget reflects the session's peak, not its final viewers.
                 ended.append(replace(
                     monitored,
-                    clip_budget=self.budget_policy.clips_for_viewers(monitored.peak_viewers),
+                    clip_budget=self._clips(monitored.stream, monitored.peak_viewers),
                 ))
             else:
                 self._missing_polls[stream_id] = misses
@@ -178,6 +179,13 @@ class TwitchStreamMonitor:
             status_check_error=status_check_error,
             state_error=state_error,
         )
+
+    def _clips(self, stream: LiveStream, viewers: int) -> int:
+        """The policy's budget; during the GTA 6 launch week, a GTA 6 stream from MIN_VIEWERS gets one."""
+        clips = self.budget_policy.clips_for_viewers(viewers)
+        if clips == 0 and viewers >= launch_event.MIN_VIEWERS and launch_event.boosted(stream.game_name):
+            return launch_event.CLIP_BUDGET
+        return clips
 
     def _load_state(self) -> None:
         # Best effort: an unreadable state only means tracking starts afresh.

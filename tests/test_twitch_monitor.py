@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from twitch_auto_clipper.twitch_api import LiveStream, TwitchAPIError
 from twitch_auto_clipper.twitch_monitor import TwitchStreamMonitor
@@ -87,7 +87,8 @@ class TwitchStreamMonitorTests(unittest.TestCase):
     def test_listing_is_limited_to_the_lowest_eligible_viewer_count(self) -> None:
         client = Mock()
         client.fetch_english_streams.return_value = []
-        TwitchStreamMonitor(client=client).poll_once()
+        with patch("twitch_auto_clipper.launch_event.active", return_value=False):  # outside the GTA 6 week
+            TwitchStreamMonitor(client=client).poll_once()
         client.fetch_english_streams.assert_called_once_with(min_viewers=5_000)
 
     def test_ineligible_streams_are_not_tracked_nor_status_checked(self) -> None:

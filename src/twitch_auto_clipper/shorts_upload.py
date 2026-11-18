@@ -10,6 +10,7 @@ from pathlib import Path
 import random
 from typing import Any, Callable, NamedTuple
 
+from . import launch_event
 from .daily_quota import RollingQuota
 from .competitors import load_competitor_shorts
 from .performance import PerformanceModel, external_points, features
@@ -371,6 +372,7 @@ class VODShortsUploader:
         model = self._model()
         return lambda item: (
             not item.failed,
+            launch_event.boosted(item.game, self._clock()),  # GTA 6 launch week: its Shorts go out first
             item.login == standout,
             item.login in self.top_streamers,
             # Gemini's score, weighted by how well it predicted the real results (around 70).

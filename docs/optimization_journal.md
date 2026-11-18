@@ -470,6 +470,15 @@ ones, and moves them to the entries.
 - IRL : coherence 2/4 coupe en pleine scene (meme regle). irl_dialogue_v1 A 19/3 VOD, B 15/2 VOD ;
   irl_cold_open_v1 A 4 / B 0. Guide concurrents a refaire le 11-13.
 
+### 2026-11-18 - GTA 6 launch week (owner): until 2026-11-26 00:00 UTC
+
+- launch_event.py: GTA 6 streams (Twitch category "Grand Theft Auto VI") are followed from 1000
+  viewers, handled like the owner's lists (25 moments, 3 days, 12 tries), first in the queue, first
+  in each channel's reserve ranking, with "(GTA 6)" in the title and #gta6 #gtavi.
+- Everything goes through launch_event.boosted(): after END the app is exactly as before (git tag
+  before-gta6-launch). Do NOT tune anything on this week's numbers as if it were a normal week
+  (GTA 6 takes most slots on purpose); do not change END without the owner.
+
 ### 2026-11-14 - owner's rule: whitelist streamers are never blacklisted
 
 - NEVER put a streamer of the owner's lists (top_streamers_gaming.txt, top_streamers_irl.txt,

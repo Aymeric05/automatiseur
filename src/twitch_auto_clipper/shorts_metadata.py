@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import re
 from typing import Any
 
+from . import launch_event
 from .profanity import censor
 
 TITLE_MAX_LENGTH = 100  # YouTube limit
@@ -138,6 +139,9 @@ def build_short_metadata(
     if written and name.lower() not in written.lower():
         written = f"{name}: {written}"  # the streamer's name always shows
     title = _truncate(written or f"{name}: “{short_quote}”", TITLE_MAX_LENGTH)
+    gta6 = launch_event.boosted(game_name)
+    if gta6 and not re.search(r"\bgta ?(6|vi)\b", title, re.IGNORECASE):  # what people search that week
+        title = _truncate(title, TITLE_MAX_LENGTH - len(launch_event.TITLE_TAG)) + launch_event.TITLE_TAG
 
     teaser = _lively(censor(_clean(teaser or "")))
     game = _clean(game_name)
@@ -149,6 +153,6 @@ def build_short_metadata(
     if broadcaster_login:
         lines.append(f"📺 Channel: https://www.twitch.tv/{_clean(broadcaster_login)}")
     lines.append(f"🎬 Full VOD: https://www.twitch.tv/videos/{_clean(vod_id)}")
-    lines.extend(["", HASHTAGS])
+    lines.extend(["", (launch_event.HASHTAGS if gta6 else "") + HASHTAGS])
     description = _truncate("\n".join(lines), DESCRIPTION_MAX_LENGTH)
     return ShortMetadata(title=title, description=description)

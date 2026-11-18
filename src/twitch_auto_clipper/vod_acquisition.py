@@ -9,6 +9,7 @@ import time
 from threading import Event, Lock
 from typing import Any, Callable, Iterator
 
+from . import launch_event
 from .twitch import TwitchDownloadError, download_twitch_vod
 from .twitch_api import LiveStream, TwitchAPIClient, TwitchAPIError
 from .twitch_monitor import (
@@ -145,7 +146,7 @@ class TwitchVODAcquisitionManager:
         with self._lock:
             for monitored in cycle.ended_streams:
                 stream = monitored.stream
-                budget = self._budget(stream.broadcaster_login, monitored.clip_budget)
+                budget = self._budget(stream.broadcaster_login, monitored.clip_budget, stream.game_name)
                 if stream.broadcaster_login.lower() in blocked:
                     results.append(_result(stream, 0, "skipped_blocked"))
                 elif budget <= 0:
@@ -156,7 +157,9 @@ class TwitchVODAcquisitionManager:
                 elif stream.stream_id not in self._jobs:
                     self._jobs[stream.stream_id] = {
                         "stream": asdict(stream),
-                        "clip_budget": budget,
+                        # Stored without the GTA 6 week's boost (recomputed at each use): after
+                        # the week, a job queued during it is handled exactly as before.
+                        "clip_budget": self._budget(stream.broadcaster_login, monitored.clip_budget),
                         "peak_viewers": monitored.peak_viewers,
                         "ended_at": now,
                         "vod_id": None,
@@ -291,7 +294,7 @@ class TwitchVODAcquisitionManager:
 
     def _acquire(self, stream_id: str, job: dict[str, Any]) -> VODAcquisitionResult:
         stream = LiveStream(**job["stream"])
-        budget = self._budget(stream.broadcaster_login, int(job["clip_budget"]))
+        budget = self._budget(stream.broadcaster_login, int(job["clip_budget"]), stream.game_name)
         vod_id = job.get("vod_id")
         if self._clock() - _parse(job["ended_at"]) > self._max_age(job):
             error = "trop ancien : ses Shorts ne seraient plus publies"
@@ -376,9 +379,10 @@ class TwitchVODAcquisitionManager:
         return False
 
     def _priority(self, stream_id: str, job: dict[str, Any]) -> tuple[Any, ...]:
-        """Top streamers first, then the highest peak viewers, then the oldest end."""
-        budget = self._budget(job["stream"]["broadcaster_login"], int(job["clip_budget"]))
-        return -budget, -_peak(job), job["ended_at"], stream_id
+        """GTA 6 during its launch week, then top streamers, then the highest peak viewers, then the oldest end."""
+        game = job["stream"].get("game_name")
+        budget = self._budget(job["stream"]["broadcaster_login"], int(job["clip_budget"]), game)
+        return not launch_event.boosted(game, self._clock()), -budget, -_peak(job), job["ended_at"], stream_id
 
     def _started(self, job: dict[str, Any]) -> bool:
         vod_id = job.get("vod_id")
@@ -412,14 +416,17 @@ class TwitchVODAcquisitionManager:
             self._save_state()
 
     def _listed(self, job: dict[str, Any]) -> bool:
-        return job["stream"]["broadcaster_login"].lower() in self.top_streamers
+        # A GTA 6 stream during its launch week is handled like the owner's lists.
+        return job["stream"]["broadcaster_login"].lower() in self.top_streamers or launch_event.boosted(
+            job["stream"].get("game_name"), self._clock()
+        )
 
     def _max_age(self, job: dict[str, Any]) -> timedelta:
         return timedelta(seconds=TOP_STREAMER_JOB_AGE_SECONDS if self._listed(job) else MAX_JOB_AGE_SECONDS)
 
-    def _budget(self, login: str, budget: int) -> int:
+    def _budget(self, login: str, budget: int, game_name: str | None = None) -> int:
         # Also applies to jobs queued before the streamer joined the list.
-        if budget > 0 and login.lower() in self.top_streamers:
+        if budget > 0 and (login.lower() in self.top_streamers or launch_event.boosted(game_name, self._clock())):
             return max(budget, TOP_STREAMER_CLIP_BUDGET)
         return budget
 
