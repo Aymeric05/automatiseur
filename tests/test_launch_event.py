@@ -75,7 +75,7 @@ def test_titles_and_hashtags_name_gta_6_during_the_week_only():
     assert "GTA 6" not in after.title and "#gta6" not in after.description
 
 
-def test_peakmoments_may_take_a_webcam_gta_6_short_of_liveactions_during_the_week_only():
+def test_peakmoments_may_take_a_webcam_gta_6_short_liveactions_leaves_out_during_the_week_only():
     import json
     from twitch_auto_clipper.shorts_upload import VODShortsUploader
 
@@ -91,8 +91,16 @@ def test_peakmoments_may_take_a_webcam_gta_6_short_of_liveactions_during_the_wee
             "generated_shorts": generated,
             "shorts_metadata": {key: {"title": key, "description": "d"} for key in generated},
         }), encoding="utf-8")
-        for now, expected in ((DURING, ["0.0-20.0"]), (AFTER, [])):
-            irl = VODShortsUploader(tmp, uploader=Mock(), channel="irl", clock=lambda now=now: now)
-            assert [item.short.clip_id for item in irl._ready_shorts()] == expected
+        irl_ready = lambda now: [item.short.clip_id for item in VODShortsUploader(
+            tmp, uploader=Mock(), channel="irl", clock=lambda: now)._ready_shorts()]
+        assert irl_ready(DURING) == []  # LiveActions!' reserve unknown: it keeps everything
+        kept = tmp / launch_event.KEPT_FILE
+        kept.write_text(json.dumps({"kept": ["v/0.0-20.0"]}), encoding="utf-8")
+        assert irl_ready(DURING) == []  # LiveActions! means to publish it: never taken
+        kept.write_text(json.dumps({"kept": ["v/other"]}), encoding="utf-8")
+        assert irl_ready(DURING) == ["0.0-20.0"]  # left out by LiveActions!: PeakMoments may take it
+        assert irl_ready(AFTER) == []
         gaming = VODShortsUploader(tmp, uploader=Mock(), clock=lambda: DURING)
         assert [item.shared for item in gaming._ready_shorts()] == [True, False]  # kept for PeakMoments
+        VODShortsUploader(tmp, uploader=Mock(), clock=lambda: DURING, publishing=False).publish_next()
+        assert sorted(json.loads(kept.read_text(encoding="utf-8"))["kept"]) == ["v/0.0-20.0", "v/1.0-21.0"]

@@ -303,6 +303,10 @@ class VODShortsUploader:
             if not item.shared:  # the other channel may still publish it
                 self._delete_local(item.short.output_path)  # below the top 30: never kept
         ready = ready[:RESERVE_SIZE]
+        if self.channel == "gaming" and launch_event.active(self._clock()):
+            # GTA 6 launch week: what LiveActions! keeps; PeakMoments only takes GTA 6 Shorts left out.
+            self._write_manifest(self.output_dir / launch_event.KEPT_FILE,
+                                 {"kept": [f"{item.vod_id}/{item.short.key}" for item in ready]})
         if self._arbitrate(ready):
             ready.sort(key=self._rank_key(ready), reverse=True)
         if not ready or not self.publishing or (
@@ -491,6 +495,7 @@ class VODShortsUploader:
     def _ready_shorts(self) -> list[_ReadyShort]:
         expired_before = (self._clock() - RESERVE_MAX_AGE).timestamp()
         blocked = load_top_streamers(self.blocked_streamers_path) if self.blocked_streamers_path else frozenset()
+        kept_by_gaming = None  # GTA 6 launch week: LiveActions!' reserve (read once, when needed)
         ready = []
         for manifest_path in self.output_dir.glob("*_processing.json"):
             try:
@@ -529,10 +534,16 @@ class VODShortsUploader:
                 meta = metadata.get(key)
                 if key in uploads or not isinstance(record, dict) or not isinstance(meta, dict):
                     continue
-                if (record.get("channel") or "gaming") != self.channel and not (
-                    self.channel == "irl" and launch_event.also_for_irl(record, manifest.get("game_name"), self._clock())
-                ):
-                    continue  # the other channel's publisher takes care of it
+                if (record.get("channel") or "gaming") != self.channel:
+                    if not (self.channel == "irl" and launch_event.also_for_irl(record, manifest.get("game_name"), self._clock())):
+                        continue  # the other channel's publisher takes care of it
+                    if kept_by_gaming is None:
+                        try:
+                            kept_by_gaming = set(self._load_manifest(self.output_dir / launch_event.KEPT_FILE)["kept"])
+                        except (KeyError, TypeError, ValueError, OSError):
+                            kept_by_gaming = {"*"}  # unknown: LiveActions! keeps everything
+                    if "*" in kept_by_gaming or f"{vod_id}/{key}" in kept_by_gaming:
+                        continue  # LiveActions! still means to publish it: never taken from it
                 path = renders[key]
                 if not path.name.endswith("_short.mp4") or not path.is_file():
                     continue
