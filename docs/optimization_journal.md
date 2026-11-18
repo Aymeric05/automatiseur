@@ -192,6 +192,10 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   pas ce que Gemini garde : pas de perte a la selection (piste du 11-17 close).
 - Coherence (2026-11-18) : 3/4 bonnes ; 1 debut sur un fragment ("One proc. Oh, the gorilla's...").
   Debuts en plein sujet : 2/4 le 11-16, 1/4 le 11-18 - en baisse depuis le garde-fou du 11-16.
+- 2026-11-19 : coherence 3/4 (4 Shorts WoW d'une VOD de discussion "exploit/ban") ; 1 de 85 s finit sur
+  "Yeah, do you?" (question isolee, garde-fou _past_question en place). Concurrents : 5 hauts = CaseOh
+  (reaction a son animation, 0.9-1.5M), bas = classements CaseOh (300-440 vues) ; miniatures hits = visage
+  + 1 mot rouge/rose ("SLAY!"), bas = liste numerotee en overlay. Confirme les lignes 11-13/11-17.
 
 ### PeakMoments (irl)
 - Concurrents (2026-11-17, 40 derniers) : hauts = reaction a un evenement/drama (Streamer Awards, H3, 5-13x) ;
@@ -326,6 +330,13 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   53.4 mais perf -0.4 vs -0.3 et vues 4 vs 7 : mitige, pas "clairement meilleur" sur les deux, on attend.
 - Coherence (2026-11-18) : 3/4 bonnes, Shorts de 18-25 s ; 1 debut en plein sujet ("In the middle of
   the ball too...").
+- Verdict irl_cold_open_v1 (2026-11-19, A n=37/9 VOD, B n=37/7 VOD) : retention B 69.2 vs 57.8 mais perf
+  -0.4 vs -0.3 et vues 5 vs 9, 3e releve de suite dans ce sens : pas clairement meilleur, test retire,
+  cold open garde. A retenir : sans cold open la retention monte (+11 pts) mais pas la diffusion.
+- 2026-11-19 : coherence 4/4 correctes (16-33 s, chutes nettes) mais les 4 = monologues politiques de
+  HasanAbi (meme VOD) malgre la regle par defaut anti-politique ; chez les concurrents les 5 bas = Hasan
+  politique 60-110 s (3-8k vues), les 5 hauts = Speed emotion/evenement 18-50 s (1.1-1.9M). Cause probable :
+  peu de VOD rendues (9/24 h), la reserve se remplit avec ce qui reste.
 
 ## Waiting for the owner
 
@@ -370,7 +381,7 @@ ones, and moves them to the entries.
 | 2026-10-30 | Fix: when Gemini's trim answer for a moment is rejected or missing, its start is now also recalee on a sentence boundary (only the end was before) | fewer "no context at start" / early cuts | Gemini quality-check defects on our Shorts | pending |
 | 2026-11-06 | A/B gaming_interaction_v1: favorise interactions entre personnes avec chute, evite action seule/compilations | retention/views plus proches des hits | retention_pct, views_3d of B vs A | **not better** (2026-11-16, perf A 0.6 vs B 0.3, retention 53.5 vs 53.9), removed |
 | 2026-11-06 | Fix (highlights.py): un segment en minuscule rejoint la phrase precedente jusqu'a 6 s de pause | plus de Shorts qui commencent/finissent sur un bout de phrase ("not.", "I walked in and") | coherence du rapport | pending |
-| 2026-11-08 | A/B irl_cold_open_v1: pas de cold open sur PeakMoments (b: cold_open false) | retention meilleure si le cold open nuit en IRL (points appris -0.4) | retention_pct, perf of B vs A | pending (11-17 : B retention 75.3 vs 51.0 mais perf -0.5 vs -0.3, vues 2.5 vs 6.5 : mitige) |
+| 2026-11-08 | A/B irl_cold_open_v1: pas de cold open sur PeakMoments (b: cold_open false) | retention meilleure si le cold open nuit en IRL (points appris -0.4) | retention_pct, perf of B vs A | **not better** (2026-11-19, retention B 69.2 vs 57.8 mais perf -0.4 vs -0.3, vues 5 vs 9), removed |
 | 2026-11-07 | Fix (vod_shorts._clip_bounds): les marges avant/apres restent dans le silence, plus de mots de la phrase suivante/precedente | fin propre au lieu de "... Okay. Tell" | coherence du rapport | pending |
 | 2026-11-13 | Fix (trimming._past_question) : une fin sur une question va jusqu'a la phrase-reponse (< 2 s apres, dans la limite) | plus de fins "can they break?" (2/8 le 11-13 malgre le prompt) | coherence du rapport | pending |
 | 2026-11-12 | Fix (vod_pipeline._trimmed) : un moment encore plus long que la limite apres le trim (trim Gemini refuse/injoignable) n'est plus rendu | plus de Shorts de 126-180 s (2 publies/rendus irl le 11-11, VOD 2925140576) | duree des Shorts dans la coherence du rapport | pending |
@@ -381,6 +392,17 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-19 - verdict irl_cold_open_v1 (garde), Gemini plein a 20/modele selon Google
+
+- Gaming : coherence 3/4 (1 fin sur "Yeah, do you?", isolee). gaming_tight_start_v1 A 3 / B 7 mesures : on
+  attend. Concurrents/miniatures : rien de neuf (CaseOh reagit a lui-meme vs classements). Guide du 11-13 du le 11-20.
+- IRL : irl_cold_open_v1 retire (retention B +11 pts mais perf et vues plus basses) : cold open garde. Slot
+  libre, pas de nouveau test (la regle anti-politique est deja par defaut). irl_short_v1 : 0 mesure.
+- Debit 9 VOD/24h, 60 jobs jetes (file pleine). Etape limitante = Gemini : 93 passages pipeline pour 9 rendus,
+  58 renvois 503 + 22 quota ; Google ferme chaque modele a 20 (k1-k3 vers 14-16 h UTC, k4 vers 21 h) quand
+  nos compteurs lisent 6-16 (ecart non explique). Transcription 602 min de travail/24 h, GPU 216 min d'attente.
+  Pas de palier (quota deja plein, semaine GTA 6).
 
 ### 2026-11-18 - debit 6 VOD/24h (vagues de 503 Gemini), aucun verdict
 
@@ -444,32 +466,6 @@ ones, and moves them to the entries.
 - Debit 8 VOD/24h, 54 jobs jetes (file pleine) ; ~30 renvois "Gemini indisponible" sur ~10 VOD, tous 503
   (surcharge Google, pas le quota : cle 2 peu utilisee, cle 3 a 0). Pas de hausse d'usage Gemini (VOD renvoyees).
 
-### 2026-11-12 - Shorts IRL de 126 s et 180 s
-
-- Bug : quand Gemini refuse ou ne repond pas au trim, le moment gardait ses bornes brutes, sans plafond
-  (VOD 2925140576 : 126 s publie eaGL6XmwnF0, 180 s rendu, fin "I would completely disagree with").
-  Corrige : un moment encore trop long apres le trim n'est plus rendu (vod_pipeline, test). App relancee.
-- Gaming : coherence 4/4 correctes (situation -> resultat). Aucun verdict (gaming_interaction_v1 B n=0).
-  Debit 8 VOD/24h, 61 jobs jetes (file pleine), modeles Gemini au quota (RESOURCE_EXHAUSTED).
-- IRL : 3/4 sont des tirades politiques de Hasan (finissent en pleine phrase) ; chez les concurrents le
-  commentaire politique est dans le tiers bas (midterms, Hasan 0.19-0.26x), l'evenement IRL en haut.
-  irl_dialogue_v1 A 24/4 VOD, B 15/2 ; irl_cold_open_v1 A 4 / B 5. Guide hebdo a refaire le 11-13.
-
-### 2026-11-12 - doublons deja publies : le proprietaire s'en occupe lui-meme
-
-- Les 3 doublons LiveActions! (FbJo6C4DvNE/s_ycihm5nfw, 8J-gHFmAjJY/EExLLXdkgqA, ZiYPcRgef14/Ea7SuszotV8)
-  sont vus par le proprietaire, qui decide seul. Ne plus les proposer ni les rappeler.
-
-### 2026-11-11 - doublons publies sur YouTube, fins sur une question sans reponse
-
-- Bug : un moment rendu une 1re fois avec bornes de secours (Gemini 503) puis re-rendu au passage
-  suivant avec d'autres bornes donnait 2 Shorts publies (3 cas depuis le 11-09). Corrige
-  (shorts_upload, test) ; suppression des 3 doublons proposee au proprietaire.
-- Gaming : coherence 3/4 finit sur une question sans reponse -> regle ajoutee au trim. Pas de nouveau
-  test (gaming_interaction_v1 B n=0). Debit 4 VOD/24h, quota Gemini vraiment epuise selon Google.
-- IRL : coherence 2/4 coupe en pleine scene (meme regle). irl_dialogue_v1 A 19/3 VOD, B 15/2 VOD ;
-  irl_cold_open_v1 A 4 / B 0. Guide concurrents a refaire le 11-13.
-
 ### 2026-11-18 - GTA 6 launch week (owner): until 2026-11-26 00:00 UTC
 
 - launch_event.py: GTA 6 streams (Twitch category "Grand Theft Auto VI") are followed from 1000
@@ -495,7 +491,7 @@ ones, and moves them to the entries.
   app follows the processing after each upload (youtube._wait_for_processing): an abandoned one is an
   upload error, the Short is kept and sent again later. Both entries relabelled in published_shorts.json.
 
-### earlier (2026-10-23 to 2026-11-10)
+### earlier (2026-10-23 to 2026-11-12)
 
 - 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
   gaming_length_v1 (45-90s, gagne le 11-01), 10-26 irl_length_v1 (perdu le 11-03). Bugs de coupe
@@ -518,3 +514,6 @@ ones, and moves them to the entries.
   plusieurs Shorts d'une meme VOD OK, pas de plafond par VOD ni par streamer.
   11-10 : app tuee en silence par un crash cuDNN (transcription GPU) ; transcription GPU mise dans un
   sous-processus avec repli CPU. 2 VOD/24h.
+  11-11 : doublons publies (moment re-rendu apres 503) corriges ; regle de trim "pas de fin sur une question".
+  11-12 : Shorts IRL de 126-180 s (trim refuse) plus rendus ; les 3 doublons LiveActions! sont geres par le
+  proprietaire lui-meme : ne plus les proposer ni les rappeler.
