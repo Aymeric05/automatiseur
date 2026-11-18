@@ -88,7 +88,8 @@ EVALUATION_RESPONSE_FORMAT = {
 }
 
 
-GEMINI_KEY_VARIABLES = ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3")
+# The 4th is the owner's spare: last in line, it only serves once the first 3 are saturated.
+GEMINI_KEY_VARIABLES = ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3", "GEMINI_API_KEY_4")
 
 
 def _gemini_api_keys() -> list[str]:
