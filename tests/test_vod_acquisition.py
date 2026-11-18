@@ -184,7 +184,7 @@ class VODAcquisitionTests(unittest.TestCase):
         (self.root / "input" / "vod-a_audio.mp4").unlink()  # the worker's cleanup
         self.assertEqual(manager.prefetch(2).stream_id, "c")
 
-    def test_nothing_more_is_downloaded_while_vods_wait_for_gemini(self) -> None:
+    def test_vods_waiting_for_gemini_let_the_app_transcribe_ahead_up_to_a_limit(self) -> None:
         self.client.find_vod_for_stream.side_effect = lambda broadcaster, stream_id: vod(f"vod-{stream_id}", stream_id)
         manager = self.manager()
         for stream_id in ("a", "b", "c"):
@@ -194,7 +194,12 @@ class VODAcquisitionTests(unittest.TestCase):
         for stream_id in ("a", "b"):  # Gemini saturated: both sent back to wait
             manager.record_automation(stream_id, f"vod-{stream_id}", "waiting_gemini",
                                       retry_at=self.clock.now + timedelta(hours=10))
-        self.assertIsNone(manager.prefetch(2))  # their audio holds the places
+        # Transcribed and only waiting for Gemini's quota: the next VOD is prepared meanwhile.
+        self.assertEqual(manager.prefetch(2).stream_id, "c")
+        with patch("twitch_auto_clipper.vod_acquisition.WAITING_AHEAD", 2):
+            manager.record_automation("c", "vod-c", "waiting_gemini", retry_at=self.clock.now + timedelta(hours=10))
+            manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream("d"),)))
+            self.assertIsNone(manager.prefetch(2))  # enough waiting: their audio would only expire
 
     def test_two_workers_never_take_the_same_vod(self) -> None:
         self.client.find_vod_for_stream.side_effect = lambda broadcaster, stream_id: vod(f"vod-{stream_id}", stream_id)

@@ -31,7 +31,8 @@ TOP_STREAMER_MAX_ATTEMPTS = 12  # past the 8th try, one every 6 hours: about 1.5
 TOP_STREAMER_CLIP_BUDGET = 25  # moments asked to Gemini for a streamer of the top list
 # About what the worker processes within MAX_JOB_AGE_SECONDS: worse jobs are dropped.
 MAX_QUEUED_JOBS = 50
-MAX_VOD_SECONDS = 8 * 3600  # of a longer VOD (a 24-48 h stream), only the last 8 hours are processed
+MAX_VOD_SECONDS = 8 * 3600
+WAITING_AHEAD = 12  # VODs transcribed ahead while Gemini is closed (~600 MB of audio each)  # of a longer VOD (a 24-48 h stream), only the last 8 hours are processed
 MEMORY_SIZE = 2000  # processed and abandoned streams remembered (never queued twice)
 AUDIO_SUFFIXES = frozenset({".mp4", ".m4a", ".aac", ".ts", ".webm", ".mkv", ".mp3", ".opus"})
 
@@ -225,9 +226,12 @@ class TwitchVODAcquisitionManager:
         now = self._clock()
         with self._lock:
             self._purge_locked(now)
-            # Every downloaded VOD holds a place, those waiting for Gemini too: when Gemini is
-            # saturated, nothing more is downloaded (the audio would only wait, or expire).
-            if sum(self._started(job) for job in self._jobs.values()) >= ahead:
+            # Every downloaded VOD holds a place. Those already transcribed and only waiting for
+            # Gemini (its daily quota closed) hold one of WAITING_AHEAD extra places instead: the
+            # app keeps transcribing meanwhile, and they all go to Gemini as soon as it reopens.
+            started = [job for job in self._jobs.values() if self._started(job)]
+            waiting = sum(bool(job.get("waiting_gemini")) for job in started)
+            if len(started) - waiting >= ahead or waiting >= WAITING_AHEAD:
                 return None
             due = sorted(
                 (*self._priority(stream_id, job), stream_id) for stream_id, job in self._jobs.items()
@@ -271,8 +275,10 @@ class TwitchVODAcquisitionManager:
                 # Only Gemini is missing (daily quota or overload).
                 job["next_attempt_at"] = _iso(retry_at or self._clock() + timedelta(hours=1))
                 job["last_error"] = error
+                job["waiting_gemini"] = True
                 outcome = "waiting"
             else:
+                job.pop("waiting_gemini", None)
                 outcome = "abandoned" if self._fail_locked(stream_id, error or status) else "retry"
             self._save_state()
         return outcome
