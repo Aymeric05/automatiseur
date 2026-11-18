@@ -24,6 +24,15 @@ def active(now: datetime | None = None) -> bool:
     return (now or datetime.now(timezone.utc)) < END
 
 
+def also_for_irl(record: dict, game_name: str | None, now: datetime | None = None) -> bool:
+    """A GTA 6 Short of the gaming channel showing mostly the streamer: PeakMoments may publish it too.
+
+    LiveActions! gets far more GTA 6 Shorts than it can publish that week; the ones about the
+    streamer's reaction rather than the game suit PeakMoments best (they compete there on score).
+    """
+    return (record.get("channel") or "gaming") == "gaming" and bool(record.get("on_webcam")) and boosted(game_name, now)
+
+
 def boosted(game_name: str | None, now: datetime | None = None) -> bool:
     """True for a GTA 6 stream during the launch week."""
     return active(now) and bool(_GTA6.search(game_name or ""))

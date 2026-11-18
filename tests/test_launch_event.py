@@ -73,3 +73,26 @@ def test_titles_and_hashtags_name_gta_6_during_the_week_only():
     assert during.title.endswith("(GTA 6)") and "#gta6" in during.description
     assert not already.title.endswith("(GTA 6)")  # never twice
     assert "GTA 6" not in after.title and "#gta6" not in after.description
+
+
+def test_peakmoments_may_take_a_webcam_gta_6_short_of_liveactions_during_the_week_only():
+    import json
+    from twitch_auto_clipper.shorts_upload import VODShortsUploader
+
+    with tempfile.TemporaryDirectory() as directory:
+        tmp = Path(directory)
+        generated = {}
+        for key, webcam in (("0.0-20.0", True), ("1.0-21.0", False)):
+            (tmp / f"v_{key}_short.mp4").write_bytes(b"short")
+            generated[key] = {"candidate_id": key, "file": f"v_{key}_short.mp4", "start": 0.0, "end": 20.0,
+                              "gemini_score": 80, "profanity_filtered": True, "channel": "gaming", "on_webcam": webcam}
+        (tmp / "v_processing.json").write_text(json.dumps({
+            "vod_id": "v", "clip_budget": 25, "automation_status": "completed", "game_name": "Grand Theft Auto VI",
+            "generated_shorts": generated,
+            "shorts_metadata": {key: {"title": key, "description": "d"} for key in generated},
+        }), encoding="utf-8")
+        for now, expected in ((DURING, ["0.0-20.0"]), (AFTER, [])):
+            irl = VODShortsUploader(tmp, uploader=Mock(), channel="irl", clock=lambda now=now: now)
+            assert [item.short.clip_id for item in irl._ready_shorts()] == expected
+        gaming = VODShortsUploader(tmp, uploader=Mock(), clock=lambda: DURING)
+        assert [item.shared for item in gaming._ready_shorts()] == [True, False]  # kept for PeakMoments

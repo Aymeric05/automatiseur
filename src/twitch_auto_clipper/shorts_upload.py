@@ -72,6 +72,7 @@ class _ReadyShort(NamedTuple):
     short: VODShortResult
     metadata: ShortMetadata
     game: str = ""  # the stream's Twitch category
+    shared: bool = False  # also wanted by the other channel (GTA 6 launch week): never deleted here
 
 
 class VODShortsUploader:
@@ -299,7 +300,8 @@ class VODShortsUploader:
         ready = self._ready_shorts()
         ready.sort(key=self._rank_key(ready), reverse=True)
         for item in ready[RESERVE_SIZE:]:
-            self._delete_local(item.short.output_path)  # below the top 30: never kept
+            if not item.shared:  # the other channel may still publish it
+                self._delete_local(item.short.output_path)  # below the top 30: never kept
         ready = ready[:RESERVE_SIZE]
         if self._arbitrate(ready):
             ready.sort(key=self._rank_key(ready), reverse=True)
@@ -372,7 +374,8 @@ class VODShortsUploader:
         model = self._model()
         return lambda item: (
             not item.failed,
-            launch_event.boosted(item.game, self._clock()),  # GTA 6 launch week: its Shorts go out first
+            # GTA 6 launch week: its Shorts go out first on LiveActions! (on PeakMoments, score only).
+            self.channel == "gaming" and launch_event.boosted(item.game, self._clock()),
             item.login == standout,
             item.login in self.top_streamers,
             # Gemini's score, weighted by how well it predicted the real results (around 70).
@@ -526,7 +529,9 @@ class VODShortsUploader:
                 meta = metadata.get(key)
                 if key in uploads or not isinstance(record, dict) or not isinstance(meta, dict):
                     continue
-                if (record.get("channel") or "gaming") != self.channel:
+                if (record.get("channel") or "gaming") != self.channel and not (
+                    self.channel == "irl" and launch_event.also_for_irl(record, manifest.get("game_name"), self._clock())
+                ):
                     continue  # the other channel's publisher takes care of it
                 path = renders[key]
                 if not path.name.endswith("_short.mp4") or not path.is_file():
@@ -579,6 +584,7 @@ class VODShortsUploader:
                         title=str(meta.get("title", "")), description=str(meta.get("description", "")),
                     ),
                     game=str(manifest.get("game_name") or ""),
+                    shared=launch_event.also_for_irl(record, manifest.get("game_name"), self._clock()),
                 ))
         return ready
 

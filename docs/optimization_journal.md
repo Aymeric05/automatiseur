@@ -474,7 +474,9 @@ ones, and moves them to the entries.
 
 - launch_event.py: GTA 6 streams (Twitch category "Grand Theft Auto VI") are followed from 1000
   viewers, handled like the owner's lists (25 moments, 3 days, 12 tries), first in the queue, first
-  in each channel's reserve ranking, with "(GTA 6)" in the title and #gta6 #gtavi.
+  in LiveActions!' reserve ranking, with "(GTA 6)" in the title and #gta6 #gtavi.
+- Same week only: a GTA 6 Short of LiveActions! whose frames show mostly the streamer
+  (on_webcam) may also be published by PeakMoments, where it competes on score (owner, 2026-11-18).
 - Everything goes through launch_event.boosted(): after END the app is exactly as before (git tag
   before-gta6-launch). Do NOT tune anything on this week's numbers as if it were a normal week
   (GTA 6 takes most slots on purpose); do not change END without the owner.

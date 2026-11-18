@@ -267,7 +267,7 @@ class PublishNextTests(unittest.TestCase):
 
         uploader = VODShortsUploader(self.tmp, uploader=self._upload, uploaded_finder=finder, daily_upload_limit=10)
         uploader.quota.mark_exhausted()  # YouTube's limit reached: it is only recorded, not uploaded
-        _, result = uploader.publish_next() or (None, uploader.upload("cut", *uploader._ready_shorts()[0][5:]))
+        _, result = uploader.publish_next() or (None, uploader.upload("cut", *uploader._ready_shorts()[0][5:8]))
         self.assertEqual((result.status, result.video_id), ("uploaded", "ytX"))
         self.assertEqual((self.uploaded, searched), ([], ["cut 80"]))
         self.assertEqual(list(self.tmp.glob("cut_*_short.mp4")), [])
