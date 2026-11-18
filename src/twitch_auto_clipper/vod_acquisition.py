@@ -10,9 +10,10 @@ from threading import Event, Lock
 from typing import Any, Callable, Iterator
 
 from . import launch_event
-from .twitch import TwitchDownloadError, download_twitch_vod
+from .twitch import TwitchDownloadError, download_twitch_vod, vod_url
 from .twitch_api import LiveStream, TwitchAPIClient, TwitchAPIError
 from .twitch_monitor import (
+    MonitoredStream,
     MonitoringCycle,
     TwitchStreamMonitor,
 )
@@ -31,6 +32,14 @@ TOP_STREAMER_MAX_ATTEMPTS = 12  # past the 8th try, one every 6 hours: about 1.5
 TOP_STREAMER_CLIP_BUDGET = 25  # moments asked to Gemini for a streamer of the top list
 # About what the worker processes within MAX_JOB_AGE_SECONDS: worse jobs are dropped.
 MAX_QUEUED_JOBS = 50
+# Live clipping (LIVE_CLIPPING=1, being tested): a stream still live is processed in parts of
+# LIVE_PART_SECONDS, each downloaded on its own; its last part once it ends. Every part's audio
+# starts LIVE_PART_LEAD earlier (the context of a moment near the cut); a moment belongs to the
+# part where it starts, after LIVE_PART_KEEP_LEAD before the cut, so none is made twice.
+LIVE_PART_SECONDS = 2 * 3600
+LIVE_PART_LEAD = 300
+LIVE_PART_KEEP_LEAD = 150
+LIVE_LAG_SECONDS = 120  # the live VOD is a little behind the stream
 MAX_VOD_SECONDS = 8 * 3600  # of a longer VOD (a 24-48 h stream), only the last 8 hours are processed
 MEMORY_SIZE = 2000  # processed and abandoned streams remembered (never queued twice)
 AUDIO_SUFFIXES = frozenset({".mp4", ".m4a", ".aac", ".ts", ".webm", ".mkv", ".mp3", ".opus"})
@@ -50,6 +59,8 @@ class VODAcquisitionResult:
     game_name: str = ""
     peak_viewers: int = 0
     seconds: float | None = None  # download time
+    keep_from: float | None = None  # live part: only the moments starting in [keep_from, keep_until)
+    keep_until: float | None = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +105,7 @@ class TwitchVODAcquisitionManager:
         top_streamers: frozenset[str] = frozenset(),
         rate_limit: int | None = None,
         blocked_streamers: Callable[[], frozenset[str]] = frozenset,
+        live_parts: bool = False,
     ) -> None:
         self.monitor = monitor or TwitchStreamMonitor()
         self.api_client = api_client or self.monitor.client
@@ -103,8 +115,8 @@ class TwitchVODAcquisitionManager:
         # rate_limit (bytes per second) keeps the connection usable for everyone else.
         # rate_limit is read at each download: the app adjusts it when the connection changes.
         self.rate_limit = rate_limit
-        self.downloader = downloader or (lambda url, folder: download_twitch_vod(
-            url, folder, audio_only=True, quiet=True, rate_limit=self.rate_limit, last_seconds=MAX_VOD_SECONDS
+        self.downloader = downloader or (lambda url, folder, **part: download_twitch_vod(
+            url, folder, audio_only=True, quiet=True, rate_limit=self.rate_limit, last_seconds=MAX_VOD_SECONDS, **part
         ))
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         # Logins whose VODs get TOP_STREAMER_CLIP_BUDGET moments (hence go first).
@@ -121,6 +133,8 @@ class TwitchVODAcquisitionManager:
         # (login, vod_id, clip_budget, game_name) -> False when the VOD could not enter its
         # channel's reserve: it is then never downloaded (set once the pipeline exists).
         self.worth_downloading: Callable[[str, str, int, str], bool] | None = None
+        self.live_parts = live_parts
+        self._live: dict[str, dict[str, Any]] = {}  # stream id -> parts queued and seconds covered
         self._load_state()
 
     @property
@@ -130,7 +144,7 @@ class TwitchVODAcquisitionManager:
     def active_vod_ids(self) -> set[str]:
         """VODs whose job is still queued (their files must be kept)."""
         with self._lock:
-            return {str(job["vod_id"]) for job in self._jobs.values() if job.get("vod_id")}
+            return {_file_id(job) for job in self._jobs.values() if job.get("vod_id")}
 
     def poll_once(self) -> VODMonitoringCycle:
         cycle = self.monitor.poll_once()
@@ -142,9 +156,15 @@ class TwitchVODAcquisitionManager:
             return ()
         results = []
         now = _iso(self._clock())
-        blocked = self.blocked_streamers() if cycle.ended_streams else frozenset()
+        blocked = self.blocked_streamers() if cycle.ended_streams or self.live_parts else frozenset()
         with self._lock:
+            if self.live_parts:
+                for monitored in cycle.streams:
+                    results.extend(self._queue_live_part_locked(monitored, blocked, ended=False))
             for monitored in cycle.ended_streams:
+                if monitored.stream.stream_id in self._live:  # processed live: only its last part is left
+                    results.extend(self._queue_live_part_locked(monitored, blocked, ended=True))
+                    continue
                 stream = monitored.stream
                 budget = self._budget(stream.broadcaster_login, monitored.clip_budget, stream.game_name)
                 if stream.broadcaster_login.lower() in blocked:
@@ -168,15 +188,53 @@ class TwitchVODAcquisitionManager:
                         "last_error": None,
                     }
                     results.append(_result(stream, budget, "queued"))
-            if any(result.status == "queued" for result in results):
+            if any(result.status in {"queued", "queued_part"} for result in results):
                 try:
                     self._save_state()
                 except OSError as error:  # kept in memory, saved with the next change
                     results.append(_result(
-                        cycle.ended_streams[0].stream, 0, "error",
+                        (cycle.ended_streams or cycle.streams)[0].stream, 0, "error",
                         error=f"file d'attente non sauvegardee : {error}",
                     ))
         return tuple(results)
+
+    def _queue_live_part_locked(
+        self, monitored: MonitoredStream, blocked: frozenset[str], ended: bool
+    ) -> list[VODAcquisitionResult]:
+        """Queue the next part of a live stream once LIVE_PART_SECONDS more are on Twitch, or its last one."""
+        stream = monitored.stream
+        budget = self._budget(stream.broadcaster_login, monitored.clip_budget, stream.game_name)
+        if stream.broadcaster_login.lower() in blocked or budget <= 0:
+            return []
+        live = self._live.get(stream.stream_id) or {"parts": 0, "until": 0.0}
+        if ended:
+            start, end = float(live["until"]), None
+            self._live.pop(stream.stream_id, None)
+            self._remember_locked(stream.stream_id, None)  # never queued again as a whole VOD
+        else:
+            try:
+                elapsed = (self._clock() - _parse(stream.started_at)).total_seconds() - LIVE_LAG_SECONDS
+            except (TypeError, ValueError):
+                return []
+            if elapsed - float(live["until"]) < LIVE_PART_SECONDS:
+                return []
+            start, end = float(live["until"]), elapsed
+            self._live[stream.stream_id] = {"parts": int(live["parts"]) + 1, "until": end}
+        part = int(live["parts"]) + 1
+        now = _iso(self._clock())
+        self._jobs[f"{stream.stream_id}#p{part}"] = {
+            "stream": asdict(stream),
+            "clip_budget": self._budget(stream.broadcaster_login, monitored.clip_budget),
+            "peak_viewers": monitored.peak_viewers,
+            "ended_at": now,
+            "vod_id": None,
+            "attempts": 0,
+            "next_attempt_at": now,
+            "last_error": None,
+            "part": part,
+            "window": [start, end],
+        }
+        return [_result(stream, budget, "queued_part")]
 
     def acquire_due(self, download: bool = True) -> Iterator[VODAcquisitionResult]:
         """Yield one acquisition per due job, biggest clip budget first.
@@ -298,7 +356,7 @@ class TwitchVODAcquisitionManager:
         vod_id = job.get("vod_id")
         if self._clock() - _parse(job["ended_at"]) > self._max_age(job):
             error = "trop ancien : ses Shorts ne seraient plus publies"
-            audio_path = find_downloaded_audio(self.input_dir, vod_id) if vod_id else None
+            audio_path = find_downloaded_audio(self.input_dir, _file_id(job)) if vod_id else None
             if audio_path is not None:
                 audio_path.unlink(missing_ok=True)  # nothing left to do with it
             with self._lock:
@@ -307,7 +365,7 @@ class TwitchVODAcquisitionManager:
             return _result(stream, budget, "abandoned", vod_id=vod_id, error=error)
         try:
             if not vod_id:
-                vod = self.api_client.find_vod_for_stream(stream.broadcaster_id, stream_id)
+                vod = self.api_client.find_vod_for_stream(stream.broadcaster_id, stream.stream_id)
                 if vod is None:
                     waited = self._clock() - _parse(job["ended_at"])
                     with self._lock:
@@ -327,6 +385,9 @@ class TwitchVODAcquisitionManager:
                 with self._lock:
                     self._jobs[stream_id]["vod_id"] = vod_id
                     self._save_state()
+            # A live part is processed as its own "VOD" (files, manifest, Shorts): "<vod id>p<n>".
+            vod_id = _file_id({**job, "vod_id": vod_id})
+            keep = _keep_window(job)
 
             if vod_id in self._processed_vod_ids:
                 with self._lock:
@@ -336,7 +397,7 @@ class TwitchVODAcquisitionManager:
 
             audio_path = find_downloaded_audio(self.input_dir, vod_id)
             if audio_path is not None:
-                return _result(stream, budget, "already_downloaded", vod_id=vod_id, downloaded_path=audio_path)
+                return replace(_result(stream, budget, "already_downloaded", vod_id=vod_id, downloaded_path=audio_path), **keep)
 
             if self.worth_downloading is not None and not self.worth_downloading(
                 stream.broadcaster_login, vod_id, budget, stream.game_name or ""
@@ -351,9 +412,14 @@ class TwitchVODAcquisitionManager:
             if free < MIN_FREE_BYTES:
                 raise OSError(f"espace disque insuffisant ({free // 1024**2} Mo libres)")
             started = time.monotonic()
-            audio_path = self.downloader(f"https://www.twitch.tv/videos/{vod_id}", self.input_dir)
+            if job.get("window"):
+                start, end = job["window"]
+                lead = LIVE_PART_LEAD if start > 0 else 0
+                audio_path = self.downloader(vod_url(vod_id), self.input_dir, section=(max(0.0, start - lead), end), name=vod_id)
+            else:
+                audio_path = self.downloader(vod_url(vod_id), self.input_dir)
             return replace(_result(stream, budget, "downloaded", vod_id=vod_id, downloaded_path=audio_path),
-                           seconds=time.monotonic() - started)
+                           seconds=time.monotonic() - started, **keep)
         except (TwitchAPIError, TwitchDownloadError, OSError, ValueError) as error:
             with self._lock:
                 abandoned = stream_id in self._jobs and self._fail_locked(stream_id, str(error))
@@ -385,8 +451,7 @@ class TwitchVODAcquisitionManager:
         return not launch_event.boosted(game, self._clock()), -budget, -_peak(job), job["ended_at"], stream_id
 
     def _started(self, job: dict[str, Any]) -> bool:
-        vod_id = job.get("vod_id")
-        return bool(vod_id) and find_downloaded_audio(self.input_dir, str(vod_id)) is not None
+        return bool(job.get("vod_id")) and find_downloaded_audio(self.input_dir, _file_id(job)) is not None
 
     def _purge_locked(self, now: datetime) -> None:
         """Drop the jobs no longer worth processing; the worker's cleanup deletes their files.
@@ -409,7 +474,7 @@ class TwitchVODAcquisitionManager:
                 )
                 self._abandon_locked(stream_id, job.get("vod_id"), reason)
                 if job.get("vod_id"):  # its audio and any partial download (the worker cleans the rest)
-                    for path in self.input_dir.glob(f"{job['vod_id']}_*"):
+                    for path in self.input_dir.glob(f"{_file_id(job)}_*"):
                         path.unlink(missing_ok=True)
                 dropped = True
         if dropped:
@@ -491,6 +556,7 @@ class TwitchVODAcquisitionManager:
         }
         self._jobs = {str(stream_id): dict(job) for stream_id, job in jobs.items()}
         self._abandoned = dict(abandoned)
+        self._live = dict(state.get("live_parts") or {})
 
     def _save_state(self) -> None:
         # Only recent streams can end again: older memories are dropped, oldest first.
@@ -507,11 +573,25 @@ class TwitchVODAcquisitionManager:
             "processed_vod_ids": sorted(self._processed_vod_ids),
             "jobs": self._jobs,
             "abandoned": self._abandoned,
+            "live_parts": self._live,
         }
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         temporary_path = self.state_path.with_name(f"{self.state_path.name}.tmp")
         temporary_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
         temporary_path.replace(self.state_path)
+
+
+def _file_id(job: dict[str, Any]) -> str:
+    """The id a job's files carry: its VOD's, or "<vod id>p<n>" for part n of a live stream."""
+    return f"{job['vod_id']}p{job['part']}" if job.get("part") else str(job["vod_id"])
+
+
+def _keep_window(job: dict[str, Any]) -> dict[str, float | None]:
+    if not job.get("window"):
+        return {}
+    start, end = job["window"]
+    return {"keep_from": start - LIVE_PART_KEEP_LEAD if start > 0 else None,
+            "keep_until": end - LIVE_PART_KEEP_LEAD if end is not None else None}
 
 
 def _iso(moment: datetime) -> str:
@@ -553,6 +633,8 @@ def format_vod_acquisition_result(result: VODAcquisitionResult) -> str:
     name = result.broadcaster_name or result.stream_id
     if result.status == "queued":
         return f"Stream termine ajoute a la file : {name} (budget {result.clip_budget} clips)."
+    if result.status == "queued_part":
+        return f"Partie du live en cours ajoutee a la file : {name} (budget {result.clip_budget} clips)."
     if result.status == "downloaded":
         took = f" (en {result.seconds / 60:.1f} min)" if result.seconds is not None else ""
         return f"Audio de la VOD {result.vod_id} telecharge{took} : {result.downloaded_path}"

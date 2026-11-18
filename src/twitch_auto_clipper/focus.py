@@ -15,7 +15,7 @@ import subprocess
 from typing import Any
 
 from .gemini_evaluation import LIGHT_MODEL, _generate_json
-from .twitch import resolve_twitch_video_url
+from .twitch import resolve_twitch_video_url, vod_url
 
 FOCUS_MODEL = LIGHT_MODEL  # spares the main models' quota for the selections and the trimming
 FRAME_HEIGHT = 360  # low-res rendition: a few MB for all the frames of a VOD
@@ -97,7 +97,7 @@ def find_focus(
     """What each time of the VOD shows, in one request (see ``parse_focus``)."""
     from google.genai import types
 
-    url = resolve_twitch_video_url(f"https://www.twitch.tv/videos/{vod_id}", max_height=FRAME_HEIGHT)
+    url = resolve_twitch_video_url(vod_url(vod_id), max_height=FRAME_HEIGHT)
     contents: list[Any] = [PROMPT]
     for index, seconds in enumerate(times, start=1):
         frame = subprocess.run(
@@ -162,7 +162,7 @@ def still_share(vod_id: str, start: float, end: float, focus_x: float | None = N
     """
     import numpy as np
 
-    url = resolve_twitch_video_url(f"https://www.twitch.tv/videos/{vod_id}", max_height=FRAME_HEIGHT)
+    url = resolve_twitch_video_url(vod_url(vod_id), max_height=FRAME_HEIGHT)
     center = 0.5 if focus_x is None else min(max(focus_x, CROP_SHARE / 2), 1 - CROP_SHARE / 2)
     mask = ""
     if facecam:
@@ -190,7 +190,7 @@ MIN_SCENE_SECONDS = 1.5  # shorter shots are framed with their neighbour
 def scene_cuts(vod_id: str, start: float, end: float) -> list[float]:
     """The times (live seconds) where the picture changes shot between ``start`` and ``end``
     (webcam full screen, then a shared screen...), so each shot gets its own framing."""
-    url = resolve_twitch_video_url(f"https://www.twitch.tv/videos/{vod_id}", max_height=FRAME_HEIGHT)
+    url = resolve_twitch_video_url(vod_url(vod_id), max_height=FRAME_HEIGHT)
     log = subprocess.run(
         ["ffmpeg", "-v", "info", "-ss", str(start), "-t", str(end - start), "-i", url, "-an",
          "-vf", f"scale=160:90,select='gt(scene,{SCENE_THRESHOLD})',showinfo", "-f", "null", "-"],

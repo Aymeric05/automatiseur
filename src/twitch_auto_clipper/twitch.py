@@ -29,6 +29,11 @@ def _get_youtube_dl():
     return YoutubeDL
 
 
+def vod_url(vod_id: str) -> str:
+    """Twitch URL of a VOD; a live part's id ("<vod id>p<n>", see LIVE_PART_SECONDS) names its VOD."""
+    return f"https://www.twitch.tv/videos/{str(vod_id).split('p')[0]}"
+
+
 def audio_offset(path: Path | str) -> float:
     """Where a downloaded audio file starts in its VOD (seconds): 0 unless only its end was kept."""
     try:
@@ -46,6 +51,8 @@ def download_twitch_vod(
     quiet: bool = False,
     rate_limit: int | None = None,
     last_seconds: float | None = None,
+    section: tuple[float, float | None] | None = None,
+    name: str | None = None,
 ) -> Path:
     """Download a Twitch VOD and return its local path.
 
@@ -58,12 +65,14 @@ def download_twitch_vod(
     few seconds of video straight from Twitch. ``max_seconds`` keeps only the
     beginning of the VOD and ``max_height`` caps the resolution (test runs).
     ``rate_limit`` caps the download speed (bytes per second).
+    ``section`` (start, end or None for "until now") keeps only that part of the VOD, saved as
+    ``<name>_audio.<ext>`` with its start written next to it: a part of a stream still live.
     """
     if not is_twitch_vod_url(url):
         raise ValueError("L'URL doit etre une URL HTTPS de VOD Twitch valide.")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    vod_id = urlparse(url).path.rstrip("/").split("/")[-1]
+    vod_id = name or urlparse(url).path.rstrip("/").split("/")[-1]
     video_format = "bestvideo*+bestaudio/best"
     if max_height:
         video_format = f"bestvideo*[height<={max_height}]+bestaudio/best[height<={max_height}]"
@@ -85,15 +94,19 @@ def download_twitch_vod(
 
     try:
         youtube_dl = _get_youtube_dl()
-        if max_seconds:
+        if max_seconds or section:
             from yt_dlp.utils import download_range_func
 
-            options["download_ranges"] = download_range_func([], [(0, max_seconds)])
+            # yt-dlp picks the 10 s pieces of the range itself: seconds for a few hours (2026-11-18).
+            ranges = [section if section[1] is not None else (section[0], float("inf"))] if section else [(0, max_seconds)]
+            options["download_ranges"] = download_range_func([], ranges)
         with youtube_dl(options) as downloader:
             info = downloader.extract_info(url, download=True)
             downloaded_path = Path(downloader.prepare_filename(info))
+        if section and downloaded_path.is_file():
+            downloaded_path.with_name(f"{downloaded_path.stem}.offset").write_text(f"{section[0]:.3f}", encoding="utf-8")
         duration = float(info.get("duration") or 0)
-        if last_seconds and duration > last_seconds and downloaded_path.is_file():
+        if last_seconds and not section and duration > last_seconds and downloaded_path.is_file():
             # Cut locally (a few seconds, no re-encoding): downloading only a section through
             # FFmpeg runs slower than real time on Twitch's HLS.
             offset = duration - last_seconds

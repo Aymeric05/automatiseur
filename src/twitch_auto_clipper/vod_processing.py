@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from .chat_activity import ChatActivityError, compact_chat, load_chat_messages
 from .transcription import save_transcription, transcribe_video
-from .twitch import audio_offset
+from .twitch import audio_offset, vod_url
 from .twitch_chat import TwitchChatDownloadError, download_twitch_chat
 from .vod_acquisition import VODAcquisitionResult
 
@@ -162,7 +162,7 @@ class VODProcessingPipeline:
         errors: list[str],
         offset: float = 0.0,
     ) -> str:
-        vod_url = f"https://www.twitch.tv/videos/{vod_id}"
+        url = vod_url(vod_id)  # a live part reads its VOD's chat
         reused_existing_chat = False
         downloaded = False
         try:
@@ -175,7 +175,7 @@ class VODProcessingPipeline:
             if not reused_existing_chat:
                 if not (chat_path.is_file() and chat_path.stat().st_size > 0):
                     # Only the part of the VOD kept (its messages keep their VOD times).
-                    self.chat_downloader(vod_url, chat_path, start_seconds=offset) if offset else self.chat_downloader(vod_url, chat_path)
+                    self.chat_downloader(url, chat_path, start_seconds=offset) if offset else self.chat_downloader(url, chat_path)
                     downloaded = True
                 messages = load_chat_messages(chat_path)
                 timestamped_chat_path.write_text(
