@@ -218,7 +218,8 @@ class TwitchVODAcquisitionManager:
                 return []
             if elapsed - float(live["until"]) < LIVE_PART_SECONDS:
                 return []
-            start, end = float(live["until"]), elapsed
+            # Seen live for the first time long after it started: its last MAX_VOD_SECONDS, like a VOD.
+            start, end = max(float(live["until"]), elapsed - MAX_VOD_SECONDS), elapsed
             self._live[stream.stream_id] = {"parts": int(live["parts"]) + 1, "until": end}
         part = int(live["parts"]) + 1
         now = _iso(self._clock())
