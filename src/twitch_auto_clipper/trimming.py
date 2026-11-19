@@ -17,6 +17,7 @@ from .gemini_evaluation import GEMINI_FALLBACK_MODELS, _generate_json
 WINDOW_SECONDS = 45.0  # sentences shown before and after each moment (enough to reach the conclusion)
 MIN_SECONDS = 15.0
 MAX_SECONDS = 58.0  # a Short stays under a minute, cold open included
+LINKING_WORDS = {"And", "But", "So", "Because", "Cause", "Or", "Then"}  # a sentence opening on one continues
 # A Short whose last words end on one of these (no final punctuation) stops mid-sentence.
 DANGLING_WORDS = {
     "and", "but", "or", "so", "because", "the", "a", "an", "to", "of", "with", "if", "that", "like",
@@ -112,14 +113,16 @@ def _enclosing_start(value: float, sentences: list[dict[str, Any]]) -> float:
 
 
 def _settled_start(start: float, end: float, sentences: list[dict[str, Any]], max_seconds: float) -> float:
-    """``start`` pulled back one sentence when it opens on a lowercase fragment of the one before.
+    """``start`` pulled back one sentence when it opens on a fragment of the one before.
 
-    "when the deal is done you see your cat..." (gaming 2026-11-16) began mid-subject: its
-    sentence continues the previous one, which sets up what the Short is about.
+    "when the deal is done you see your cat..." (gaming 2026-11-16) and "And that's how little
+    you know about me..." (irl 2026-11-20) began mid-subject: a sentence in lowercase or opened
+    by a linking word continues the previous one, which sets up what the Short is about.
     """
     for index, sentence in enumerate(sentences):
         if abs(sentence["start"] - start) <= 0.05:
-            if index and str(sentence.get("text", "")).lstrip()[:1].islower():
+            text = str(sentence.get("text", "")).lstrip()
+            if index and (text[:1].islower() or text.split(" ", 1)[0].strip(",") in LINKING_WORDS):
                 earlier = float(sentences[index - 1]["start"])
                 if end - earlier <= max_seconds:
                     return earlier

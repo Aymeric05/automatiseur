@@ -33,6 +33,9 @@ REFRESH_INTERVAL = timedelta(hours=24)
 MIN_AGE = timedelta(days=2)  # younger Shorts' views are not settled
 MAX_AGE = timedelta(days=60)
 MAX_SHORT_SECONDS = 180
+# Channels whose titles name a streamer by chance, not clip channels: "Buddha at the Gas Pump"
+# (spiritual talks) matched the login "buddha" and was 1 of the 9 gaming channels (2026-11-20).
+NOT_CLIP_CHANNELS = {"UCnlVpm_PkNiFlTWFb0sEUDg"}
 
 
 def _squash(text: str) -> str:
@@ -101,6 +104,8 @@ def _discover(service: Any, theme: str, theme_logins: list[str], logins: list[st
     )
     relevant = []
     for channel in big:
+        if channel["id"] in NOT_CLIP_CHANNELS:
+            continue
         shorts = _recent_shorts(service, channel["id"], logins, now)
         on_theme = sum(s["streamer"] in theme_logins for s in shorts)
         if len(shorts) >= 10 and on_theme / len(shorts) >= MIN_RELEVANT_SHARE:
@@ -151,7 +156,7 @@ def refresh_competitors(
         state["discovered_at"] = now.isoformat(timespec="seconds")
     shorts = []
     for theme, ids in channels.items():
-        for channel_id in ids:
+        for channel_id in [i for i in ids if i not in NOT_CLIP_CHANNELS]:
             try:
                 shorts += [{**short, "theme": theme} for short in _recent_shorts(service, channel_id, logins, now)]
             except Exception:

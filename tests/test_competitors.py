@@ -31,6 +31,24 @@ class CompetitorTests(unittest.TestCase):
         now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
         fresh = PerformanceModel([], "irl", now, external=points)
         self.assertGreater(fresh.points({"seconds": 20}), 0)
+    def test_a_channel_that_is_not_a_clip_channel_is_never_read(self):
+        import json, tempfile
+        from datetime import datetime, timezone
+        from pathlib import Path
+        from unittest import mock
+        from twitch_auto_clipper import competitors
+        now = datetime(2026, 11, 20, tzinfo=timezone.utc)
+        bad = next(iter(competitors.NOT_CLIP_CHANNELS))
+        with tempfile.TemporaryDirectory() as folder:
+            Path(folder, competitors.COMPETITORS_FILE).write_text(json.dumps({
+                "discovered_at": now.isoformat(), "refreshed_at": "2026-11-01T00:00:00+00:00",
+                "channels": {"gaming": ["good", bad], "irl": []}}), encoding="utf-8")
+            read = lambda service, channel_id, logins, when: [clip(channel_id, channel_id, 10)]
+            with mock.patch.object(competitors, "_recent_shorts", read):
+                competitors.refresh_competitors(Path(folder), lambda: None, {"gaming": [], "irl": []}, lambda: now)
+            ids = {s["channel_id"] for s in competitors.load_competitor_shorts(Path(folder))}
+        self.assertEqual(ids, {"good"})
+
 
 if __name__ == "__main__":
     unittest.main()

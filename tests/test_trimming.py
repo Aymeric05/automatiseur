@@ -101,6 +101,9 @@ class TrimPromptTests(unittest.TestCase):
         answer = json.dumps({"moments": [{"id": "m1", "start": 30, "end": 58, "complete": True}]})
         self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["start"], 20.0)
         self.assertEqual(snap_ends([{"start": 31.0, "end": 57.0}], sentences)[0]["start"], 20.0)
+        # Nor on a linking word (PeakMoments 2026-11-20: "And that's how little you know about me").
+        sentences[3]["text"] = "And that's how little you know about me."
+        self.assertEqual(snap_ends([{"start": 31.0, "end": 57.0}], sentences)[0]["start"], 20.0)
         # Not when the sentence before would make the Short too long.
         answer = json.dumps({"moments": [{"id": "m1", "start": 30, "end": 88, "complete": True}]})
         self.assertEqual(parse_trims(answer, [{"start": 30.0, "end": 40.0}], sentences)[0]["start"], 30.0)
