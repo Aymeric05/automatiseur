@@ -712,6 +712,7 @@ def process_due_vods(
     automation: VODAutomationPipeline,
     report: Callable[[str, bool], None],
     download: bool = True,
+    others_only: bool = False,
 ) -> int:
     """Acquire and process every due VOD job once; returns how many were due.
 
@@ -730,7 +731,7 @@ def process_due_vods(
 
     cleanup()
     count = 0
-    for acquisition in manager.acquire_due(download):
+    for acquisition in manager.acquire_due(download, others_only):
         count += 1
         report(format_vod_acquisition_result(acquisition), acquisition.status in {"error", "abandoned"})
         if acquisition.status not in {"downloaded", "already_downloaded"}:

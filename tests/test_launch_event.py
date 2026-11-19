@@ -104,3 +104,33 @@ def test_peakmoments_may_take_a_webcam_gta_6_short_liveactions_leaves_out_during
         assert [item.shared for item in gaming._ready_shorts()] == [True, False]  # kept for PeakMoments
         VODShortsUploader(tmp, uploader=Mock(), clock=lambda: DURING, publishing=False).publish_next()
         assert sorted(json.loads(kept.read_text(encoding="utf-8"))["kept"]) == ["v/0.0-20.0", "v/1.0-21.0"]
+
+
+def test_one_worker_and_some_queue_places_stay_for_the_other_streams_during_the_week():
+    from twitch_auto_clipper.twitch_api import TwitchVOD
+    from twitch_auto_clipper.vod_acquisition import MAX_QUEUED_JOBS
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        clock = [DURING]
+        client = Mock()
+        client.find_vod_for_stream.side_effect = lambda broadcaster, stream_id: TwitchVOD(f"v{stream_id}", stream_id, broadcaster, "t")
+
+        def download(url, folder, **part):
+            path = folder / f"{url.rsplit('/', 1)[-1]}_audio.mp4"
+            path.write_bytes(b"audio")
+            return path
+
+        manager = TwitchVODAcquisitionManager(api_client=client, input_dir=root / "in", state_path=root / "s.json",
+                                              downloader=download, clock=lambda: clock[0])
+        gta = [MonitoredStream(stream(f"g{i}", 20_000, "Grand Theft Auto VI"), 10) for i in range(MAX_QUEUED_JOBS)]
+        others = [MonitoredStream(stream(f"o{i}", 6_000, "Just Chatting"), 2) for i in range(3)]
+        manager.process_cycle(MonitoringCycle(ended_streams=tuple(gta + others)))
+        manager._purge_locked(clock[0])
+        assert {f"o{i}" for i in range(3)} <= set(manager._jobs)  # kept although ranked after 50 GTA 6 jobs
+        assert manager.prefetch(3).stream_id == "o0"  # one other stream always downloaded first
+        assert manager.prefetch(3).stream_id == "g0"  # then GTA 6 first again
+        assert [a.stream_id[0] for a in manager.acquire_due(download=False, others_only=True)] == ["o"]
+        clock[0] = AFTER  # after the week: one queue again, as before
+        manager._purge_locked(clock[0])
+        assert len(manager._jobs) <= MAX_QUEUED_JOBS

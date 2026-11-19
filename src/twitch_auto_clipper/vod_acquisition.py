@@ -238,7 +238,7 @@ class TwitchVODAcquisitionManager:
         }
         return [_result(stream, budget, "queued_part")]
 
-    def acquire_due(self, download: bool = True) -> Iterator[VODAcquisitionResult]:
+    def acquire_due(self, download: bool = True, others_only: bool = False) -> Iterator[VODAcquisitionResult]:
         """Yield one acquisition per due job, biggest clip budget first.
 
         With ``download=False``, only the jobs whose audio is already downloaded
@@ -261,6 +261,8 @@ class TwitchVODAcquisitionManager:
                 for stream_id, job in self._jobs.items()
                 if _parse(job["next_attempt_at"]) <= now and stream_id not in self._prefetching
                 and (download or self._started(job))
+                # GTA 6 launch week: one worker is kept for the other streams (PeakMoments goes on).
+                and not (others_only and self._gta6(job))
             )
         for *_, stream_id in due:
             with self._lock:
@@ -298,6 +300,10 @@ class TwitchVODAcquisitionManager:
             )
             if not due:
                 return None
+            # GTA 6 launch week: one VOD of another stream is always downloaded, for the worker kept for them.
+            others = [entry for entry in due if not self._gta6(self._jobs[entry[-1]])]
+            if others and not any(self._started(job) and not self._gta6(job) for job in self._jobs.values()):
+                due = others
             stream_id = due[0][-1]
             job = dict(self._jobs[stream_id])
             self._prefetching.add(stream_id)
@@ -470,10 +476,16 @@ class TwitchVODAcquisitionManager:
         ranked = sorted(self._jobs.items(), key=lambda entry: self._priority(*entry))
         blocked = self.blocked_streamers() if ranked else frozenset()
         dropped = False
+        other_position = 0
         for position, (stream_id, job) in enumerate(ranked):
             too_old = now - _parse(job["ended_at"]) > self._max_age(job)
             is_blocked = job["stream"]["broadcaster_login"].lower() in blocked
-            if too_old or is_blocked or position >= MAX_QUEUED_JOBS:
+            if not self._gta6(job):
+                other_position += 1
+            # GTA 6 launch week: the best OTHER_QUEUE other streams stay queued whatever their rank.
+            if too_old or is_blocked or (position >= MAX_QUEUED_JOBS
+                                         and (self._gta6(job) or other_position > launch_event.OTHER_QUEUE
+                                              or not launch_event.active(now))):
                 reason = (
                     "streamer en liste noire (blocked_streamers.txt)" if is_blocked
                     else "trop ancien : ses Shorts ne seraient plus publies" if too_old
@@ -486,6 +498,9 @@ class TwitchVODAcquisitionManager:
                 dropped = True
         if dropped:
             self._save_state()
+
+    def _gta6(self, job: dict[str, Any]) -> bool:
+        return launch_event.boosted(job["stream"].get("game_name"), self._clock())
 
     def _listed(self, job: dict[str, Any]) -> bool:
         # A GTA 6 stream during its launch week is handled like the owner's lists.

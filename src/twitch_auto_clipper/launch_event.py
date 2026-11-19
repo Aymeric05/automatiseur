@@ -14,6 +14,7 @@ END = datetime(2026, 11, 26, tzinfo=timezone.utc)  # launch on 11-19, seven days
 MIN_VIEWERS = 1000  # GTA 6 streams followed from this many viewers (5000 for the others)
 CLIP_BUDGET = 5  # their budget below 5000 viewers (the acquisition then asks for the top-list 25)
 TITLE_TAG = " (GTA 6)"
+OTHER_QUEUE = 10  # non-GTA 6 jobs always kept in the queue, for the worker kept for them (PeakMoments)
 HASHTAGS = "#gta6 #gtavi "
 KEPT_FILE = "gta6_liveactions_reserve.json"  # the GTA 6 Shorts LiveActions! keeps (its top 30)
 

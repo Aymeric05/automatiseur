@@ -23,7 +23,7 @@ from .chat_activity import ChatActivityError, add_chat_messages, add_chat_signal
 from .competitors import refresh_competitors
 from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus, scene_cuts, still_share
 from .speakers import media_speech
-from . import tiktok
+from . import launch_event, tiktok
 from .transcription import transcribe_video
 from .trimming import trim_moments
 from .streamer_lists import load_streamer_list, load_top_streamers
@@ -891,10 +891,12 @@ def main() -> int:
             # monitoring. Every job is persisted: if the program stops mid-way,
             # the next start picks it up again. The publisher uploads the day's
             # best ready Shorts during the publication hour.
-            def work() -> None:
+            def work(others_only: bool = False) -> None:
                 while not stop.is_set():
                     try:
-                        process_due_vods(manager, automation, report, download=False)
+                        # GTA 6 launch week: the last worker only takes the other streams (PeakMoments).
+                        process_due_vods(manager, automation, report, download=False,
+                                         others_only=others_only and launch_event.active())
                     except Exception as error:  # keep the worker alive; jobs stay queued
                         report(f"Erreur du traitement des VOD : {error!r}", True)
                     stop.wait(WORKER_IDLE_SECONDS)
@@ -933,7 +935,7 @@ def main() -> int:
             # On mains power, the computer no longer falls asleep on its own while the app works.
             Thread(target=keep_awake_on_mains, args=(stop,), name="keep-awake", daemon=True).start()
             for number in range(VOD_WORKERS):
-                Thread(target=work, name=f"vod-worker-{number + 1}", daemon=True).start()
+                Thread(target=work, args=(number == VOD_WORKERS - 1,), name=f"vod-worker-{number + 1}", daemon=True).start()
             Thread(target=prefetch, name="vod-prefetch", daemon=True).start()
             if uploaders:
                 Thread(target=publish, name="shorts-publisher", daemon=True).start()
