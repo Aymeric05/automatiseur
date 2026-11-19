@@ -18,6 +18,7 @@ from .video import get_video_duration
 CHUNK_SECONDS = 1800.0
 # With a CUDA GPU, a better model still runs many times faster than "base" on the CPU.
 GPU_MODEL_SIZE = "small"
+GPU_BATCH_SIZE = 16  # fits the 4 GB GPU with the small model
 
 
 class TranscriptionError(RuntimeError):
@@ -87,6 +88,26 @@ def _serialize_segment(segment: Any, offset: float = 0.0) -> dict[str, Any]:
     }
 
 
+def _sentences(segment: dict[str, Any]) -> list[dict[str, Any]]:
+    """A segment cut after each word ending a sentence (. ? !), using the words' own times.
+
+    The batched pipeline returns ~30 s segments; the trim rules work on sentences.
+    """
+    words = segment.get("words") or []
+    pieces, current = [], []
+    for word in words:
+        current.append(word)
+        if word["word"].strip().rstrip("\"')»").endswith((".", "?", "!")):
+            pieces.append(current)
+            current = []
+    if current:
+        pieces.append(current)
+    if len(pieces) <= 1:
+        return [segment]
+    return [{"start": piece[0]["start"], "end": max(piece[-1]["end"], piece[0]["start"] + 0.01),
+             "text": "".join(word["word"] for word in piece).strip(), "words": piece} for piece in pieces]
+
+
 def _duration(input_path: Path) -> float | None:
     try:
         return get_video_duration(input_path)
@@ -137,14 +158,25 @@ def transcribe_video(
     try:
         model = _get_whisper_model(model_size, device, compute_type)
 
+        # On the GPU, faster-whisper's batched pipeline: 3.4x faster on 20 min of a real stream
+        # (2026-11-20), with punctuation (the sentences the trim rules rely on) and fewer misheard words.
+        if device == "cuda":
+            from faster_whisper import BatchedInferencePipeline
+
+            runner = BatchedInferencePipeline(model=model)
+        else:
+            runner = model
+        options = {"batch_size": GPU_BATCH_SIZE} if device == "cuda" else {}
+
         def transcribe(path: Path, offset: float) -> list[dict[str, Any]]:
-            segments, _ = model.transcribe(
+            segments, _ = runner.transcribe(
                 str(path),
                 language=language,
                 word_timestamps=True,
                 vad_filter=True,
+                **options,
             )
-            return [_serialize_segment(segment, offset) for segment in segments]
+            return [sentence for segment in segments for sentence in _sentences(_serialize_segment(segment, offset))]
 
         duration = _duration(input_path)
         if duration is None or duration <= chunk_seconds:

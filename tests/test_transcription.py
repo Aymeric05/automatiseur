@@ -68,6 +68,7 @@ class TranscriptionTests(unittest.TestCase):
         self.assertEqual([segment["start"] for segment in segments], [1.5, 11.5, 21.5])
         self.assertEqual(segments[1]["words"][0]["start"], 11.5)
 
+    @patch("faster_whisper.BatchedInferencePipeline", new=lambda model: model)
     @patch("twitch_auto_clipper.transcription._get_whisper_model")
     def test_transcribe_video_allows_custom_device_and_compute_type(self, get_model) -> None:
         model = FakeWhisperModel("small", "cuda", "float16")
@@ -125,3 +126,13 @@ class TranscriptionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_long_batched_segments_are_cut_into_sentences_with_their_words_times():
+    from twitch_auto_clipper.transcription import _sentences
+
+    words = [{"word": w, "start": float(i), "end": i + 0.5} for i, w in enumerate(
+        [" Can", " he", " do", " it?", " No", " way.", " Wait"])]
+    pieces = _sentences({"start": 0.0, "end": 7.0, "text": "Can he do it? No way. Wait", "words": words})
+    assert [(p["text"], p["start"], p["end"]) for p in pieces] == [
+        ("Can he do it?", 0.0, 3.5), ("No way.", 4.0, 5.5), ("Wait", 6.0, 6.5)]
