@@ -72,6 +72,9 @@ BEST_POSSIBLE_SCORE = 95
 MAX_MUSIC_WHOLE = 0.15
 MAX_MUSIC_REST = 0.3
 GAME_MAX_MUSIC = 0.45
+# Games whose music is mostly licensed songs (GTA's car radios): judged like a stream's music, not
+# like a soundtrack. An xQc GTA 6 Short (34 % music, loud -8 dB) got a music warning (2026-11-19).
+LICENSED_MUSIC_GAMES = re.compile(r"\b(grand theft auto|gta)\b", re.IGNORECASE)
 # Very loud instrumental music under a moment Gemini scores this high or more: removed, the Short
 # kept. Measured on real videos (2026-11-06): with the music's part above -13 dB, Demucs removed
 # 13 to 24 dB of it every time; below, sometimes only 4 to 9 dB. Quieter music or a song: dropped.
@@ -345,7 +348,8 @@ class VODAutomationPipeline:
                     vod_id, "completed", processing, selection, message="Aucun moment avec du mouvement a l'image.",
                 )
         if self.music_checker is not None:
-            verdicts = [(moment, self._music_verdict(source_path, moment)) for moment in selection.selected]
+            verdicts = [(moment, self._music_verdict(source_path, moment, processing.game_name))
+                        for moment in selection.selected]
             selection = replace(selection, selected=tuple(
                 {**moment, "clean_voices": True} if verdict == "clean" else moment
                 for moment, verdict in verdicts if verdict != "drop"
@@ -449,14 +453,15 @@ class VODAutomationPipeline:
             kept.append(moment)
         return tuple(without_near_duplicates(list(short_enough(kept))))
 
-    def _music_verdict(self, audio_path: Path, moment: dict[str, Any]) -> str:
+    def _music_verdict(self, audio_path: Path, moment: dict[str, Any], game_name: str = "") -> str:
         """"ok", "clean" (loud instrumental music under a good moment: removed, the voices kept)
         or "drop" (music Content ID would block, see music.py for the measures)."""
         try:
             profile = self.music_checker(audio_path, float(moment["start"]), float(moment["end"]))
         except Exception:  # unreadable audio: kept, as before
             return "ok"
-        if moment.get("channel") != "irl":  # a game's own soundtrack: only a song-like level of music
+        if moment.get("channel") != "irl" and not LICENSED_MUSIC_GAMES.search(game_name or ""):
+            # a game's own soundtrack: only a song-like level of music
             return "drop" if profile["whole"] > GAME_MAX_MUSIC else "ok"
         if profile["whole"] <= MAX_MUSIC_WHOLE and profile["rest"] <= MAX_MUSIC_REST:
             return "ok"

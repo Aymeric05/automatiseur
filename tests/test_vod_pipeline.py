@@ -175,6 +175,10 @@ class VODAutomationPipelineTests(unittest.TestCase):
         pipeline = VODAutomationPipeline(music_checker=lambda audio, start, end: {"whole": 0.3, "rest": 0.5, "rest_level": -3.0})
         moment = {"start": 0, "end": 30, "channel": "gaming", "gemini_score": 70}
         self.assertEqual(pipeline._music_verdict(Path("a.mp4"), moment), "ok")
+        # GTA's music is its car radios' licensed songs: judged like a stream's (the warned xQc Short).
+        pipeline = VODAutomationPipeline(music_checker=lambda audio, start, end: {"whole": 0.34, "rest": 0.5, "rest_level": -7.8})
+        self.assertEqual(pipeline._music_verdict(Path("a.mp4"), moment, "Grand Theft Auto VI"), "drop")
+        self.assertEqual(pipeline._music_verdict(Path("a.mp4"), moment, "Fortnite"), "ok")
 
     @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
     def test_a_moment_whose_picture_does_not_move_is_never_rendered(self, gemini):
