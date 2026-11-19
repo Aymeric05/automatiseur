@@ -33,6 +33,10 @@ Shorts and channels), the date seen first and last. Strengthen, weaken or remove
 evidence comes; turn a strong line into an A/B test, then into the app's default.
 
 ### LiveActions! (gaming)
+- Concurrents (2026-11-20, 8 chaines apres retrait de Rupert Spira, faux "buddha") : hauts = CaseOh dans un
+  role ("Can CaseOh Slay As...?", 3 des 10 derniers hauts), miniature webcam + jeu avec 1 mot (SLAY!) ;
+  classements dans les deux tiers. Production 7 j (semaine GTA) : source chat 11 pub/7 res/5 jetes vs
+  transcript 6/17/15 ; GTA V 1/12/4. 9 VOD/23 finies sans aucun moment admis en reserve (transcription perdue).
 - Concurrents (2026-11-17, 40 derniers Shorts) : hauts = le streamer reagit a un evenement sur lui
   (CaseOh prix Streamer Awards 8x, Backrooms 7.9x) ; bas = compilations/classements ("Ranking The Funniest", 0.1x).
   Miniatures hits : ecran partage visage + jeu/creature. Bruit : une chaine non gaming (Rupert Spira) dans la liste.
@@ -198,6 +202,10 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   + 1 mot rouge/rose ("SLAY!"), bas = liste numerotee en overlay. Confirme les lignes 11-13/11-17.
 
 ### PeakMoments (irl)
+- Concurrents (2026-11-20, 6 chaines) : tiers haut 38 s vs bas 31 s (la duree seule ne separe plus) ;
+  hauts = visage + 1 mot (BREATHE), bas = politique Hasan, overlays d'actualite. Production 7 j : <25s
+  6 pub/5 res/1 jete. Coherence : debuts sur un mot de liaison ("And that's how...", 11-20) corriges
+  (_settled_start). 0 Short IRL rendu en 24 h (file prise par GTA, attendu cette semaine).
 - Concurrents (2026-11-17, 40 derniers) : hauts = reaction a un evenement/drama (Streamer Awards, H3, 5-13x) ;
   miniatures hits = deux visages ou visage + scene, flop = overlay de chat. Production 7 j : >40s 1 pub/11 res/7 jetes
   (5 %), <25s 5/5/3 (38 %) ; chat 2/9/5. Verdict irl_dialogue_v1 (2026-11-17) : B pas meilleur (perf -0.4 = -0.4,
@@ -350,6 +358,7 @@ ones, and moves them to the entries.
 
 | Since | Change | Expected effect | Metric to watch | Verdict |
 |---|---|---|---|---|
+| 2026-11-20 | Fix (trimming._settled_start) : un debut sur un mot de liaison (And, But, So...) remonte d'une phrase ; Fix (competitors.NOT_CLIP_CHANNELS) : Rupert Spira hors concurrents | moins de debuts en plein sujet ; donnees concurrents gaming propres | coherence du rapport | pending |
 | 2026-11-17 | MAX_QUEUED_JOBS 40 -> 50 (palier 3 de la montee Gemini) | moins de VOD jetees file pleine (38/24h), plus de candidats | VOD rendues/24h, jobs jetes, requetes par cle, file | pending |
 | 2026-11-17 | Fix (trimming._past_question) : une fin sur une question sans reponse recule a la phrase d'avant | plus de fins "What do we think about mid boss?" | coherence du rapport | pending |
 | 2026-11-17 | A/B irl_short_v1 : Shorts IRL 15-25 s (ideal_seconds + trim_rules) | perf/retention meilleures (appris <25s +0.6, >40s -0.7) | retention_pct, perf of B vs A | pending (0 measured) |
@@ -393,6 +402,18 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-20 - debuts sur "And..." corriges, faux concurrent retire, guide hebdo refait
+
+- Gaming : coherence 3/4 (1 fin sur "hey over here, dude?", isolee). gaming_tight_start_v1 A 8/2 VOD,
+  B 7/5 : on attend. Chaine "Buddha at the Gas Pump" (spirituel) retiree des concurrents (code + donnees).
+  Guide refait (accroche = ce que fait le streamer, classements jamais un atout). Pas de nouveau test (semaine GTA).
+- IRL : coherence 2/4 commencent en plein sujet ("And that's how...", "Adult child. Okay."), rendus du 11-18 :
+  un debut sur un mot de liaison remonte d'une phrase (test). irl_short_v1 A 1 / B 2 mesures. 0 rendu IRL en 24 h
+  (GTA prend la file, voulu). Guide : regle de duree assouplie (hits 16-45 s), ideal [15,30] garde pendant le test.
+- Debit 7-8 VOD rendues/24h, 478 jobs jetes file pleine. Etape limitante = transcription : 623 min (32 VOD) +
+  315 min d'attente GPU, contre 68 min de telechargement et 83 min de selection Gemini ; 9 VOD sur 23 finies sans
+  moment admis en reserve. Pas de palier Gemini (semaine GTA, cle 3 ouverte).
 
 ### 2026-11-19 - verdict irl_cold_open_v1 (garde), Gemini plein a 20/modele selon Google
 
