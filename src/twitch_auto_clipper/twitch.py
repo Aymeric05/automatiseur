@@ -29,6 +29,11 @@ def _get_youtube_dl():
     return YoutubeDL
 
 
+def vod_url(vod_id: str) -> str:
+    """Twitch URL of a VOD; a live part's id ("<vod id>p<n>", see LIVE_PART_SECONDS) names its VOD."""
+    return f"https://www.twitch.tv/videos/{str(vod_id).split('p')[0]}"
+
+
 def audio_offset(path: Path | str) -> float:
     """Where a downloaded audio file starts in its VOD (seconds): 0 unless only its end was kept."""
     try:
@@ -46,6 +51,8 @@ def download_twitch_vod(
     quiet: bool = False,
     rate_limit: int | None = None,
     last_seconds: float | None = None,
+    section: tuple[float, float | None] | None = None,
+    name: str | None = None,
 ) -> Path:
     """Download a Twitch VOD and return its local path.
 
@@ -58,11 +65,15 @@ def download_twitch_vod(
     few seconds of video straight from Twitch. ``max_seconds`` keeps only the
     beginning of the VOD and ``max_height`` caps the resolution (test runs).
     ``rate_limit`` caps the download speed (bytes per second).
+    ``section`` (start, end or None for "until now") downloads only that part of the VOD's audio,
+    saved as ``<name>_audio.m4a`` with its start written next to it: a part of a stream still live.
     """
     if not is_twitch_vod_url(url):
         raise ValueError("L'URL doit etre une URL HTTPS de VOD Twitch valide.")
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    if section:
+        return _download_section(urlparse(url).path.rstrip("/").split("/")[-1], output_dir, section, name, rate_limit)
     vod_id = urlparse(url).path.rstrip("/").split("/")[-1]
     video_format = "bestvideo*+bestaudio/best"
     if max_height:
@@ -121,6 +132,36 @@ def download_twitch_vod(
         )
 
     return downloaded_path
+
+
+def _download_section(
+    vod_id: str, output_dir: Path, section: tuple[float, float | None], name: str | None, rate_limit: int | None,
+) -> Path:
+    """Audio of one stretch of a VOD (one still live included), through TwitchDownloaderCLI.
+
+    It fetches the 10 s pieces in parallel: 2 hours in ~20 s (2026-11-18), where a yt-dlp
+    section (FFmpeg reading the HLS) ran at about real time.
+    """
+    from .twitch_chat import find_twitch_downloader_cli
+
+    cli = find_twitch_downloader_cli()
+    if cli is None:
+        raise TwitchDownloadError("TwitchDownloaderCLI est requis pour telecharger une partie de live.")
+    start, end = section
+    path = output_dir / f"{name or vod_id}_audio.m4a"
+    threads = 4
+    command = [cli, "videodownload", "--id", vod_id, "-q", "Audio", "-b", f"{int(start)}s",
+               *(["-e", f"{int(end)}s"] if end is not None else []), "-o", str(path), "--collision", "Overwrite",
+               "-t", str(threads), *(["--bandwidth", str(max(1, rate_limit // 1024 // threads))] if rate_limit else [])]
+    try:
+        subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True, timeout=3600)
+    except (OSError, subprocess.SubprocessError) as error:
+        detail = getattr(error, "stderr", "") or ""
+        raise TwitchDownloadError(f"Echec du telechargement de la partie : {error} {detail[-300:]}") from error
+    if not path.is_file() or path.stat().st_size == 0:
+        raise TwitchDownloadError(f"Partie de live telechargee mais introuvable : {path}")
+    path.with_name(f"{path.stem}.offset").write_text(f"{int(start)}.000", encoding="utf-8")
+    return path
 
 
 def resolve_twitch_video_url(url: str, max_height: int | None = None) -> str:

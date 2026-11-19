@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from . import launch_event
+from .twitch import vod_url
 from .profanity import censor
 
 TITLE_MAX_LENGTH = 100  # YouTube limit
@@ -152,7 +153,7 @@ def build_short_metadata(
     lines.append(f"🎮 Clip from {name}'s Twitch stream" + (f" ({game})." if game else "."))
     if broadcaster_login:
         lines.append(f"📺 Channel: https://www.twitch.tv/{_clean(broadcaster_login)}")
-    lines.append(f"🎬 Full VOD: https://www.twitch.tv/videos/{_clean(vod_id)}")
+    lines.append(f"🎬 Full VOD: {vod_url(_clean(vod_id))}")
     lines.extend(["", (launch_event.HASHTAGS if gta6 else "") + HASHTAGS])
     description = _truncate("\n".join(lines), DESCRIPTION_MAX_LENGTH)
     return ShortMetadata(title=title, description=description)

@@ -243,6 +243,13 @@ class VODAutomationPipeline:
                 vod_id, "error", processing, selection,
                 message=f"selection Gemini : {selection.error}",
             )
+        if acquisition.keep_from is not None or acquisition.keep_until is not None:
+            # A live part: only the moments starting in its own stretch (the next part makes the others).
+            low, high = acquisition.keep_from, acquisition.keep_until
+            selection = replace(selection, selected=tuple(
+                moment for moment in selection.selected
+                if (low is None or float(moment["start"]) >= low) and (high is None or float(moment["start"]) < high)
+            ))
         # Only the moments Gemini found worth a Short are rendered and published;
         # a moment with a slur is dropped (swear words are only muted).
         segments = self._load_segments(processing.transcript_path)

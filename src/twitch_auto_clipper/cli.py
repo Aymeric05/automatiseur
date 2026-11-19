@@ -46,7 +46,7 @@ from .vod_acquisition import (
     format_vod_acquisition_result,
 )
 from .shorts_upload import VODShortsUploader, format_short_upload_result
-from .twitch import TwitchDownloadError, audio_offset, download_twitch_vod, resolve_twitch_video_url
+from .twitch import TwitchDownloadError, audio_offset, download_twitch_vod, resolve_twitch_video_url, vod_url
 from .twitch_chat import download_twitch_chat, find_twitch_downloader_cli
 from .vod_shorts import VODShortsGenerator
 from .vod_highlights import VODHighlightSelector
@@ -437,7 +437,7 @@ def acquire_instance_lock(path: Path):
 
 def _twitch_video(acquisition: VODAcquisitionResult) -> str:
     """Stream URL of the VOD video: each Short reads only its own seconds from Twitch."""
-    return resolve_twitch_video_url(f"https://www.twitch.tv/videos/{acquisition.vod_id}")
+    return resolve_twitch_video_url(vod_url(acquisition.vod_id))
 
 
 def load_env_file(path: Path) -> None:
@@ -684,6 +684,8 @@ def main() -> int:
                 top_streamers=top_streamers,
                 rate_limit=download_kbps * 1024,
                 blocked_streamers=partial(load_top_streamers, BLOCKED_STREAMERS_FILE),
+                # Being tested: streams processed in 2-hour parts while still live (see vod_acquisition).
+                live_parts=os.environ.get("LIVE_CLIPPING") == "1",
             )
         except ValueError as error:
             print(f"Erreur d'etat VOD : {error}", file=sys.stderr)
@@ -900,7 +902,7 @@ def main() -> int:
             def prefetch_chat(vod_id: str) -> None:
                 if not (output_dir / f"{vod_id}_chat_timestamps.json").exists():
                     audio = find_downloaded_audio(input_dir, vod_id)
-                    download_twitch_chat(f"https://www.twitch.tv/videos/{vod_id}", output_dir / f"{vod_id}_chat.json",
+                    download_twitch_chat(vod_url(vod_id), output_dir / f"{vod_id}_chat.json",
                                          start_seconds=audio_offset(audio) or None if audio else None)
 
             # Downloads the next VOD (audio, then chat) while the worker transcribes and renders.

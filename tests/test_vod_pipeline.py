@@ -331,6 +331,20 @@ class VODAutomationPipelineTests(unittest.TestCase):
         self.assertEqual(ffmpeg_calls, [])  # existing Shorts not regenerated
         self.assertEqual({s.status for s in result.shorts.shorts}, {"already_exists"})
 
+    @patch("twitch_auto_clipper.vod_highlights.select_candidates", side_effect=fake_gemini)
+    def test_a_live_part_renders_only_the_moments_starting_in_its_own_stretch(self, gemini):
+        from dataclasses import replace
+
+        full = self._pipeline().run(self._acquisition(budget=2))
+        starts = sorted(short.start for short in full.shorts.shorts)
+        self.assertGreaterEqual(len(starts), 2)
+        part = replace(self._acquisition(budget=2), vod_id="vod_1p2", keep_from=starts[1] - 0.01, keep_until=None)
+        result = self._pipeline().run(part)
+        self.assertEqual(result.status, "completed")
+        self.assertTrue(result.shorts.shorts)
+        self.assertTrue(all(short.start >= starts[1] - 5 for short in result.shorts.shorts))
+        self.assertLess(len(result.shorts.shorts), len(full.shorts.shorts))  # the earlier ones belong to part 1
+
     @patch("twitch_auto_clipper.vod_highlights.select_candidates")
     def test_moments_gemini_finds_uninteresting_are_never_rendered(self, gemini):
         def mixed(candidates, transcript, requested_count, model, **options):
