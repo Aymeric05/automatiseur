@@ -19,7 +19,7 @@ def audio_levels(input_path: Path, start: float, seconds: int) -> list[float]:
                    "ametadata=print:key=lavfi.astats.Overall.RMS_level",
             "-f", "null", "-",
         ],
-        capture_output=True, text=True, timeout=120, check=True,
+        capture_output=True, text=True, errors="replace", timeout=120, check=True,
     )
     return parse_audio_levels(result.stderr)
 
@@ -49,7 +49,7 @@ def get_video_duration(input_path: Path) -> float:
         ],
         check=True,
         capture_output=True,
-        text=True,
+        text=True, errors="replace",
         timeout=120,
     )
     return float(result.stdout.strip())

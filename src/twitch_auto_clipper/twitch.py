@@ -154,7 +154,7 @@ def _download_section(
                *(["-e", f"{int(end)}s"] if end is not None else []), "-o", str(path), "--collision", "Overwrite",
                "-t", str(threads), *(["--bandwidth", str(max(1, rate_limit // 1024 // threads))] if rate_limit else [])]
     try:
-        subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True, timeout=3600)
+        subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace", check=True, timeout=3600)
     except (OSError, subprocess.SubprocessError) as error:
         detail = getattr(error, "stderr", "") or ""
         raise TwitchDownloadError(f"Echec du telechargement de la partie : {error} {detail[-300:]}") from error

@@ -33,3 +33,12 @@ class VideoTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+def test_text_subprocess_calls_never_crash_on_undecodable_output():
+    # A tool printing a byte cp1252 cannot decode (0x8f) killed the reader thread (2026-11-20).
+    from pathlib import Path
+    src = Path(__file__).resolve().parents[1] / "src" / "twitch_auto_clipper"
+    bad = [f"{p.name}:{i}" for p in src.glob("*.py")
+           for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+           if "text=True" in line and "errors=" not in line]
+    assert not bad, bad

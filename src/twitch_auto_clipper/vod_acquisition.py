@@ -329,6 +329,9 @@ class TwitchVODAcquisitionManager:
     ) -> str:
         """Close or reschedule a job after the pipeline; returns its new state."""
         with self._lock:
+            # A live part's acquisition carries its stream's id; its job is "<stream id>#p<n>".
+            stream_id = next((key for key, queued in self._jobs.items()
+                              if vod_id and queued.get("vod_id") and _file_id(queued) == vod_id), stream_id)
             self._claimed.discard(stream_id)
             job = self._jobs.get(stream_id)
             if job is None:

@@ -56,7 +56,9 @@ def test_a_live_stream_is_processed_in_parts_then_its_last_part_once_it_ends():
         assert (first.status, first.vod_id, first.keep_from, first.keep_until) == (
             "downloaded", "777p1", None, LIVE_PART_SECONDS - LIVE_PART_KEEP_LEAD)
         assert downloads[-1] == ("https://www.twitch.tv/videos/777", (0.0, LIVE_PART_SECONDS), "777p1")
-        manager.record_automation("s1#p1", "777p1", "completed")
+        # The pipeline records it under the acquisition's ids: the stream's, not the job's "s1#p1".
+        manager.record_automation(first.stream_id, first.vod_id, "completed")
+        assert manager.pending_jobs == 0
 
         clock[0] += timedelta(seconds=LIVE_PART_SECONDS)
         manager.process_cycle(cycle)
@@ -65,14 +67,14 @@ def test_a_live_stream_is_processed_in_parts_then_its_last_part_once_it_ends():
         assert downloads[-1][1] == (LIVE_PART_SECONDS - LIVE_PART_LEAD, 2 * LIVE_PART_SECONDS)  # with the lead-in
         assert (second.keep_from, second.keep_until) == (
             LIVE_PART_SECONDS - LIVE_PART_KEEP_LEAD, 2 * LIVE_PART_SECONDS - LIVE_PART_KEEP_LEAD)
-        manager.record_automation("s1#p2", "777p2", "completed")
+        manager.record_automation(second.stream_id, second.vod_id, "completed")
 
         # The stream ends: only what follows the last part is left, never the whole VOD again.
         assert [r.status for r in manager.process_cycle(MonitoringCycle(ended_streams=(live(),)))] == ["queued_part"]
         [last] = list(manager.acquire_due())
         assert last.vod_id == "777p3" and downloads[-1][1] == (2 * LIVE_PART_SECONDS - LIVE_PART_LEAD, None)
         assert (last.keep_from, last.keep_until) == (2 * LIVE_PART_SECONDS - LIVE_PART_KEEP_LEAD, None)
-        manager.record_automation("s1#p3", "777p3", "completed")
+        manager.record_automation(last.stream_id, last.vod_id, "completed")
         assert manager.pending_jobs == 0
         assert [r.status for r in manager.process_cycle(MonitoringCycle(ended_streams=(live(),)))] == ["already_processed"]
 

@@ -93,7 +93,7 @@ def download_twitch_chat(
         for attempt in (1, 2):
             try:
                 subprocess.run(
-                    command, check=True, capture_output=True, text=True,
+                    command, check=True, capture_output=True, text=True, errors="replace",
                     stdin=subprocess.DEVNULL,  # never waits for a keyboard answer
                     timeout=CHAT_DOWNLOAD_TIMEOUT_SECONDS,
                 )
