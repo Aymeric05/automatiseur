@@ -358,6 +358,7 @@ ones, and moves them to the entries.
 
 | Since | Change | Expected effect | Metric to watch | Verdict |
 |---|---|---|---|---|
+| 2026-11-21 | Fix (vod_acquisition.record_automation) : une partie de live traitee quitte la file (avant : restait reservee, bloquait le prechargement) ; Fix : errors="replace" sur les sous-processus texte | plus de workers inactifs, plus de VOD rendues | VOD rendues/24h, taille de la file | pending |
 | 2026-11-20 | Fix (trimming._settled_start) : un debut sur un mot de liaison (And, But, So...) remonte d'une phrase ; Fix (competitors.NOT_CLIP_CHANNELS) : Rupert Spira hors concurrents | moins de debuts en plein sujet ; donnees concurrents gaming propres | coherence du rapport | pending |
 | 2026-11-17 | MAX_QUEUED_JOBS 40 -> 50 (palier 3 de la montee Gemini) | moins de VOD jetees file pleine (38/24h), plus de candidats | VOD rendues/24h, jobs jetes, requetes par cle, file | pending |
 | 2026-11-17 | Fix (trimming._past_question) : une fin sur une question sans reponse recule a la phrase d'avant | plus de fins "What do we think about mid boss?" | coherence du rapport | pending |
@@ -403,6 +404,20 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-21 - parties de live jamais closes (workers a l'arret), fix
+
+- Gaming : coherence 4/4 (debut = declencheur, fin = chute/reaction). gaming_tight_start_v1 A 12/4 VOD,
+  B 12/7 (retention B 71.7 vs 39.0, perf 0.3 vs -0.1) : prometteur, on attend 20/6. Production : moments
+  "chat" 13 publies/6 reserve/5 jetes contre "transcript" 11/18/18 ; pas de nouveau test (semaine GTA).
+- IRL : coherence : 4 rendus anciens (11-18), 1 debut "And that's how..." deja couvert par le fix du 11-20.
+  irl_short_v1 A 3/1 VOD, B 8/3 : on attend. 1 seul rendu IRL en 24 h (GTA + blocage ci-dessous).
+- Debit 9 VOD/24h, 545 jobs jetes. Cause : record_automation cherchait le job d'une partie de live sous l'id
+  du stream (sans "#pN") : job jamais clos, reste "reserve" avec son audio ; 4 tels jobs = les 4 places de
+  prechargement, workers inactifs 14:51-17:00 (app/PC eteints aussi 01:23-10:30 et 17:30-22:08, coupure
+  reseau 22:10-23:48). Corrige + test. Transcription batched : 142 min/24h (623 avant), attente GPU 12 min.
+  Aussi : sortie d'outil non decodable (cp1252) tuait un thread lecteur : errors="replace" partout (test).
+  A suivre : VOD rendues/24h demain (attendu >> 9).
 
 ### 2026-11-20 - debuts sur "And..." corriges, faux concurrent retire, guide hebdo refait
 
