@@ -504,6 +504,12 @@ ones, and moves them to the entries.
 - Debit 8 VOD/24h, 54 jobs jetes (file pleine) ; ~30 renvois "Gemini indisponible" sur ~10 VOD, tous 503
   (surcharge Google, pas le quota : cle 2 peu utilisee, cle 3 a 0). Pas de hausse d'usage Gemini (VOD renvoyees).
 
+### 2026-11-21 - owner: the app is sometimes closed on purpose
+
+- The owner sometimes closes the app's window (or turns the PC off). Periods with no log are not a
+  bug: do not investigate them, do not add a watchdog that restarts the app. Count VODs per hour
+  the app actually ran when judging throughput.
+
 ### 2026-11-18 - GTA 6 launch week (owner): until 2026-11-26 00:00 UTC
 
 - launch_event.py: GTA 6 streams (Twitch category "Grand Theft Auto VI") are followed from 1000
