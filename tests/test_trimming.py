@@ -116,3 +116,5 @@ class TrimPromptTests(unittest.TestCase):
         with mock.patch.object(trimming, "_generate_json", return_value=("not json", None)) as call:
             trimming.trim_moments([{"start": 30.0, "end": 40.0}], SENTENCES)
         self.assertIn("question encore sans reponse", call.call_args.args[0])
+        # Nor start on an answer whose question is never heard (2026-11-22, both channels).
+        self.assertIn("ou la question est posee ou lue a voix haute", call.call_args.args[0])

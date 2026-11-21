@@ -90,6 +90,9 @@ def trim_moments(
         "debut d'une nouvelle scene : va jusqu'a la reponse ou la reaction qui la conclut. "
         "start ne tombe jamais sur une phrase qui en continue une autre (\"that means...\", "
         "\"and then...\", une suite de phrase) : remonte a la phrase qui pose le sujet. "
+        "Si le streamer repond a une question (\"I don't think I could...\"), start va a la "
+        "phrase ou la question est posee ou lue a voix haute ; si elle n'est jamais dite, "
+        "complete vaut false. "
         f"Duree entre {MIN_SECONDS:.0f} et {max_seconds:.0f} secondes, idealement entre {low:.0f} "
         f"et {high:.0f} secondes, mais un Short complet passe toujours avant un Short court. "
         + "".join(f"Regle observee sur les Shorts qui marchent : {rule} " for rule in guide.get("rules", []))

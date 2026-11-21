@@ -358,6 +358,7 @@ ones, and moves them to the entries.
 
 | Since | Change | Expected effect | Metric to watch | Verdict |
 |---|---|---|---|---|
+| 2026-11-22 | Fix (trimming prompt) : un Short qui commence sur une reponse remonte a la question posee/lue, sinon complete=false | moins de debuts sans contexte (2/8 le 11-22) | coherence du rapport | pending |
 | 2026-11-21 | Fix (vod_acquisition.record_automation) : une partie de live traitee quitte la file (avant : restait reservee, bloquait le prechargement) ; Fix : errors="replace" sur les sous-processus texte | plus de workers inactifs, plus de VOD rendues | VOD rendues/24h, taille de la file | pending |
 | 2026-11-20 | Fix (trimming._settled_start) : un debut sur un mot de liaison (And, But, So...) remonte d'une phrase ; Fix (competitors.NOT_CLIP_CHANNELS) : Rupert Spira hors concurrents | moins de debuts en plein sujet ; donnees concurrents gaming propres | coherence du rapport | pending |
 | 2026-11-17 | MAX_QUEUED_JOBS 40 -> 50 (palier 3 de la montee Gemini) | moins de VOD jetees file pleine (38/24h), plus de candidats | VOD rendues/24h, jobs jetes, requetes par cle, file | pending |
@@ -404,6 +405,17 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-22 - debit 19 VOD/24h (fix d'hier), debuts sur une reponse sans question
+
+- Gaming : coherence 3/4 ; 1 debute sur une reponse ("I don't think I could handle the job...") sans la
+  question. gaming_tight_start_v1 A 15/5 VOD, B 18/10 (retention 63.0 vs 40.7, perf 0.3 vs -0.2) : tres
+  prometteur, A doit atteindre 20/6. Pas de nouveau test (semaine GTA). Guide du 11-20 : prochain le 11-27.
+- IRL : coherence 3/4 ; 1 debute sur une reponse ("I think I could have better prepared...", 54 s). Meme defaut
+  sur les 2 chaines : regle du prompt de trim (start = la question posee/lue, sinon complete=false), test.
+  irl_short_v1 A 5/1 VOD, B 12/3 : on attend. Reserve IRL pleine (Just Chatting 6 pub/30 reserve/4 jetes).
+- Debit 19 VOD rendues/24h (9 hier) : fix des parties de live confirme ; 253 jobs jetes file pleine (545), file
+  13, 0 renvoi Gemini. Pas de palier Gemini (semaine GTA). A suivre : debuts sur une reponse, verdict tight_start.
 
 ### 2026-11-21 - parties de live jamais closes (workers a l'arret), fix
 
