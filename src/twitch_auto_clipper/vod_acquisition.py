@@ -401,6 +401,8 @@ class TwitchVODAcquisitionManager:
                 with self._lock:
                     self._jobs[stream_id]["vod_id"] = vod_id
                     self._save_state()
+            if job.get("window"):
+                self._fit_window(stream_id, job, vod_id)
             # A live part is processed as its own "VOD" (files, manifest, Shorts): "<vod id>p<n>".
             vod_id = _file_id({**job, "vod_id": vod_id})
             keep = _keep_window(job)
@@ -443,6 +445,25 @@ class TwitchVODAcquisitionManager:
             return _result(
                 stream, budget, "abandoned" if abandoned else "error", vod_id=vod_id, error=str(error)
             )
+
+    def _fit_window(self, stream_id: str, job: dict[str, Any], vod_id: str) -> None:
+        """Move a live part that starts past the VOD's end onto the VOD's last stretch.
+
+        Parts are cut on the time since the stream started, but a stream's cuts (disconnects)
+        are not in its VOD: the VOD can be hours shorter (xQc 2026-11-22: 8 h 36 of VOD for ~13 h
+        live), and a part past its end downloaded nothing, failing until abandoned.
+        """
+        vod = self.api_client.fetch_vod(vod_id)
+        length = vod.seconds if vod is not None else None
+        start, end = job["window"]
+        if not length or start < length:
+            return
+        span = (end - start) if end is not None else LIVE_PART_SECONDS
+        job["window"] = [max(0.0, length - span), None]
+        with self._lock:
+            if stream_id in self._jobs:
+                self._jobs[stream_id]["window"] = job["window"]
+                self._save_state()
 
     # ------------------------------------------------------------------
     # Job state (call with the lock held)

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import subprocess
+import tempfile
 from urllib.parse import urlparse
 
 
@@ -153,11 +154,16 @@ def _download_section(
     command = [cli, "videodownload", "--id", vod_id, "-q", "Audio", "-b", f"{int(start)}s",
                *(["-e", f"{int(end)}s"] if end is not None else []), "-o", str(path), "--collision", "Overwrite",
                "-t", str(threads), *(["--bandwidth", str(max(1, rate_limit // 1024 // threads))] if rate_limit else [])]
-    try:
-        subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace", check=True, timeout=3600)
-    except (OSError, subprocess.SubprocessError) as error:
-        detail = getattr(error, "stderr", "") or ""
-        raise TwitchDownloadError(f"Echec du telechargement de la partie : {error} {detail[-300:]}") from error
+    # Its own cache folder, always removed: a failed run left ~6 MB in %TEMP%\TwitchDownloader each time.
+    with tempfile.TemporaryDirectory(prefix="tdcli_") as cache:
+        try:
+            subprocess.run([*command, "--temp-path", cache], stdin=subprocess.DEVNULL, capture_output=True,
+                           text=True, errors="replace", check=True, timeout=3600)
+        except (OSError, subprocess.SubprocessError) as error:
+            detail = getattr(error, "stderr", "") or ""
+            # stderr ends with a .NET stack trace: its "Exception:" line says what went wrong.
+            detail = next((line.strip() for line in detail.splitlines() if "Exception:" in line), detail[-300:])
+            raise TwitchDownloadError(f"Echec du telechargement de la partie : {error} {detail[:300]}") from error
     if not path.is_file() or path.stat().st_size == 0:
         raise TwitchDownloadError(f"Partie de live telechargee mais introuvable : {path}")
     path.with_name(f"{path.stem}.offset").write_text(f"{int(start)}.000", encoding="utf-8")

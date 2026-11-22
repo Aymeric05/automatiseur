@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import json
 import os
+import re
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -40,6 +41,16 @@ class TwitchVOD:
     title: str
     broadcaster_login: str = ""
     broadcaster_name: str = ""
+    seconds: float | None = None  # length on Twitch now (still growing while live)
+
+
+def _duration_seconds(value: str | None) -> float | None:
+    """Helix duration ("8h36m37s") in seconds, None when absent or unreadable."""
+    match = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", value or "")
+    if not value or match is None:
+        return None
+    hours, minutes, seconds = (int(part or 0) for part in match.groups())
+    return float(hours * 3600 + minutes * 60 + seconds)
 
 
 class TwitchAPIClient:
@@ -134,6 +145,7 @@ class TwitchAPIClient:
                 title=item.get("title", ""),
                 broadcaster_login=item.get("user_login", ""),
                 broadcaster_name=item.get("user_name", ""),
+                seconds=_duration_seconds(item.get("duration")),
             )
         return None
 

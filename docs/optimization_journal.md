@@ -358,6 +358,7 @@ ones, and moves them to the entries.
 
 | Since | Change | Expected effect | Metric to watch | Verdict |
 |---|---|---|---|---|
+| 2026-11-23 | Fix (vod_acquisition._fit_window) : une partie de live qui commence apres la fin de la VOD (coupures du stream absentes de la VOD) prend ses 2 dernieres heures ; Fix (twitch._download_section) : cache TwitchDownloaderCLI par appel, supprime, erreur lisible | plus de parties en echec en boucle (5 streams le 11-22) | "Echec du telechargement de la partie" dans le log, VOD rendues/24h, Shorts en double entre parties | pending |
 | 2026-11-22 | Fix (trimming prompt) : un Short qui commence sur une reponse remonte a la question posee/lue, sinon complete=false | moins de debuts sans contexte (2/8 le 11-22) | coherence du rapport | pending |
 | 2026-11-21 | Fix (vod_acquisition.record_automation) : une partie de live traitee quitte la file (avant : restait reservee, bloquait le prechargement) ; Fix : errors="replace" sur les sous-processus texte | plus de workers inactifs, plus de VOD rendues | VOD rendues/24h, taille de la file | pending |
 | 2026-11-20 | Fix (trimming._settled_start) : un debut sur un mot de liaison (And, But, So...) remonte d'une phrase ; Fix (competitors.NOT_CLIP_CHANNELS) : Rupert Spira hors concurrents | moins de debuts en plein sujet ; donnees concurrents gaming propres | coherence du rapport | pending |
@@ -405,6 +406,19 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-23 - parties de live au-dela de la fin de la VOD (5 gros streams bloques), fix
+
+- Gaming : coherence 4/4 correcte. gaming_tight_start_v1 A 18/7 VOD, B 25/12 (perf 0.4 vs -0.2, retention
+  48.8 vs 40.2) : B toujours devant, A doit atteindre 20 mesures. Production : WoW 2 pub/9 res/11 jetes
+  (rendus surtout jetes malgre +0.9 appris), GTA 28/12/3. Pas de nouveau test (semaine GTA). Guide le 11-27.
+- IRL : coherence 3/4 ; 1 debut en plein sujet ("It's back to being a full solid...", 20 s), cas isole.
+  irl_short_v1 A 7/2 VOD, B 17/4 (retention 82.5 vs 56.4) : on attend. Just Chatting 5 pub/29 res/30 jetes.
+- Debit 16 VOD/24h, 234 jobs jetes file pleine, 20 renvois Gemini tous en 503 (pas un bug). Bug : les parties
+  de live sont coupees sur l'heure murale, mais les coupures du stream ne sont pas dans la VOD (xQc : 8 h 36
+  de VOD pour ~13 h de live) : partie au-dela de la fin = telechargement vide, echec en boucle (xQc, HasanAbi,
+  sodapoppin, pokimane, loltyler1). Fix : une partie qui commence apres la fin de la VOD prend ses 2 dernieres
+  heures (duree Helix) ; cache TwitchDownloaderCLI par appel, toujours supprime (229 Mo laisses dans %TEMP%).
 
 ### 2026-11-22 - debit 19 VOD/24h (fix d'hier), debuts sur une reponse sans question
 
@@ -506,16 +520,6 @@ ones, and moves them to the entries.
   Cle 3 a 1 requete : sous la cible, mais le palier d'hier n'a pas encore un jour de mesure ; montee suivante
   (TOP_STREAMER_CLIP_BUDGET +5) au prochain run si le debit ne remonte pas seul. Debit 8 VOD/24h, 45 jobs jetes.
 
-### 2026-11-13 - fins sur une question corrigees dans le code, guide hebdo refait
-
-- Gaming : coherence 1/4 finit sur une question ("can they break?"), 1/4 commence en plein decompte.
-  Garde-fou ajoute (trimming._past_question, test) : une fin sur "?" va jusqu'a la reponse si elle suit
-  en moins de 2 s. Guide refait (284 Shorts, 9 chaines). Aucun verdict (gaming_interaction_v1 B n=5/1 VOD).
-- IRL : coherence 1/4 finit sur une question ("Is my candle cooked now?"), meme correctif. Guide refait
-  (215 Shorts, 7 chaines). irl_dialogue_v1 A 29/5 VOD, B 17/3 ; irl_cold_open_v1 A 6 / B 10 : on attend.
-- Debit 8 VOD/24h, 54 jobs jetes (file pleine) ; ~30 renvois "Gemini indisponible" sur ~10 VOD, tous 503
-  (surcharge Google, pas le quota : cle 2 peu utilisee, cle 3 a 0). Pas de hausse d'usage Gemini (VOD renvoyees).
-
 ### 2026-11-21 - owner: the app is sometimes closed on purpose
 
 - The owner sometimes closes the app's window (or turns the PC off). Periods with no log are not a
@@ -547,7 +551,7 @@ ones, and moves them to the entries.
   app follows the processing after each upload (youtube._wait_for_processing): an abandoned one is an
   upload error, the Short is kept and sent again later. Both entries relabelled in published_shorts.json.
 
-### earlier (2026-10-23 to 2026-11-12)
+### earlier (2026-10-23 to 2026-11-13)
 
 - 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
   gaming_length_v1 (45-90s, gagne le 11-01), 10-26 irl_length_v1 (perdu le 11-03). Bugs de coupe
@@ -573,3 +577,5 @@ ones, and moves them to the entries.
   11-11 : doublons publies (moment re-rendu apres 503) corriges ; regle de trim "pas de fin sur une question".
   11-12 : Shorts IRL de 126-180 s (trim refuse) plus rendus ; les 3 doublons LiveActions! sont geres par le
   proprietaire lui-meme : ne plus les proposer ni les rappeler.
+  11-13 : fins sur une question (garde-fou trimming._past_question), guide hebdo refait ; 8 VOD/24h, renvois
+  Gemini tous en 503.

@@ -44,6 +44,7 @@ def test_a_live_stream_is_processed_in_parts_then_its_last_part_once_it_ends():
 
         client = Mock()
         client.find_vod_for_stream.return_value = TwitchVOD("777", "s1", "b1", "title")
+        client.fetch_vod.return_value = None  # length unknown: windows kept as cut
         manager = TwitchVODAcquisitionManager(api_client=client, input_dir=root / "in", state_path=root / "s.json",
                                               downloader=download, clock=lambda: clock[0], live_parts=True)
         cycle = MonitoringCycle(streams=(live(),))
@@ -92,3 +93,66 @@ def test_without_live_clipping_a_stream_waits_for_its_end_as_before():
         assert manager.process_cycle(MonitoringCycle(streams=(live(),))) == ()
         assert [r.status for r in manager.process_cycle(MonitoringCycle(ended_streams=(live(),)))] == ["queued"]
         assert list(manager._jobs) == ["s1"]
+
+
+def test_a_live_part_past_the_end_of_a_shorter_vod_takes_its_last_stretch():
+    """A stream's cuts are not in its VOD: a part cut on the wall clock can start past the VOD's end."""
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        clock = [STARTED + timedelta(seconds=LIVE_PART_SECONDS + LIVE_LAG_SECONDS)]
+        downloads = []
+
+        def download(url, folder, section=None, name=None):
+            downloads.append(section)
+            path = folder / f"{name}_audio.mp4"
+            path.write_bytes(b"audio")
+            return path
+
+        client = Mock()
+        client.find_vod_for_stream.return_value = TwitchVOD("777", "s1", "b1", "title")
+        client.fetch_vod.return_value = TwitchVOD("777", "s1", "b1", "title", seconds=LIVE_PART_SECONDS / 2)
+        manager = TwitchVODAcquisitionManager(api_client=client, input_dir=root / "in", state_path=root / "s.json",
+                                              downloader=download, clock=lambda: clock[0], live_parts=True)
+        manager.process_cycle(MonitoringCycle(streams=(live(),)))
+        [first] = list(manager.acquire_due())
+        assert downloads[-1] == (0.0, LIVE_PART_SECONDS)  # starts inside the VOD: kept as cut
+        manager.record_automation(first.stream_id, first.vod_id, "completed")
+
+        clock[0] += timedelta(seconds=LIVE_PART_SECONDS)
+        client.fetch_vod.return_value = TwitchVOD("777", "s1", "b1", "title", seconds=0.75 * LIVE_PART_SECONDS)  # still short of 2 h
+        manager.process_cycle(MonitoringCycle(streams=(live(),)))
+        [second] = list(manager.acquire_due())
+        assert second.status == "downloaded"
+        assert downloads[-1] == (0.0, None)  # the VOD's last 2 hours (here all of it), not 2-4 h
+
+
+def test_helix_durations_are_read_in_seconds():
+    from twitch_auto_clipper.twitch_api import _duration_seconds
+
+    assert _duration_seconds("8h36m37s") == 30997.0
+    assert _duration_seconds("59s") == 59.0
+    assert _duration_seconds("") is None and _duration_seconds("bad") is None
+
+
+def test_a_failed_part_download_names_the_error_and_leaves_no_cache(monkeypatch):
+    import os
+    import subprocess
+
+    import pytest
+
+    from twitch_auto_clipper import twitch, twitch_chat
+
+    seen = []
+
+    def run(command, **_):
+        cache = command[command.index("--temp-path") + 1]
+        seen.append(cache)
+        assert os.path.isdir(cache)
+        raise subprocess.CalledProcessError(1, command, stderr="Unhandled exception.\n ---> System.Exception: Failed to finalize video.\n   at X")
+
+    monkeypatch.setattr(twitch_chat, "find_twitch_downloader_cli", lambda: "cli.exe")
+    monkeypatch.setattr(twitch.subprocess, "run", run)
+    with tempfile.TemporaryDirectory() as directory:
+        with pytest.raises(twitch.TwitchDownloadError, match="Failed to finalize video"):
+            twitch._download_section("777", Path(directory), (0.0, 60.0), "777p1", None)
+    assert seen and not os.path.exists(seen[0])
