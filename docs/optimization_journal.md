@@ -422,7 +422,7 @@ ones, and moves them to the entries.
 - Debit 6 VOD/24h : app fermee 00:01-10:29 (voulu) et 3 cles saturees a 22:34 le 11-23 (soir : pas de palier).
   Bug : pendant une pause Gemini, chaque worker reprenait depuis sa liste perimee les VOD qu'un autre venait de
   remettre en attente (3 tours en 1 min, 96 "renvois" gonfles ; une VOD en erreur pouvait bruler ses essais).
-  Fix + test. Non commite et pas de moi : profanity/vod_pipeline (MAX_SWEARS) en cours cote proprietaire.
+  Fix + test. (Commit 3274ae2 d'une autre session : >3 gros mots = moment jete, avertissement YouTube.)
 
 ### 2026-11-23 - parties de live au-dela de la fin de la VOD (5 gros streams bloques), fix
 
