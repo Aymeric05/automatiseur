@@ -214,6 +214,20 @@ class VODAcquisitionTests(unittest.TestCase):
         manager.record_automation(taken[0], f"vod-{taken[0]}", "error")  # retried later: free again
         self.assertEqual(manager.record_automation(taken[1], f"vod-{taken[1]}", "completed"), "done")
 
+    def test_a_worker_never_retakes_a_vod_another_one_just_sent_back_to_wait(self) -> None:
+        self.client.find_vod_for_stream.side_effect = lambda broadcaster, stream_id: vod(f"vod-{stream_id}", stream_id)
+        manager = self.manager()
+        for stream_id in ("a", "b", "c"):
+            manager.process_cycle(MonitoringCycle(ended_streams=(monitored_stream(stream_id),)))
+            manager.prefetch(3)
+        second = manager.acquire_due(download=False)
+        one = next(second).stream_id  # its list of due jobs is made here
+        two = next(manager.acquire_due(download=False)).stream_id
+        manager.record_automation(two, f"vod-{two}", "waiting_gemini", retry_at=self.clock.now + timedelta(minutes=10))
+        rest = [a.stream_id for a in second]
+        self.assertNotIn(two, rest)  # sent back to wait: not taken again from the old list
+        self.assertEqual(sorted([one, two, *rest]), ["a", "b", "c"])
+
     def test_top_streamer_gets_the_top_budget_and_carries_its_peak(self) -> None:
         manager = TwitchVODAcquisitionManager(
             api_client=self.client, input_dir=self.root / "input", state_path=self.root / "state" / "vods.json",

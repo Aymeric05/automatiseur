@@ -267,6 +267,9 @@ class TwitchVODAcquisitionManager:
         for *_, stream_id in due:
             with self._lock:
                 job = {} if stream_id in self._claimed else dict(self._jobs.get(stream_id) or {})
+                # The list is a snapshot: another worker may have sent this job back to wait meanwhile.
+                if job and _parse(job["next_attempt_at"]) > self._clock():
+                    job = {}
                 if job:  # another worker never takes it until record_automation
                     self._claimed.add(stream_id)
             if job:

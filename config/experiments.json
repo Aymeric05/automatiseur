@@ -1,18 +1,6 @@
 {
   "experiments": [
     {
-      "id": "gaming_tight_start_v1",
-      "channel": "gaming",
-      "started": "2026-11-16",
-      "description": "Le sujet est pose des les premieres secondes, sans introduction calme (Gemini 10-30 et 11-01 : hits concurrents = accroche/enjeu <3 s, flops = debut calme ; notre pire Short demarre lentement).",
-      "b": {
-        "trim_rules": [
-          "Le sujet est pose des les 3 premieres secondes (question, enjeu ou action deja lancee) : pas d'introduction calme.",
-          "Si le declencheur arrive tard, commence a la phrase juste avant lui, jamais plus tot."
-        ]
-      }
-    },
-    {
       "id": "irl_short_v1",
       "channel": "irl",
       "started": "2026-11-17",

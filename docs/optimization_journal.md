@@ -33,6 +33,10 @@ Shorts and channels), the date seen first and last. Strengthen, weaken or remove
 evidence comes; turn a strong line into an A/B test, then into the app's default.
 
 ### LiveActions! (gaming)
+- VERDICT gaming_tight_start_v1 (2026-11-24) : B gagne (perf 0.3 vs -0.1, retention 44.2 vs 40.1, vues 969 vs
+  518 ; B 31 Shorts/16 VOD, A 22/10 ; B devant chaque jour depuis le 11-21) : sujet pose en <3 s = defaut.
+- Production 7 j (2026-11-24) : World of Warcraft 0 pub/3 res/10 jetes (rendus pour rien malgre +0.9 appris),
+  Fortnite 3/1/7 ; GTA V 38/14/3. A surveiller apres la semaine GTA avant de couper WoW.
 - Concurrents (2026-11-20, 8 chaines apres retrait de Rupert Spira, faux "buddha") : hauts = CaseOh dans un
   role ("Can CaseOh Slay As...?", 3 des 10 derniers hauts), miniature webcam + jeu avec 1 mot (SLAY!) ;
   classements dans les deux tiers. Production 7 j (semaine GTA) : source chat 11 pub/7 res/5 jetes vs
@@ -358,6 +362,7 @@ ones, and moves them to the entries.
 
 | Since | Change | Expected effect | Metric to watch | Verdict |
 |---|---|---|---|---|
+| 2026-11-24 | Fix (vod_acquisition.acquire_due) : un worker ne reprend plus, depuis sa liste perimee, une VOD qu'un autre vient de remettre en attente (Gemini) ou en nouvel essai | plus de VOD relancees toutes les 20 s pendant une pause Gemini (3 tours/minute le 11-24), essais d'une VOD en erreur plus brules d'un coup | "VODs sent back to wait for Gemini" du rapport, "abandonnee apres" dans le log | pending |
 | 2026-11-23 | Fix (vod_acquisition._fit_window) : une partie de live qui commence apres la fin de la VOD (coupures du stream absentes de la VOD) prend ses 2 dernieres heures ; Fix (twitch._download_section) : cache TwitchDownloaderCLI par appel, supprime, erreur lisible | plus de parties en echec en boucle (5 streams le 11-22) | "Echec du telechargement de la partie" dans le log, VOD rendues/24h, Shorts en double entre parties | pending |
 | 2026-11-22 | Fix (trimming prompt) : un Short qui commence sur une reponse remonte a la question posee/lue, sinon complete=false | moins de debuts sans contexte (2/8 le 11-22) | coherence du rapport | pending |
 | 2026-11-21 | Fix (vod_acquisition.record_automation) : une partie de live traitee quitte la file (avant : restait reservee, bloquait le prechargement) ; Fix : errors="replace" sur les sous-processus texte | plus de workers inactifs, plus de VOD rendues | VOD rendues/24h, taille de la file | pending |
@@ -367,7 +372,7 @@ ones, and moves them to the entries.
 | 2026-11-17 | A/B irl_short_v1 : Shorts IRL 15-25 s (ideal_seconds + trim_rules) | perf/retention meilleures (appris <25s +0.6, >40s -0.7) | retention_pct, perf of B vs A | pending (0 measured) |
 | 2026-11-16 | VOD_WORKERS 2 -> 3 (palier 2 de la montee Gemini) | plus de VOD rendues/24h (12, objectif 20), cles 2/3 mieux utilisees (136 requetes/~360) | VOD rendues/24h, requetes par cle, file, charge du PC | pending |
 | 2026-11-16 | Fix (trimming._settled_start + prompt) : un debut sur une phrase en minuscule (suite de la precedente) remonte d'une phrase | moins de debuts en plein sujet ("when the deal is done...", 1/4 a 2/4 par jour depuis le 11-13) | coherence du rapport | pending |
-| 2026-11-16 | A/B gaming_tight_start_v1 : sujet pose dans les 3 premieres secondes (trim_rules) | retention meilleure (hits concurrents = enjeu <3 s) | retention_pct, perf of B vs A | pending (0 measured) |
+| 2026-11-16 | A/B gaming_tight_start_v1 : sujet pose dans les 3 premieres secondes (trim_rules) | retention meilleure (hits concurrents = enjeu <3 s) | retention_pct, perf of B vs A | **B wins** (2026-11-24, perf 0.3 vs -0.1, retention 44.2 vs 40.1) - now default (experiments.py DEFAULTS), removed |
 | 2026-11-15 | TOP_STREAMER_CLIP_BUDGET 20 -> 25 (palier 1 de la montee Gemini) | plus de candidats par VOD de streamer top, cles 2/3 mieux utilisees | VOD rendues/24h, requetes Gemini par cle, heure de saturation, taille de la file | pending |
 | 2026-11-15 | Fix (trimming._settled_end + highlights.split_sentences) : une fin qui traine ("... Oh She", "... J of K And...") s'arrete au dernier segment Whisper complet de la phrase | plus de fins en pleine phrase (2/4 irl le 11-14) | coherence du rapport | pending |
 | 2026-11-14 | Fix (trimming._settled_end) : une fin sur un fragment d'un seul mot sans ponctuation (debut de la scene suivante) s'arrete a la phrase d'avant | plus de fins "There's no quest. Oh" (gaming 11-14), "Okay. Tell" (11-08) | coherence du rapport | pending |
@@ -406,6 +411,18 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-24 - verdict gaming_tight_start_v1 (B adopte), VOD reprises par un autre worker, fix
+
+- Gaming : coherence 3/4 (fins "Oh, wait." / "Oh, God, look at that." sur une nouvelle reaction, a suivre).
+  gaming_tight_start_v1 : B gagne (perf 0.3 vs -0.1, retention 44.2 vs 40.1, 31/16 VOD vs 22/10) : par defaut.
+  Pas de nouveau test (semaine GTA jusqu'au 11-26). WoW 0 pub/3 res/10 jetes. Guide hebdo le 11-27.
+- IRL : coherence 4/4 correcte. irl_short_v1 A 8/3 VOD, B 26/6 (retention 76.2 vs 70.0, perf -0.4 vs -0.6) :
+  A doit atteindre 20/6. Source emotion 0 pub/7 res/6 jetes.
+- Debit 6 VOD/24h : app fermee 00:01-10:29 (voulu) et 3 cles saturees a 22:34 le 11-23 (soir : pas de palier).
+  Bug : pendant une pause Gemini, chaque worker reprenait depuis sa liste perimee les VOD qu'un autre venait de
+  remettre en attente (3 tours en 1 min, 96 "renvois" gonfles ; une VOD en erreur pouvait bruler ses essais).
+  Fix + test. Non commite et pas de moi : profanity/vod_pipeline (MAX_SWEARS) en cours cote proprietaire.
 
 ### 2026-11-23 - parties de live au-dela de la fin de la VOD (5 gros streams bloques), fix
 
@@ -509,17 +526,6 @@ ones, and moves them to the entries.
 - Debit 11 VOD/24h (8 hier), 45 jobs jetes ; renvois Gemini = 503 uniquement, cle 3 a ~13 requetes.
   Palier 1 : TOP_STREAMER_CLIP_BUDGET 20 -> 25, a mesurer 24 h avant le palier suivant (VOD_WORKERS).
 
-### 2026-11-14 - fins sur un fragment de la scene suivante corrigees
-
-- Gaming : coherence 2/4 mal finies (WoW "There's no quest. Oh" : fragment de la scene suivante ; WoW
-  89 s finit en plein combat). Garde-fou ajoute (trimming._settled_end, test). Aucun verdict :
-  gaming_interaction_v1 A 25/5 VOD, B 8/2. Pas de nouveau test (aucune ligne Knowledge assez forte).
-- IRL : coherence 1/4 commence en plein sujet ("In the UK, that means..."), les autres correctes. Aucun
-  verdict : irl_dialogue_v1 A 33/5, B 22/4 VOD ; irl_cold_open_v1 A 10/2, B 15/3 (retention B incoherente, peu de donnees).
-- Gemini : depuis la relance de 20h30 (5 essais sur 503), 2 VOD renvoyees pour 18 pipelines finis (54 avant).
-  Cle 3 a 1 requete : sous la cible, mais le palier d'hier n'a pas encore un jour de mesure ; montee suivante
-  (TOP_STREAMER_CLIP_BUDGET +5) au prochain run si le debit ne remonte pas seul. Debit 8 VOD/24h, 45 jobs jetes.
-
 ### 2026-11-21 - owner: the app is sometimes closed on purpose
 
 - The owner sometimes closes the app's window (or turns the PC off). Periods with no log are not a
@@ -551,8 +557,9 @@ ones, and moves them to the entries.
   app follows the processing after each upload (youtube._wait_for_processing): an abandoned one is an
   upload error, the Short is kept and sent again later. Both entries relabelled in published_shorts.json.
 
-### earlier (2026-10-23 to 2026-11-13)
+### earlier (2026-10-23 to 2026-11-14)
 
+- 11-14 : fins sur un fragment de la scene suivante ("There's no quest. Oh") corrigees (_settled_end).
 - 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
   gaming_length_v1 (45-90s, gagne le 11-01), 10-26 irl_length_v1 (perdu le 11-03). Bugs de coupe
   corriges (fin non recalee sans Gemini, KeyError 'start', plafond 58s). 10-27/28 (proprietaire) :

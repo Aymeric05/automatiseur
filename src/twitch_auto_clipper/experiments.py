@@ -25,7 +25,13 @@ CONFIG = Path(__file__).resolve().parents[2] / "config" / "experiments.json"
 DEFAULTS: dict[str, dict[str, Any]] = {
     # gaming_length_v1 (2026-10-24 to 2026-11-01): longer Shorts retained clearly better
     # (69.3% vs 61.7%, perf tied) once both variants reached 20+ measured Shorts.
-    "gaming": {"ideal_seconds": [45, 90]},
+    # gaming_tight_start_v1 (2026-11-16 to 2026-11-24): subject set in the first seconds, perf 0.3 vs
+    # -0.1, retention 44.2% vs 40.1% (B 31 Shorts / 16 VODs, A 22 / 10).
+    "gaming": {"ideal_seconds": [45, 90], "trim_rules": [
+        "Le sujet est pose des les 3 premieres secondes (question, enjeu ou action deja lancee) : "
+        "pas d'introduction calme.",
+        "Si le declencheur arrive tard, commence a la phrase juste avant lui, jamais plus tot.",
+    ]},
     # Owner's decision (2026-11-12): political commentary does worst on the big IRL clip channels
     # (0.19-0.26 times their median views) and ours (HasanAbi monologues ending mid-sentence).
     "irl": {"selection_rules": [
