@@ -32,4 +32,14 @@ def test_a_swear_word_shown_in_the_stream_is_blurred_and_the_rest_left_readable(
 
         frame = Path(directory) / "frame.png"
         subprocess.run(["ffmpeg", "-v", "error", "-ss", "1", "-i", str(video), "-frames:v", "1", str(frame)], check=True)
-        assert any("NICE" in text for text in _ocr()(str(frame)).txts)  # the rest of the picture kept
+        read = " ".join(_ocr()(str(frame)).txts)
+        assert "NICE" in read  # the rest of the picture kept
+        assert "WHAT" in read and "THE" in read  # and the rest of the swearing line: only the word is blurred
+
+
+def test_only_the_swear_word_of_a_word_read_without_spaces_is_blurred():
+    from twitch_auto_clipper.onscreen import _swear_spans
+
+    assert _swear_spans("WHATTHEFUCK") == [(7, 11)]
+    assert _swear_spans("fucking") == [(0, 7)]  # the whole word, not just its stem
+    assert _swear_spans("Gettin'") == []
