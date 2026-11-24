@@ -373,8 +373,11 @@ class VODShortsGenerator:
         duration_probe: Callable[[Path], float] | None = None,
         before: float = 0.5,  # candidates are sentence-aligned: keep a short breath only
         after: float = 1.0,
+        text_blurrer: Callable[[Path, tuple[str, ...]], int] | None = None,
     ) -> None:
         self.output_dir = output_dir
+        # Swear words written in the stream's picture (game subtitles, chat): blurred (onscreen.py).
+        self.text_blurrer = text_blurrer
         self._ffmpeg_runner = ffmpeg_runner or self._run_ffmpeg
         self._filter_builder = filter_builder or _build_vertical_filter_zoomed_out
         self._duration_probe = duration_probe or get_video_duration
@@ -572,6 +575,11 @@ class VODShortsGenerator:
             temporary_path.replace(output_path)
             if item.get("clean_voices"):  # loud music under a good moment: the voices only
                 music.keep_voices_only(output_path)
+            if self.text_blurrer is not None:
+                try:
+                    self.text_blurrer(output_path, VIDEO_ENCODER)
+                except (subprocess.SubprocessError, OSError, ImportError) as error:
+                    raise ShortsGenerationError(f"texte a l'ecran non verifie : {error}") from error
         except (ShortsGenerationError, subprocess.CalledProcessError, OSError, ValueError) as error:
             # ValueError/OSError also cover a VOD stream that cannot be resolved.
             self._remove_quietly(temporary_path)

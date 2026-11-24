@@ -16,6 +16,7 @@ dependencies = [
 	"yt-dlp>=2024.3.10",
 	"faster-whisper>=1.0.0",
 	"Pillow>=10.0.0",  # hook overlay with color emojis
+	"rapidocr>=3.0",  # swear words written in the stream's picture, blurred (onscreen.py)
 ]
 
 [project.optional-dependencies]

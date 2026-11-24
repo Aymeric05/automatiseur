@@ -24,6 +24,7 @@ from .competitors import refresh_competitors
 from .focus import GAMING_CHANNEL, IRL_CHANNEL, find_focus, scene_cuts, still_share
 from .speakers import media_speech
 from . import launch_event, tiktok
+from .onscreen import blur_profane_text
 from .transcription import transcribe_video
 from .trimming import trim_moments
 from .streamer_lists import load_streamer_list, load_top_streamers
@@ -800,7 +801,7 @@ def main() -> int:
                 model=args.gemini_model,
                 gemini_daily_limit=daily_gemini,
             ),
-            shorts_generator=VODShortsGenerator(output_dir),
+            shorts_generator=VODShortsGenerator(output_dir, text_blurrer=blur_profane_text),
             output_dir=output_dir,
             video_source=_twitch_video,  # no full VOD video on disk
             delete_sources_on_success=True,  # audio and chat, once the VOD is completed
