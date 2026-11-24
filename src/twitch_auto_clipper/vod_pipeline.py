@@ -25,7 +25,7 @@ from .competitors import format_guide
 from .focus import IRL_CATEGORIES, short_channel
 from .highlights import EXCITEMENT_DB, _overlap_ratio, expand_moment, split_sentences
 from .trimming import MAX_SECONDS, snap_ends
-from .profanity import has_slur
+from .profanity import MAX_SWEARS, has_slur, swear_count
 from .video import audio_levels
 from .shorts_metadata import ShortMetadata, ShortMetadataError, build_short_metadata, clip_transcript_text
 from .vod_acquisition import (
@@ -254,13 +254,14 @@ class VODAutomationPipeline:
                 if (low is None or float(moment["start"]) >= low) and (high is None or float(moment["start"]) < high)
             ))
         # Only the moments Gemini found worth a Short are rendered and published;
-        # a moment with a slur is dropped (swear words are only muted).
+        # a moment with a slur, or with more than MAX_SWEARS swear words, is dropped (a few are muted).
         segments = self._load_segments(processing.transcript_path)
 
         def has_slurs(item: dict[str, Any]) -> bool:
             start, end = float(item.get("start", 0)), float(item.get("end", 0))
             spoken = clip_transcript_text(segments, start - 1.0, end + 2.0)  # with the render margins
-            return has_slur(spoken) or has_slur(str(item.get("gemini_hook") or ""))
+            return (has_slur(spoken) or has_slur(str(item.get("gemini_hook") or ""))
+                    or swear_count(spoken) > MAX_SWEARS)
 
         sentences = split_sentences(segments)
 

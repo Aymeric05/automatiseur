@@ -15,12 +15,19 @@ _SLURS = r"n[i1]gg(?:a|er|uh)s?|f[a4]g(?:g[o0]t)?s?|retard(?:ed|s)?|trann(?:y|ie
 # Lookarounds instead of \b, so that Whisper's own "f***ing" is caught too.
 PROFANITY = re.compile(rf"(?<![\w*])(?:{_SWEARS}|{_SLURS})(?![\w*])", re.IGNORECASE)
 SLURS = re.compile(rf"(?<![\w*])(?:{_SLURS})(?![\w*])", re.IGNORECASE)
-MUTE_PADDING = 0.15  # seconds muted around a word: Whisper's word times are approximate
+MUTE_PADDING = 0.3  # seconds muted around a word: Whisper's word times are approximate (0.15 let some through)
+# More swear words than this in a moment: dropped, not muted (a CaseOh GTA 6 Short with ~12 of them in
+# 46 s got the LiveActions! channel a YouTube warning, 2026-11-23).
+MAX_SWEARS = 3
 
 
 def censor(text: str) -> str:
     """Replace every swear word by as many asterisks."""
     return PROFANITY.sub(lambda match: "*" * len(match.group()), text)
+
+
+def swear_count(text: str) -> int:
+    return len(PROFANITY.findall(text))
 
 
 def has_slur(text: str) -> bool:

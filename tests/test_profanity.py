@@ -23,9 +23,17 @@ class ProfanityTests(unittest.TestCase):
             {"word": " fuck!", "start": 10.4, "end": 10.8},
             {"word": " shit", "start": 30.0, "end": 30.4},  # outside the clip
         ]}]
-        self.assertEqual(profane_intervals(segments, 10.0, 20.0), [(0.25, 0.95)])
+        self.assertEqual(profane_intervals(segments, 10.0, 20.0), [(0.1, 1.1)])  # 0.3 s around the word
         self.assertEqual(profane_intervals(None, 0.0, 5.0), [])
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_a_moment_full_of_swear_words_is_counted_to_be_dropped():
+    from twitch_auto_clipper.profanity import MAX_SWEARS, swear_count
+
+    warned = "Shit! Shit! Move! You're fucking playing, where the fuck you got my money? Thank you, bitch! Oh, fuck."
+    assert swear_count(warned) > MAX_SWEARS
+    assert swear_count("What the hell, that was crazy. Oh shit.") <= MAX_SWEARS
