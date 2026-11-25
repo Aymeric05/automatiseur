@@ -413,6 +413,18 @@ ones, and moves them to the entries.
 
 ## Entries
 
+### 2026-11-25 - aucun bug, app fermee la nuit, attente fin semaine GTA
+
+- Gaming : coherence 4/4 acceptable (rant WoW, gank, jeu yeux fermes, San Marino). Aucun test en cours ;
+  le prochain part apres la semaine GTA (fin 11-26 00:00 UTC), guide hebdo le 11-27. WoW 0 pub/7 res/10
+  jetes, Rainbow Six 0/2/4 : rendus surtout jetes, a confirmer hors semaine GTA.
+- IRL : coherence 4/4 acceptable (lecture d'un document Ethan Klein qui finit en liste, transcription brouillee).
+  irl_short_v1 A 12/4 VOD, B 32/8 (perf -0.5 vs -0.3, retention 72.8 vs 64.0) : on attend A 20/6.
+  >40 s : 9 pub/2 res/11 jetes, coherent avec le point appris -0.5.
+- Debit 12 VOD/24h pour ~14 h de marche (app fermee 23:42-10:25, voulu) : rythme ~20/24h. 241 jobs jetes
+  file pleine, 6 renvois Gemini (503/504). Cle 4 vue dans le quota. Rendu 19.7 min pour 11 Shorts (floutage
+  OCR des gros mots) : a surveiller. Pas de palier Gemini (semaine GTA).
+
 ### 2026-11-24 - verdict gaming_tight_start_v1 (B adopte), VOD reprises par un autre worker, fix
 
 - Gaming : coherence 3/4 (fins "Oh, wait." / "Oh, God, look at that." sur une nouvelle reaction, a suivre).
@@ -516,17 +528,6 @@ ones, and moves them to the entries.
 - Debit 12 VOD/24h (11 hier), 65 jobs jetes ; Gemini ~136/360 requetes, cle 3 a 5, renvois = 503/timeout.
   Palier 2 : VOD_WORKERS 2 -> 3, a mesurer 24 h (recul si le PC ne suit pas).
 
-### 2026-11-15 - fins IRL en pleine phrase, palier Gemini 1
-
-- Gaming : coherence 4/4 acceptables (1 debut en plein sujet "Oh Well, whatever"). gaming_interaction_v1
-  A 28/7 VOD, B 15/6 : on attend (B < 20). Pas de nouveau test (aucune ligne Knowledge assez forte).
-- IRL : coherence 2/4 finissent en pleine phrase ("... Oh She", "... J of K And...") malgre le correctif
-  d'hier (phrase de plusieurs mots sans ponctuation). Corrige : la fin recule au dernier segment Whisper
-  complet (test). Aucun verdict : irl_dialogue_v1 5 VOD chacun (B en retrait : retention 33 vs 72) ;
-  irl_cold_open_v1 A 2 VOD. Rapport : retention 0 (pas encore de chiffre YouTube) exclue des medianes.
-- Debit 11 VOD/24h (8 hier), 45 jobs jetes ; renvois Gemini = 503 uniquement, cle 3 a ~13 requetes.
-  Palier 1 : TOP_STREAMER_CLIP_BUDGET 20 -> 25, a mesurer 24 h avant le palier suivant (VOD_WORKERS).
-
 ### 2026-11-21 - owner: the app is sometimes closed on purpose
 
 - The owner sometimes closes the app's window (or turns the PC off). Periods with no log are not a
@@ -558,7 +559,7 @@ ones, and moves them to the entries.
   app follows the processing after each upload (youtube._wait_for_processing): an abandoned one is an
   upload error, the Short is kept and sent again later. Both entries relabelled in published_shorts.json.
 
-### earlier (2026-10-23 to 2026-11-14)
+### earlier (2026-10-23 to 2026-11-15)
 
 - 11-14 : fins sur un fragment de la scene suivante ("There's no quest. Oh") corrigees (_settled_end).
 - 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
@@ -587,3 +588,5 @@ ones, and moves them to the entries.
   proprietaire lui-meme : ne plus les proposer ni les rappeler.
   11-13 : fins sur une question (garde-fou trimming._past_question), guide hebdo refait ; 8 VOD/24h, renvois
   Gemini tous en 503.
+  11-15 : fins IRL "... Oh She" corrigees (dernier segment Whisper complet) ; palier Gemini 1
+  (TOP_STREAMER_CLIP_BUDGET 20 -> 25).
