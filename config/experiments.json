@@ -1,17 +1,26 @@
 {
   "experiments": [
     {
-      "id": "irl_short_v1",
-      "channel": "irl",
-      "started": "2026-11-17",
-      "description": "Shorts IRL plus courts (15-25 s) : points appris <25s +0.6 / >40s -0.7 ; production 7 j >40s 1 publie/11 reserve/7 jetes ; nos Shorts IRL 34 s pour un guide 15-30 s. irl_length_v1 (plus longs) avait perdu.",
+      "id": "gaming_visible_event_v1",
+      "channel": "gaming",
+      "started": "2026-11-28",
+      "description": "Moment = un evenement visible en jeu avec son resultat a l'ecran, pas de discussion. Concurrents 11-20/27 : tiers haut = evenement vu (PVP zone 6.9x, passager eclate 3.8x, Waffle House 4.4x), tiers bas = reaction a une fin/cinematique (0.18x), systemes de jeu/drama (layering 0.36x, biome gear 0.51x), conduite (0.79x) ; nos derniers Shorts parlent prix et projets (\"$21,000 to register\").",
       "b": {
-        "ideal_seconds": [
-          15,
-          25
-        ],
-        "trim_rules": [
-          "Coupe des que la chute ou la reaction est passee : vise 15-25 s, pas plus de 35 s sauf si la conclusion l'exige."
+        "selection_rules": [
+          "Prefere un moment ou quelque chose de visible arrive en jeu (rencontre, combat, accident, poursuite, echec) et dont le resultat se voit a l'ecran.",
+          "Evite les moments ou le streamer parle seulement (prix, projets, systemes du jeu, patchs, classement) ou reagit a une cinematique ou une fin."
+        ]
+      }
+    },
+    {
+      "id": "irl_on_camera_v1",
+      "channel": "irl",
+      "started": "2026-11-28",
+      "description": "Moment = quelque chose qui se passe a l'image (personne presente, action, reaction physique), jamais la lecture ou l'ecoute d'un contenu hors champ. Concurrents 11-20/27 : tiers bas = lecture de declarations/posts/actu (Ethan Klein 0.07x et 0.13x, Trump IA 0.16x, CIA 0.18x) ; tiers haut = invite ou scene vue (Mandy 7.3x, Best Wingman 3.5x). Appris : source=chat -0.7.",
+      "b": {
+        "selection_rules": [
+          "Prefere un moment ou ce qui compte se passe a l'image : une personne presente qui parle ou agit avec le streamer, une action physique, une reaction visible.",
+          "Evite les moments ou le streamer lit ou commente un post, un article, une declaration, le chat ou une video : rien ne se passe a l'image."
         ]
       }
     }

@@ -205,6 +205,11 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   (reaction a son animation, 0.9-1.5M), bas = classements CaseOh (300-440 vues) ; miniatures hits = visage
   + 1 mot rouge/rose ("SLAY!"), bas = liste numerotee en overlay. Confirme les lignes 11-13/11-17.
 
+- Concurrents (2026-11-28, 8 chaines, publies depuis le 11-20) : tiers haut = un evenement vu en jeu avec son
+  resultat (PVP zone 6.9x, passager eclate 3.8x, Waffle House 4.4x), tiers bas = reaction a une fin/cinematique
+  (0.18x), systemes de jeu/drama (0.36-0.51x), conduite (0.79x) ; duree egale (90 vs 89 s). Miniatures hauts =
+  scene de jeu + gros texte d'evenement, bas = webcam + question. -> test gaming_visible_event_v1.
+
 ### PeakMoments (irl)
 - Concurrents (2026-11-20, 6 chaines) : tiers haut 38 s vs bas 31 s (la duree seule ne separe plus) ;
   hauts = visage + 1 mot (BREATHE), bas = politique Hasan, overlays d'actualite. Production 7 j : <25s
@@ -349,6 +354,11 @@ evidence comes; turn a strong line into an A/B test, then into the app's default
   HasanAbi (meme VOD) malgre la regle par defaut anti-politique ; chez les concurrents les 5 bas = Hasan
   politique 60-110 s (3-8k vues), les 5 hauts = Speed emotion/evenement 18-50 s (1.1-1.9M). Cause probable :
   peu de VOD rendues (9/24 h), la reserve se remplit avec ce qui reste.
+- Verdict irl_short_v1 (2026-11-28, A n=29/9 VOD, B n=45/10 VOD) : perf -0.3 = -0.3, retention A 70.9 vs B
+  65.6 : pas meilleur, retire. Avec irl_length_v1 (perdu) : la duree seule n'est pas le levier en IRL.
+- Concurrents (2026-11-28, 6 chaines, depuis le 11-20) : tiers bas = lecture de declarations/posts/actu (Ethan
+  Klein 0.07x et 0.13x, Trump IA 0.16x, CIA 0.18x), tiers haut = invite ou scene vue (Mandy 7.3x, wingman
+  3.5x) ; duree haut 64 s vs bas 45 s. -> test irl_on_camera_v1.
 
 ## Waiting for the owner
 
@@ -362,6 +372,9 @@ ones, and moves them to the entries.
 
 | Since | Change | Expected effect | Metric to watch | Verdict |
 |---|---|---|---|---|
+| 2026-11-28 | A/B gaming_visible_event_v1 : evenement visible en jeu avec resultat a l'ecran, pas de discussion (selection_rules) | retention/perf meilleures (concurrents : evenement vu 3.8-6.9x, discussion/reaction 0.18-0.51x) | retention_pct, perf of B vs A | pending |
+| 2026-11-28 | A/B irl_on_camera_v1 : ce qui compte se passe a l'image, pas de lecture de posts/actu/chat (selection_rules) | retention/perf meilleures (concurrents : lectures 0.07-0.18x ; appris source=chat -0.7) | retention_pct, perf of B vs A | pending |
+| 2026-11-28 | MAX_QUEUED_JOBS 50 -> 40 (recul du palier 3) : les cles Gemini toutes saturees a 15:29 UTC le 11-27 (avant le soir), 46 VOD renvoyees | quota reparti sur la journee, file qui ne grossit pas | heure de saturation des cles, VOD rendues/24h, renvois quota | pending |
 | 2026-11-24 | Fix (vod_acquisition.acquire_due) : un worker ne reprend plus, depuis sa liste perimee, une VOD qu'un autre vient de remettre en attente (Gemini) ou en nouvel essai | plus de VOD relancees toutes les 20 s pendant une pause Gemini (3 tours/minute le 11-24), essais d'une VOD en erreur plus brules d'un coup | "VODs sent back to wait for Gemini" du rapport, "abandonnee apres" dans le log | pending |
 | 2026-11-23 | Fix (vod_acquisition._fit_window) : une partie de live qui commence apres la fin de la VOD (coupures du stream absentes de la VOD) prend ses 2 dernieres heures ; Fix (twitch._download_section) : cache TwitchDownloaderCLI par appel, supprime, erreur lisible | plus de parties en echec en boucle (5 streams le 11-22) | "Echec du telechargement de la partie" dans le log, VOD rendues/24h, Shorts en double entre parties | pending |
 | 2026-11-22 | Fix (trimming prompt) : un Short qui commence sur une reponse remonte a la question posee/lue, sinon complete=false | moins de debuts sans contexte (2/8 le 11-22) | coherence du rapport | pending |
@@ -369,7 +382,7 @@ ones, and moves them to the entries.
 | 2026-11-20 | Fix (trimming._settled_start) : un debut sur un mot de liaison (And, But, So...) remonte d'une phrase ; Fix (competitors.NOT_CLIP_CHANNELS) : Rupert Spira hors concurrents | moins de debuts en plein sujet ; donnees concurrents gaming propres | coherence du rapport | pending |
 | 2026-11-17 | MAX_QUEUED_JOBS 40 -> 50 (palier 3 de la montee Gemini) | moins de VOD jetees file pleine (38/24h), plus de candidats | VOD rendues/24h, jobs jetes, requetes par cle, file | pending |
 | 2026-11-17 | Fix (trimming._past_question) : une fin sur une question sans reponse recule a la phrase d'avant | plus de fins "What do we think about mid boss?" | coherence du rapport | pending |
-| 2026-11-17 | A/B irl_short_v1 : Shorts IRL 15-25 s (ideal_seconds + trim_rules) | perf/retention meilleures (appris <25s +0.6, >40s -0.7) | retention_pct, perf of B vs A | pending (0 measured) |
+| 2026-11-17 | A/B irl_short_v1 : Shorts IRL 15-25 s (ideal_seconds + trim_rules) | perf/retention meilleures (appris <25s +0.6, >40s -0.7) | retention_pct, perf of B vs A | **not better** (2026-11-28, perf -0.3 = -0.3, retention A 70.9 vs B 65.6), removed |
 | 2026-11-16 | VOD_WORKERS 2 -> 3 (palier 2 de la montee Gemini) | plus de VOD rendues/24h (12, objectif 20), cles 2/3 mieux utilisees (136 requetes/~360) | VOD rendues/24h, requetes par cle, file, charge du PC | pending |
 | 2026-11-16 | Fix (trimming._settled_start + prompt) : un debut sur une phrase en minuscule (suite de la precedente) remonte d'une phrase | moins de debuts en plein sujet ("when the deal is done...", 1/4 a 2/4 par jour depuis le 11-13) | coherence du rapport | pending |
 | 2026-11-16 | A/B gaming_tight_start_v1 : sujet pose dans les 3 premieres secondes (trim_rules) | retention meilleure (hits concurrents = enjeu <3 s) | retention_pct, perf of B vs A | **B wins** (2026-11-24, perf 0.3 vs -0.1, retention 44.2 vs 40.1) - now default (experiments.py DEFAULTS), removed |
@@ -412,6 +425,16 @@ ones, and moves them to the entries.
 | 2026-11-02 | Trimming reecrit (hors boucle): debut/fin cales sur un sujet complet, Shorts gardent leurs mots parles | moins de debuts/fins incomplets | coherence du rapport (debut/fin), controle qualite Gemini | pending (aucune donnee encore) |
 
 ## Entries
+
+### 2026-11-28 - verdict irl_short_v1 (retire), 2 tests lances, recul Gemini d'un palier, guide hebdo
+
+- Gaming : coherence 4/4 correcte (prix de la voiture, braquage, Baron vole) mais Shorts tres parles. Concurrents
+  et miniatures etudies : evenement vu en jeu >> discussion/reaction. Test gaming_visible_event_v1 lance.
+  Production 7 j : GTA V 54 pub/9 res/55 jetes, Rainbow Six 1/2/12, WoW 10/3/12. Verdict >= 2026-12-08.
+- IRL : coherence 3/4 (un debut sur "No But if you ever...", cas isole). irl_short_v1 pas meilleur (perf egale,
+  retention A 70.9 vs 65.6), retire. Test irl_on_camera_v1 lance (lectures de posts/actu = tiers bas).
+- Debit 30 VOD/24h (objectif atteint), 124 jobs jetes file pleine. 4 cles saturees des 15:29 UTC le 11-27 (avant
+  le soir), 46 renvois : recul MAX_QUEUED_JOBS 50 -> 40, a mesurer 24 h. Guide hebdo : regles gardees, date mise a jour.
 
 ### 2026-11-25 - aucun bug, app fermee la nuit, attente fin semaine GTA
 
@@ -518,16 +541,6 @@ ones, and moves them to the entries.
 - Debit 12 VOD/24h (12 hier, palier 2 sans effet visible), 38 jobs jetes (65) ; Gemini ~162 requetes a 23h UTC,
   cle 3 a 33, 2 renvois. Palier 3 : MAX_QUEUED_JOBS 40 -> 50. Selection Gemini garde 0-3 moments/25 : a suivre.
 
-### 2026-11-16 - debuts en plein sujet corriges, test interactions gaming perdu, palier Gemini 2
-
-- Gaming : coherence 2/4 commencent en plein sujet ("when the deal is done...", "Attempts somehow...").
-  Garde-fou (trimming._settled_start + regle du prompt, test). gaming_interaction_v1 perdu (perf 0.6 vs 0.3,
-  retention egale), retire ; gaming_tight_start_v1 lance (sujet pose en <3 s). Miniatures non regardees.
-- IRL : coherence 3/4 bonnes (1 finit sur "Um, okay. Look.", cas isole). Aucun verdict : irl_dialogue_v1
-  A 5 VOD (<6, B en retrait 43.6 vs 72.3) ; irl_cold_open_v1 A 3 VOD. Guide hebdo du 11-13, pas encore du.
-- Debit 12 VOD/24h (11 hier), 65 jobs jetes ; Gemini ~136/360 requetes, cle 3 a 5, renvois = 503/timeout.
-  Palier 2 : VOD_WORKERS 2 -> 3, a mesurer 24 h (recul si le PC ne suit pas).
-
 ### 2026-11-21 - owner: the app is sometimes closed on purpose
 
 - The owner sometimes closes the app's window (or turns the PC off). Periods with no log are not a
@@ -559,8 +572,9 @@ ones, and moves them to the entries.
   app follows the processing after each upload (youtube._wait_for_processing): an abandoned one is an
   upload error, the Short is kept and sent again later. Both entries relabelled in published_shorts.json.
 
-### earlier (2026-10-23 to 2026-11-15)
+### earlier (2026-10-23 to 2026-11-16)
 
+- 11-16 : debuts en plein sujet corriges (_settled_start), gaming_interaction_v1 perdu, VOD_WORKERS 2 -> 3.
 - 11-14 : fins sur un fragment de la scene suivante ("There's no quest. Oh") corrigees (_settled_end).
 - 10-23 baseline : gaming 66 mesures, IRL 0 ; tests titres lances (perdus ensuite). 10-24 test
   gaming_length_v1 (45-90s, gagne le 11-01), 10-26 irl_length_v1 (perdu le 11-03). Bugs de coupe

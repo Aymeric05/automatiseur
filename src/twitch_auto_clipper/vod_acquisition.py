@@ -31,7 +31,7 @@ TOP_STREAMER_JOB_AGE_SECONDS = 3 * 24 * 3600  # owner, 2026-11-17
 TOP_STREAMER_MAX_ATTEMPTS = 12  # past the 8th try, one every 6 hours: about 1.5 days of failures
 TOP_STREAMER_CLIP_BUDGET = 25  # moments asked to Gemini for a streamer of the top list
 # About what the worker processes within MAX_JOB_AGE_SECONDS: worse jobs are dropped.
-MAX_QUEUED_JOBS = 50
+MAX_QUEUED_JOBS = 40
 # Live clipping (LIVE_CLIPPING=1): a stream still live is processed in parts of
 # LIVE_PART_SECONDS, each downloaded on its own; its last part once it ends. Every part's audio
 # starts LIVE_PART_LEAD earlier (the context of a moment near the cut); a moment belongs to the
