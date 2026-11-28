@@ -1,8 +1,9 @@
-"""The PeakMoments TikTok account: each Short published on YouTube is sent there as a draft.
+"""The PeakMoments TikTok account: each Short published on YouTube is published there too.
 
-Content Posting API, "upload to inbox" (scope video.upload): the video lands in
-the account's TikTok inbox; the owner opens it in the TikTok app, can add a
-trending sound and edit the caption, then posts it. Nothing is posted without them.
+Content Posting API. Direct Post (scope video.publish) publishes the Short publicly, with its
+title, as soon as TikTok allows it: an app TikTok has not audited may only post privately, so
+until then (``creator_info`` offers no public visibility) the Short goes to the account's inbox
+as a draft instead (scope video.upload), which the owner posts from the TikTok app.
 
 The account is authorized once (``authorize``, Login Kit for Desktop: the
 browser comes back to ``REDIRECT_URI`` on this computer); the tokens are kept
@@ -28,9 +29,13 @@ AUTHORIZE_URL = "https://www.tiktok.com/v2/auth/authorize/"
 TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
 USER_INFO_URL = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url"
 INBOX_INIT_URL = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
+DIRECT_INIT_URL = "https://open.tiktokapis.com/v2/post/publish/video/init/"
+CREATOR_INFO_URL = "https://open.tiktokapis.com/v2/post/publish/creator_info/query/"
+PUBLIC = "PUBLIC_TO_EVERYONE"
+TITLE_MAX_LENGTH = 2200
 REDIRECT_PORT = 8765
 REDIRECT_URI = f"http://localhost:{REDIRECT_PORT}/callback/"
-SCOPES = "user.info.basic,video.upload"
+SCOPES = "user.info.basic,video.upload,video.publish"
 SINGLE_CHUNK_LIMIT = 64 * 1024 * 1024  # up to this size a video goes in one piece
 CHUNK_SIZE = 10 * 1024 * 1024  # otherwise in 10 MB pieces (the last one takes the rest)
 
@@ -107,12 +112,33 @@ def display_name(token: str) -> str:
     return str(user.get("display_name") or "")
 
 
+def publish(video: Path, token: str, title: str) -> tuple[str, str]:
+    """Publish ``video`` publicly when TikTok allows it, else send it as a draft.
+
+    Returns ("public" or "draft", TikTok's publish id).
+    """
+    try:
+        options = (_json_request(CREATOR_INFO_URL, token, {}).get("data") or {}).get("privacy_level_options") or []
+    except TikTokError:
+        options = []  # the token predates video.publish: drafts, as before
+    if PUBLIC not in options:
+        return "draft", upload_draft(video, token)
+    return "public", _upload(video, token, DIRECT_INIT_URL, {"post_info": {
+        "title": title[:TITLE_MAX_LENGTH], "privacy_level": PUBLIC,
+        "disable_duet": False, "disable_comment": False, "disable_stitch": False,
+    }})
+
+
 def upload_draft(video: Path, token: str) -> str:
     """Send ``video`` to the account's TikTok inbox as a draft; returns TikTok's publish id."""
+    return _upload(video, token, INBOX_INIT_URL, {})
+
+
+def _upload(video: Path, token: str, init_url: str, body: dict[str, Any]) -> str:
     size = video.stat().st_size
     chunk = size if size <= SINGLE_CHUNK_LIMIT else CHUNK_SIZE
     count = max(1, size // chunk)
-    init = _json_request(INBOX_INIT_URL, token, {"source_info": {
+    init = _json_request(init_url, token, {**body, "source_info": {
         "source": "FILE_UPLOAD", "video_size": size, "chunk_size": chunk, "total_chunk_count": count,
     }})
     data = init.get("data") or {}

@@ -760,13 +760,16 @@ def main() -> int:
             tiktok_token = args.youtube_token.with_name(TIKTOK_TOKEN_NAME)
 
             def send_to_tiktok(path: Path, metadata: Any) -> None:
-                """Each PeakMoments Short published on YouTube also goes to TikTok, as a draft."""
+                """Each PeakMoments Short published on YouTube is published on TikTok too (a draft until
+                TikTok has audited the app, see tiktok.py)."""
+                hashtags = [line for line in metadata.description.splitlines() if line.startswith("#")][-1:]
+                caption = " ".join([metadata.title, *hashtags]).replace("#shorts ", "")
                 try:
                     token = tiktok.access_token(os.environ["TIKTOK_CLIENT_KEY"], os.environ["TIKTOK_CLIENT_SECRET"], tiktok_token)
-                    tiktok.upload_draft(path, token)
-                    report(f"[tiktok] Brouillon envoye : {metadata.title}")
+                    how, _ = tiktok.publish(path, token, caption)
+                    report(f"[tiktok] {'Publie' if how == 'public' else 'Brouillon envoye'} : {metadata.title}")
                 except Exception as error:
-                    report(f"[tiktok] Brouillon non envoye : {error}", True)
+                    report(f"[tiktok] Non envoye : {error}", True)
 
             uploaders.append(channel_uploader(
                 GAMING_CHANNEL, args.youtube_token, args.youtube_token.with_name(ANALYTICS_TOKEN_NAME),
