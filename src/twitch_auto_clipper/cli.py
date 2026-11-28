@@ -207,6 +207,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Envoie cette video en brouillon sur le compte TikTok autorise (test, demonstration).",
     )
     parser.add_argument(
+        "--post-tiktok-private",
+        type=Path,
+        help="Publie cette video en prive (visible par le compte seul) sur TikTok : test de la publication "
+             "directe, la seule permise tant que TikTok n'a pas valide l'app.",
+    )
+    parser.add_argument(
         "--authorize-tiktok",
         action="store_true",
         help="Autorise une fois l'envoi des Shorts PeakMoments en brouillon sur TikTok.",
@@ -606,6 +612,27 @@ def main() -> int:
             return 1
         print(f"TikTok account connected: {name}. Its new short videos will be sent there as drafts.")
         return 0
+
+    if args.post_tiktok_private:
+        try:
+            token = tiktok.access_token(os.environ["TIKTOK_CLIENT_KEY"], os.environ["TIKTOK_CLIENT_SECRET"],
+                                        args.youtube_token.with_name(TIKTOK_TOKEN_NAME))
+            print("Direct Post (scope video.publish), visibility SELF_ONLY (sandbox: private only).", flush=True)
+            publish_id = tiktok.direct_post(args.post_tiktok_private, token,
+                                            "Automatiseur Direct Post test #twitch #streamer", "SELF_ONLY")
+            print(f"Video uploaded (publish id {publish_id}). Waiting for TikTok to publish it...", flush=True)
+            status = ""
+            for _ in range(40):
+                status = tiktok.publish_status(token, publish_id)
+                print(f"  status: {status}", flush=True)
+                if status in {"PUBLISH_COMPLETE", "FAILED"}:
+                    break
+                time.sleep(5)
+        except (KeyError, tiktok.TikTokError, OSError) as error:
+            print(f"Erreur : {error!r}", file=sys.stderr)
+            return 1
+        print("Posted to the creator's profile." if status == "PUBLISH_COMPLETE" else f"TikTok status: {status}")
+        return 0 if status == "PUBLISH_COMPLETE" else 1
 
     if args.send_tiktok_draft:
         try:

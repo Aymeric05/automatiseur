@@ -31,6 +31,7 @@ USER_INFO_URL = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,displa
 INBOX_INIT_URL = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
 DIRECT_INIT_URL = "https://open.tiktokapis.com/v2/post/publish/video/init/"
 CREATOR_INFO_URL = "https://open.tiktokapis.com/v2/post/publish/creator_info/query/"
+STATUS_URL = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
 PUBLIC = "PUBLIC_TO_EVERYONE"
 TITLE_MAX_LENGTH = 2200
 REDIRECT_PORT = 8765
@@ -124,16 +125,26 @@ def publish(video: Path, token: str, title: str) -> tuple[str, str]:
     if PUBLIC not in options:
         return "draft", upload_draft(video, token)
     try:
-        return "public", _upload(video, token, DIRECT_INIT_URL, {"post_info": {
-            "title": title[:TITLE_MAX_LENGTH], "privacy_level": PUBLIC,
-            "disable_duet": False, "disable_comment": False, "disable_stitch": False,
-        }})
+        return "public", direct_post(video, token, title, PUBLIC)
     except TikTokError as error:
         # creator_info offers public even to an app TikTok has not audited yet; posting then says
         # "unaudited_client_can_only_post_to_private_accounts": a draft, as before the audit.
         if "unaudited" not in str(error):
             raise
         return "draft", upload_draft(video, token)
+
+
+def direct_post(video: Path, token: str, title: str, privacy: str) -> str:
+    """Direct Post (scope video.publish) with this visibility; returns TikTok's publish id."""
+    return _upload(video, token, DIRECT_INIT_URL, {"post_info": {
+        "title": title[:TITLE_MAX_LENGTH], "privacy_level": privacy,
+        "disable_duet": False, "disable_comment": False, "disable_stitch": False,
+    }})
+
+
+def publish_status(token: str, publish_id: str) -> str:
+    """Where TikTok is with a post: PROCESSING_UPLOAD, PUBLISH_COMPLETE, FAILED..."""
+    return str((_json_request(STATUS_URL, token, {"publish_id": publish_id}).get("data") or {}).get("status", ""))
 
 
 def upload_draft(video: Path, token: str) -> str:
