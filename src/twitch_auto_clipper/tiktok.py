@@ -123,10 +123,17 @@ def publish(video: Path, token: str, title: str) -> tuple[str, str]:
         options = []  # the token predates video.publish: drafts, as before
     if PUBLIC not in options:
         return "draft", upload_draft(video, token)
-    return "public", _upload(video, token, DIRECT_INIT_URL, {"post_info": {
-        "title": title[:TITLE_MAX_LENGTH], "privacy_level": PUBLIC,
-        "disable_duet": False, "disable_comment": False, "disable_stitch": False,
-    }})
+    try:
+        return "public", _upload(video, token, DIRECT_INIT_URL, {"post_info": {
+            "title": title[:TITLE_MAX_LENGTH], "privacy_level": PUBLIC,
+            "disable_duet": False, "disable_comment": False, "disable_stitch": False,
+        }})
+    except TikTokError as error:
+        # creator_info offers public even to an app TikTok has not audited yet; posting then says
+        # "unaudited_client_can_only_post_to_private_accounts": a draft, as before the audit.
+        if "unaudited" not in str(error):
+            raise
+        return "draft", upload_draft(video, token)
 
 
 def upload_draft(video: Path, token: str) -> str:

@@ -78,3 +78,24 @@ def test_before_tiktok_audits_the_app_a_short_goes_to_the_drafts_never_private()
     assert how == "draft"
     assert sent[1].full_url == tiktok.INBOX_INIT_URL
     assert all(request.full_url != tiktok.DIRECT_INIT_URL for request in sent)
+
+
+def test_an_unaudited_app_refused_public_still_sends_a_draft():
+    sent = []
+
+    def urlopen(request, timeout=0):
+        sent.append(request.full_url)
+        if request.full_url == tiktok.CREATOR_INFO_URL:
+            return FakeResponse(json.dumps({"data": {"privacy_level_options": ["PUBLIC_TO_EVERYONE", "SELF_ONLY"]},
+                                            "error": {"code": "ok"}}).encode())
+        if request.full_url == tiktok.DIRECT_INIT_URL:
+            return FakeResponse(json.dumps({"error": {"code": "unaudited_client_can_only_post_to_private_accounts"}}).encode())
+        if request.full_url == tiktok.INBOX_INIT_URL:
+            return FakeResponse(json.dumps({"data": {"publish_id": "d1", "upload_url": "https://up"},
+                                            "error": {"code": "ok"}}).encode())
+        return FakeResponse(b"")
+
+    with tempfile.TemporaryDirectory() as directory, patch("urllib.request.urlopen", side_effect=urlopen):
+        video = Path(directory) / "short.mp4"
+        video.write_bytes(b"x" * 25)
+        assert tiktok.publish(video, "token", "t") == ("draft", "d1")
